@@ -1,0 +1,45 @@
+/**
+ * High-Performance In-Memory Cache with TTL
+ * Used for static and master lookup datasets (Packet Natures, Hardware Catalog, Templates)
+ * to deliver sub-5ms response times on high-throughput ERP endpoints.
+ */
+
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+class MemoryCache {
+  private store = new Map<string, CacheEntry<any>>();
+
+  get<T>(key: string): T | null {
+    const entry = this.store.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.store.delete(key);
+      return null;
+    }
+    return entry.data as T;
+  }
+
+  set<T>(key: string, data: T, ttlSeconds: number = 300): void {
+    this.store.set(key, {
+      data,
+      expiresAt: Date.now() + ttlSeconds * 1000,
+    });
+  }
+
+  invalidate(keyOrPrefix: string): void {
+    for (const key of this.store.keys()) {
+      if (key.startsWith(keyOrPrefix)) {
+        this.store.delete(key);
+      }
+    }
+  }
+
+  clear(): void {
+    this.store.clear();
+  }
+}
+
+export const memoryCache = new MemoryCache();

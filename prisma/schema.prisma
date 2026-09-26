@@ -1,0 +1,2725 @@
+// Pacific Restroom Cubicle — Prisma Schema
+// Database: PostgreSQL via Supabase
+// ORM: Prisma v5
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Auth & RBAC ──────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  password     String
+  firstName    String
+  lastName     String
+  role         UserRole @default(EDITOR)
+  isActive     Boolean  @default(true)
+  refreshToken String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Existing Relations
+  products            Product[]
+  projects            CommercialProject[]
+  quotations          Quotation[]
+
+  // Extended ERP & RBAC Relations
+  userRoles           UserRoleAssignment[]
+  entityAccess        UserEntityAccess[]
+  auditLogs           AuditLog[]
+  createdPOs          PurchaseOrder[]             @relation("POCreatedBy")
+  approvedPOs         PurchaseOrder[]             @relation("POApprovedBy")
+  createdPIs          ProformaInvoice[]           @relation("PICreatedBy")
+  issuedPIs           ProformaInvoice[]           @relation("PIIssuedBy")
+  assignedFollowups   PaymentFollowup[]           @relation("FollowupAssignedTo")
+  followupLogs        PaymentFollowupLog[]
+  poStatusChanges     PurchaseOrderStatusHistory[]
+  piStatusChanges     ProformaInvoiceStatusHistory[]
+  createdSalesQuotations SalesQuotation[]         @relation("QuotationCreatedBy")
+  issuedSalesQuotations  SalesQuotation[]         @relation("QuotationIssuingStaff")
+  createdSalesOrders     SalesOrder[]             @relation("OrderCreatedBy")
+  approvedSalesOrders    SalesOrder[]             @relation("OrderApprovedBy")
+  createdPackingLists    PackingList[]            @relation("PackingListCreatedBy")
+  createdHardwareIssues  HardwareIssueList[]      @relation("HardwareIssueCreatedBy")
+  orderStatusChanges     SalesOrderStatusHistory[]
+
+  // Export Relations
+  exportOrdersCreated      ExportOrder[]           @relation("ExportOrderCreatedBy")
+  exportQuotesCreated      ExportQuotation[]       @relation("ExportQuoteCreatedBy")
+  exportComplianceReviewed ExportComplianceCheck[] @relation("ComplianceReviewedBy")
+  exportDocsUploaded       ExportDocument[]        @relation("ExportDocUploadedBy")
+  exportTasksAssigned      ExportTask[]            @relation("ExportTaskAssignedTo")
+  exportEmailsSent         ExportEmailLog[]        @relation("ExportEmailSentBy")
+
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  code        String           @unique // e.g. SUPER_ADMIN, ENTITY_ADMIN, SALES_MANAGER, PROCUREMENT_MANAGER, ACCOUNTANT
+  description String?
+  isSystem    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  permissions RolePermission[]
+  userRoles   UserRoleAssignment[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  code        String           @unique // e.g. crm:view, po:approve, pi:issue, qr:scan
+  module      String           // CRM, Procurement, Sales, Finance, QR, Inventory, Settings
+  description String
+  createdAt   DateTime         @default(now())
+
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRoleAssignment {
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model UserEntityAccess {
+  userId           String
+  companyProfileId String
+  createdAt        DateTime       @default(now())
+
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyProfile   CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+
+  @@id([userId, companyProfileId])
+  @@map("user_entity_access")
+}
+
+// ─── Company / Entity Management ─────────────────────────────────────────────
+
+model CompanyProfile {
+  id          String   @id @default(uuid())
+  companyName String
+  legalName   String
+  entityCode  String   @unique // e.g. PRC_IN, PRC_UAE
+  country     String   @default("India")
+  currency    String   @default("INR") // INR, AED, USD
+  taxRegime   String   @default("GST") // GST, VAT
+  gstin       String?
+  pan         String?
+  vatNumber   String?
+  state       String?
+  stateCode   String?  // e.g. 07 for Delhi
+  phone       String?
+  email       String?
+  website     String?
+  logoUrl     String?
+  signatureUrl String?
+  status      String   @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  addresses       CompanyAddress[]
+  bankAccounts    CompanyBankAccount[]
+  terms           CompanyTerm[]
+  signatories     CompanySignatory[]
+  sequences       DocumentSequence[]
+  parties         BusinessParty[]
+  purchaseOrders   PurchaseOrder[]
+  proformaInvoices ProformaInvoice[]
+  salesQuotations  SalesQuotation[]
+  salesOrders      SalesOrder[]
+  packingLists     PackingList[]
+  payments         Payment[]
+  userAccess       UserEntityAccess[]
+  exportQuotations ExportQuotation[]
+  exportOrders     ExportOrder[]
+
+  @@map("company_profiles")
+}
+
+model CompanyAddress {
+  id               String         @id @default(uuid())
+  companyProfileId String
+  companyProfile   CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+  type             String         @default("REGISTERED") // REGISTERED, BILLING, FACTORY, WAREHOUSE, DELIVERY
+  addressLine1     String
+  addressLine2     String?
+  city             String
+  state            String
+  stateCode        String?
+  postalCode       String
+  phone            String?
+  gstin            String?
+  pan              String?
+  isDefault        Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+
+  @@map("company_addresses")
+}
+
+model CompanyBankAccount {
+  id               String         @id @default(uuid())
+  companyProfileId String
+  companyProfile   CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+  bankName         String
+  accountNumber    String
+  ifscCode         String?
+  swiftCode        String?
+  branch           String?
+  iban             String?
+  isDefault        Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+
+  @@map("company_bank_accounts")
+}
+
+model CompanyTerm {
+  id               String         @id @default(uuid())
+  companyProfileId String
+  companyProfile   CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+  documentType     String         // PO, PI, INVOICE, QUOTATION
+  title            String
+  content          String
+  sortOrder        Int            @default(0)
+  isDefault        Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+
+  @@map("company_terms")
+}
+
+model CompanySignatory {
+  id               String         @id @default(uuid())
+  companyProfileId String
+  companyProfile   CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+  name             String
+  designation      String
+  signatureUrl     String?
+  isDefault        Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+
+  @@map("company_signatories")
+}
+
+model DocumentSequence {
+  id               String         @id @default(uuid())
+  companyProfileId String
+  companyProfile   CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+  documentType     String         // PO, PI, SO, INV
+  fiscalYear       String         // e.g. "2026-27"
+  prefix           String         // e.g. "PRC/FY2026-27/", "PPS/PI/2026-27/"
+  currentNumber    Int            @default(0)
+  padding          Int            @default(6)
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([companyProfileId, documentType, fiscalYear])
+  @@map("document_sequences")
+}
+
+// ─── Business Parties (CRM & Procurement Master) ─────────────────────────────
+
+model BusinessParty {
+  id               String          @id @default(uuid())
+  companyProfileId String?
+  companyProfile   CompanyProfile? @relation(fields: [companyProfileId], references: [id])
+  partyType        PartyType       @default(CUSTOMER)
+  legalName        String
+  tradeName        String?
+  gstin            String?
+  pan              String?
+  email            String?
+  phone            String?
+  status           String          @default("ACTIVE")
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  customerProfile  CustomerProfile?
+  vendorProfile    VendorProfile?
+  contacts         PartyContact[]
+  addresses        PartyAddress[]
+  purchaseOrders   PurchaseOrder[]
+  proformaInvoices ProformaInvoice[]
+  salesQuotations  SalesQuotation[]
+  salesOrders      SalesOrder[]
+  packingLists     PackingList[]
+  hardwareIssues   HardwareIssueList[]
+  payments         Payment[]
+  followups        PaymentFollowup[]
+  dispatchRecords  DispatchRecord[]
+
+  // Export Relations
+  exportCustomerProfile  ExportCustomerProfile?
+  exportBankAccounts     ExportCustomerBankAccount[]
+  exportRfqs             ExportRfq[]
+  exportQuotations       ExportQuotation[]
+  exportOrders           ExportOrder[]
+  forwarderShipments     ExportShipment[]        @relation("ForwarderShipments")
+  chaCustomsRecords      ExportCustomsRecord[]   @relation("ChaCustomsRecords")
+  exportComplianceChecks ExportComplianceCheck[]
+  exportExpenses         ExportExpense[]         @relation("VendorExportExpenses")
+  exportEmails           ExportEmailLog[]
+
+  @@index([legalName])
+  @@index([gstin])
+  @@index([email])
+  @@index([phone])
+  @@map("business_parties")
+}
+
+enum PartyType {
+  CUSTOMER
+  VENDOR
+  BOTH
+}
+
+model CustomerProfile {
+  id               String        @id @default(uuid())
+  partyId          String        @unique
+  party            BusinessParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  customerType     String        @default("CONTRACTOR") // CONTRACTOR, ARCHITECT, CORPORATE, INSTITUTIONAL
+  creditLimit      Decimal?      @db.Decimal(12, 2)
+  paymentTermsDays Int           @default(30)
+  status           String        @default("ACTIVE")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  receivableEntries ReceivableEntry[]
+
+  @@map("customer_profiles")
+}
+
+model VendorProfile {
+  id               String        @id @default(uuid())
+  partyId          String        @unique
+  party            BusinessParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  vendorType       String        @default("RAW_MATERIALS") // HPL_BOARDS, HARDWARE, ALUMINIUM, SS, NYLON, RAW_MATERIALS, FINISHED_GOODS
+  paymentTermsDays Int           @default(30)
+  status           String        @default("ACTIVE")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  payableEntries   PayableEntry[]
+  boardItems       BoardInventoryItem[]
+
+  @@map("vendor_profiles")
+}
+
+model PartyContact {
+  id          String        @id @default(uuid())
+  partyId     String
+  party       BusinessParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  name        String
+  designation String?
+  department  String?
+  phone       String?
+  email       String?
+  isPrimary   Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+
+  @@map("party_contacts")
+}
+
+model PartyAddress {
+  id                String        @id @default(uuid())
+  partyId           String
+  party             BusinessParty @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  addressType       String        @default("BILLING") // BILLING, SHIPPING, SITE
+  addressLine1      String
+  addressLine2      String?
+  city              String
+  state             String
+  stateCode         String?       // e.g. "07"
+  country           String        @default("India")
+  postalCode        String?
+  gstin             String?
+  isDefaultBilling  Boolean       @default(false)
+  isDefaultShipping Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+
+  @@map("party_addresses")
+}
+
+// ─── Products Master Extended ────────────────────────────────────────────────
+
+model ProductCategory {
+  id          String               @id @default(uuid())
+  name        String               @unique
+  slug        String               @unique
+  description String?
+  imageUrl    String?
+  sortOrder   Int                  @default(0)
+  isActive    Boolean              @default(true)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  products      Product[]
+  subcategories ProductSubcategory[]
+
+  @@map("product_categories")
+}
+
+model ProductSubcategory {
+  id          String          @id @default(uuid())
+  categoryId  String
+  category    ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
+  sortOrder   Int             @default(0)
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+
+  products    Product[]
+
+  @@unique([categoryId, slug])
+  @@map("product_subcategories")
+}
+
+model ProductMaterial {
+  id        String    @id @default(uuid())
+  name      String    @unique // HPL / Compact Laminate, SS 304, Nylon Polyamide, Aluminium Grade 6063
+  code      String?
+  createdAt DateTime  @default(now())
+
+  products  Product[]
+
+  @@map("product_materials")
+}
+
+model ProductFinish {
+  id        String    @id @default(uuid())
+  name      String    @unique // Suede, Matt, Brushed SS, Black Matte, Powder Coated
+  code      String?
+  createdAt DateTime  @default(now())
+
+  products  Product[]
+
+  @@map("product_finishes")
+}
+
+model ProductUnit {
+  id        String    @id @default(uuid())
+  code      String    @unique // SET, NOS, SQFT, SQM, KGS, RMT
+  name      String
+  createdAt DateTime  @default(now())
+
+  products  Product[]
+
+  @@map("product_units")
+}
+
+model Product {
+  id              String              @id @default(uuid())
+  name            String              @default("")
+  slug            String              @unique
+  description     String?
+  shortDesc       String?
+  sku             String?             @unique
+  barcode         String?             @unique
+  hsnSac          String?             // e.g. 9403, 8302
+  categoryId      String?
+  category        ProductCategory?    @relation(fields: [categoryId], references: [id])
+  subcategoryId   String?
+  subcategory     ProductSubcategory? @relation(fields: [subcategoryId], references: [id])
+  materialId      String?
+  material        ProductMaterial?    @relation(fields: [materialId], references: [id])
+  finishId        String?
+  finish          ProductFinish?      @relation(fields: [finishId], references: [id])
+  unitId          String?
+  unit            ProductUnit?        @relation(fields: [unitId], references: [id])
+  thickness       String?             // e.g. 12mm, 18mm
+  cuttingSize     String?             // e.g. 600x1200mm, 1800x2100mm
+  gstRate         Decimal?            @db.Decimal(5, 2) @default(18.00)
+  basePrice       Decimal?            @db.Decimal(12, 2)
+  costPrice       Decimal?            @db.Decimal(12, 2)
+  isFeatured      Boolean             @default(false)
+  isActive        Boolean             @default(true)
+  images          Json                @default("[]")
+  specifications  Json                @default("{}")
+  tags            String[]
+  metaTitle       String?
+  metaDescription String?
+  createdById     String?
+  createdBy       User?               @relation(fields: [createdById], references: [id])
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @default(now()) @updatedAt
+
+  // Relations
+  quotationItems      QuotationItem[]
+  variants            ProductVariant[]
+  documents           ProductDocument[]
+  poItems             PurchaseOrderItem[]
+  piItems             ProformaInvoiceItem[]
+  salesQuotationItems SalesQuotationItem[]
+  salesOrderItems     SalesOrderItem[]
+  boms                ProductBom[]
+  qrCodes             QrCode[]
+  exportRfqItems      ExportRfqItem[]
+  exportQuotationItems ExportQuotationItem[]
+
+  @@index([sku])
+  @@index([barcode])
+  @@index([name])
+  @@index([categoryId])
+  @@map("erp_products")
+}
+
+model ProductVariant {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantName String
+  sku         String?  @unique
+  barcode     String?
+  price       Decimal? @db.Decimal(12, 2)
+  attributes  Json     @default("{}") // color, size, thickness
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@map("product_variants")
+}
+
+model ProductDocument {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  title       String
+  fileUrl     String
+  fileType    String?  // PDF, DWG, BIM
+  createdAt   DateTime @default(now())
+
+  @@map("product_documents")
+}
+
+// ─── Purchase Orders (Procurement) ───────────────────────────────────────────
+
+model PurchaseOrder {
+  id                  String             @id @default(uuid())
+  poNumber            String             @unique // e.g. PRC/FY2026-27/000001
+  companyProfileId    String
+  companyProfile      CompanyProfile     @relation(fields: [companyProfileId], references: [id])
+  vendorId            String
+  vendor              BusinessParty      @relation(fields: [vendorId], references: [id])
+  poDate              DateTime           @default(now())
+  subject             String?
+  description         String?
+  deliveryAddressJson Json               // Structured address snapshot
+  billingAddressJson  Json               // Structured address snapshot
+  paymentTerms        String?            // e.g. "50% Advance and 50% before dispatch"
+  deliveryTerms       String?            // e.g. "5 days from date of PO"
+  subtotal            Decimal            @db.Decimal(12, 2) @default(0)
+  gstAmount           Decimal            @db.Decimal(12, 2) @default(0)
+  totalAmount         Decimal            @db.Decimal(12, 2) @default(0)
+  currency            String             @default("INR")
+  status              POStatus           @default(DRAFT)
+  createdById         String?
+  createdBy           User?              @relation("POCreatedBy", fields: [createdById], references: [id])
+  approvedById        String?
+  approvedBy          User?              @relation("POApprovedBy", fields: [approvedById], references: [id])
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  items               PurchaseOrderItem[]
+  statusHistory       PurchaseOrderStatusHistory[]
+  qrCodes             QrCode[]
+  payableEntries      PayableEntry[]
+
+  @@index([poNumber])
+  @@index([vendorId])
+  @@index([companyProfileId])
+  @@index([status])
+  @@index([poDate])
+  @@map("purchase_orders")
+}
+
+enum POStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(uuid())
+  poId            String
+  purchaseOrder   PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  serialNumber    Int
+  productId       String?
+  product         Product?      @relation(fields: [productId], references: [id])
+  description     String
+  finish          String?
+  thickness       String?
+  cuttingSize     String?
+  quantity        Decimal       @db.Decimal(10, 2)
+  unit            String        @default("NOS")
+  rate            Decimal       @db.Decimal(12, 2)
+  amount          Decimal       @db.Decimal(12, 2)
+  gstRate         Decimal       @db.Decimal(5, 2) @default(18.00)
+  gstAmount       Decimal       @db.Decimal(12, 2) @default(0)
+
+  @@map("purchase_order_items")
+}
+
+model PurchaseOrderStatusHistory {
+  id              String        @id @default(uuid())
+  poId            String
+  purchaseOrder   PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  fromStatus      POStatus?
+  toStatus        POStatus
+  changedById     String?
+  changedBy       User?         @relation(fields: [changedById], references: [id])
+  reason          String?
+  createdAt       DateTime      @default(now())
+
+  @@map("purchase_order_status_history")
+}
+
+// ─── Proforma Invoices (Sales) ───────────────────────────────────────────────
+
+model ProformaInvoice {
+  id                      String            @id @default(uuid())
+  piNumber                String            @unique // e.g. PPS/PI/2026-27/0815
+  piDate                  DateTime          @default(now())
+  companyProfileId        String
+  companyProfile          CompanyProfile    @relation(fields: [companyProfileId], references: [id])
+  customerId              String
+  customer                BusinessParty     @relation(fields: [customerId], references: [id])
+  placeOfSupply           String            // e.g. "Delhi"
+  placeOfSupplyStateCode  String            // e.g. "07"
+  reverseCharge           Boolean           @default(false)
+  modeOfTransport         String?
+  vehicleNumber           String?
+  grLrNumber              String?
+  linkedPoNumber          String?
+  linkedPoDate            DateTime?
+  subtotal                Decimal           @db.Decimal(12, 2) @default(0)
+  freightAmount           Decimal           @db.Decimal(12, 2) @default(0)
+  taxableAmount           Decimal           @db.Decimal(12, 2) @default(0)
+  cgstAmount              Decimal           @db.Decimal(12, 2) @default(0)
+  sgstAmount              Decimal           @db.Decimal(12, 2) @default(0)
+  igstAmount              Decimal           @db.Decimal(12, 2) @default(0)
+  totalTaxAmount          Decimal           @db.Decimal(12, 2) @default(0)
+  roundingAdjustment      Decimal           @db.Decimal(6, 2)  @default(0)
+  grandTotal              Decimal           @db.Decimal(12, 2) @default(0)
+  amountInWords           String?
+  currency                String            @default("INR")
+  status                  PIStatus          @default(DRAFT)
+  createdById             String?
+  createdBy               User?             @relation("PICreatedBy", fields: [createdById], references: [id])
+  issuedById              String?
+  issuedBy                User?             @relation("PIIssuedBy", fields: [issuedById], references: [id])
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  orderId                 String?
+  order                   SalesOrder?                 @relation(fields: [orderId], references: [id])
+  quotationId             String?
+  quotationRef            String?
+  advancePercentage       Decimal           @db.Decimal(5, 2)  @default(50.00)
+  advanceRequiredAmount   Decimal           @db.Decimal(12, 2) @default(0)
+  advanceReceivedAmount   Decimal           @db.Decimal(12, 2) @default(0)
+  advancePaymentStatus    String            @default("PENDING")
+  advancePaymentDate      DateTime?
+  advancePaymentReference String?
+  advancePaymentMode      String?
+  convertedOrderId        String?
+  parties                 ProformaInvoiceParty[]
+  items                   ProformaInvoiceItem[]
+  taxSummary              ProformaInvoiceTaxSummary[]
+  terms                   ProformaInvoiceTerm[]
+  statusHistory           ProformaInvoiceStatusHistory[]
+  qrCodes                 QrCode[]
+  verificationTokens      DocumentVerificationToken[]
+  paymentAllocations      PaymentAllocation[]
+  receivableEntries       ReceivableEntry[]
+  followups               PaymentFollowup[]
+  packingLists            PackingList[]
+  hardwareIssues          HardwareIssueList[]
+
+  @@index([piNumber])
+  @@index([orderId])
+  @@index([customerId])
+  @@index([companyProfileId])
+  @@index([status])
+  @@index([piDate])
+  @@map("proforma_invoices")
+}
+
+enum PIStatus {
+  DRAFT
+  ISSUED
+  CONVERTED
+  CANCELLED
+}
+
+model ProformaInvoiceParty {
+  id              String          @id @default(uuid())
+  piId            String
+  proformaInvoice ProformaInvoice @relation(fields: [piId], references: [id], onDelete: Cascade)
+  partyRole       String          // BILL_TO, SHIP_TO
+  partyName       String
+  gstin           String?
+  addressLine     String
+  state           String
+  stateCode       String?
+  phone           String?
+  email           String?
+
+  @@map("proforma_invoice_parties")
+}
+
+model ProformaInvoiceItem {
+  id              String          @id @default(uuid())
+  piId            String
+  proformaInvoice ProformaInvoice @relation(fields: [piId], references: [id], onDelete: Cascade)
+  serialNumber    Int
+  productId       String?
+  product         Product?        @relation(fields: [productId], references: [id])
+  description     String
+  hsnSac          String?
+  quantity        Decimal         @db.Decimal(10, 2)
+  unit            String          @default("NOS")
+  rate            Decimal         @db.Decimal(12, 2)
+  amount          Decimal         @db.Decimal(12, 2)
+  gstRate         Decimal         @db.Decimal(5, 2) @default(18.00)
+  taxableAmount   Decimal         @db.Decimal(12, 2)
+  cgst            Decimal         @db.Decimal(12, 2) @default(0)
+  sgst            Decimal         @db.Decimal(12, 2) @default(0)
+  igst            Decimal         @db.Decimal(12, 2) @default(0)
+  totalAmount     Decimal         @db.Decimal(12, 2)
+  boardType       String?
+  boardThickness  String?
+  boardColor      String?
+  cubicleSize     String?
+  doorSize        String?
+  overallHeight   String?
+  hardwarePackage String?
+
+  @@map("proforma_invoice_items")
+}
+
+model ProformaInvoiceTaxSummary {
+  id              String          @id @default(uuid())
+  piId            String
+  proformaInvoice ProformaInvoice @relation(fields: [piId], references: [id], onDelete: Cascade)
+  gstRate         Decimal         @db.Decimal(5, 2)
+  taxableAmount   Decimal         @db.Decimal(12, 2)
+  cgst            Decimal         @db.Decimal(12, 2) @default(0)
+  sgst            Decimal         @db.Decimal(12, 2) @default(0)
+  igst            Decimal         @db.Decimal(12, 2) @default(0)
+  totalTax        Decimal         @db.Decimal(12, 2)
+
+  @@map("proforma_invoice_tax_summary")
+}
+
+model ProformaInvoiceTerm {
+  id              String          @id @default(uuid())
+  piId            String
+  proformaInvoice ProformaInvoice @relation(fields: [piId], references: [id], onDelete: Cascade)
+  clauseNumber    Int
+  text            String
+
+  @@map("proforma_invoice_terms")
+}
+
+model ProformaInvoiceStatusHistory {
+  id              String          @id @default(uuid())
+  piId            String
+  proformaInvoice ProformaInvoice @relation(fields: [piId], references: [id], onDelete: Cascade)
+  fromStatus      PIStatus?
+  toStatus        PIStatus
+  changedById     String?
+  changedBy       User?           @relation(fields: [changedById], references: [id])
+  comment         String?
+  createdAt       DateTime        @default(now())
+
+  @@map("proforma_invoice_status_history")
+}
+
+// ─── Formal Sales Quotations (Staff Letter Quotations) ────────────────────────
+
+model SalesQuotation {
+  id                      String                @id @default(uuid())
+  referenceNumber         String                // e.g. PPS/D/26-27/817
+  revisionNumber          Int                   @default(1)
+  date                    DateTime              @default(now())
+  companyProfileId        String
+  companyProfile          CompanyProfile        @relation(fields: [companyProfileId], references: [id])
+  customerId              String
+  customer                BusinessParty         @relation(fields: [customerId], references: [id])
+  issuingStaffId          String?
+  issuingStaff            User?                 @relation("QuotationIssuingStaff", fields: [issuingStaffId], references: [id])
+  createdById             String?
+  createdBy               User?                 @relation("QuotationCreatedBy", fields: [createdById], references: [id])
+  recipientSalutation     String                @default("Mr.")
+  recipientName           String
+  recipientCompany        String?
+  recipientAddress        String?
+  recipientEmail          String?
+  recipientPhone          String?
+  projectName             String                // e.g. "Gurgaon"
+  subject                 String
+  title                   String                @default("Quotation for Supply of Toilet Cubicles")
+  currency                String                @default("INR")
+  basicPrice              Decimal               @db.Decimal(12, 2) @default(0)
+  installationCharge      Decimal               @db.Decimal(12, 2) @default(0)
+  freightTerms            String                @default("Extra as Actual / To pay")
+  freightAmount           Decimal               @db.Decimal(12, 2) @default(0)
+  gstRate                 Decimal               @db.Decimal(5, 2) @default(18.00)
+  isSezExempt             Boolean               @default(false)
+  sezCertificateRef       String?
+  gstAmount               Decimal               @db.Decimal(12, 2) @default(0)
+  grandTotal              Decimal               @db.Decimal(12, 2) @default(0)
+  amountInWords           String?
+  accessoriesText         String?
+  warrantyText            String?
+  generalTerms            String?
+  otherTerms              String?
+  paymentTerms            String?
+  deliveryTerms           String?
+  statutoryComplianceTerms String?
+  validityDays            Int                   @default(30)
+  validUntil              DateTime?
+  status                  SalesQuotationStatus  @default(DRAFT)
+  convertedOrderId        String?
+  convertedPiId           String?
+  nextFollowupDate        DateTime?
+  followupStatus          String?               @default("PENDING")
+  lastFollowupDate        DateTime?
+  followupCount           Int                   @default(0)
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+
+  items                   SalesQuotationItem[]
+  revisions               SalesQuotationRevision[]
+  orders                  SalesOrder[]
+  followups               QuotationFollowup[]
+
+  @@unique([referenceNumber, revisionNumber])
+  @@index([referenceNumber])
+  @@index([customerId])
+  @@index([status])
+  @@index([nextFollowupDate])
+  @@map("sales_quotations")
+}
+
+model QuotationFollowup {
+  id               String         @id @default(uuid())
+  quotationId      String
+  quotation        SalesQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  channel          String         @default("CALL")
+  status           String         @default("COMPLETED")
+  discussionNotes  String
+  nextFollowupDate DateTime?
+  contactPerson    String?
+  contactPhone     String?
+  contactEmail     String?
+  performedById    String?
+  performedByName  String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([quotationId])
+  @@index([nextFollowupDate])
+  @@map("quotation_followups")
+}
+
+enum SalesQuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  EXPIRED
+  CONVERTED
+}
+
+model SalesQuotationItem {
+  id              String         @id @default(uuid())
+  quotationId     String
+  quotation       SalesQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  serialNumber    Int
+  productId       String?
+  product         Product?       @relation(fields: [productId], references: [id])
+  description     String
+  unit            String         @default("NOS")
+  quantity        Decimal        @db.Decimal(10, 2)
+  rate            Decimal        @db.Decimal(12, 2)
+  amount          Decimal        @db.Decimal(12, 2)
+  cubicleSize     String?
+  boardType       String?
+  boardColor      String?
+  boardThickness  String?
+  doorSize        String?
+  overallHeight   String?
+  hardwarePackage String?
+  customSpecsJson Json?
+
+  @@map("sales_quotation_items")
+}
+
+model SalesQuotationRevision {
+  id              String         @id @default(uuid())
+  quotationId     String
+  quotation       SalesQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  revisionNumber  Int
+  snapshotJson    Json
+  reason          String?
+  createdAt       DateTime       @default(now())
+
+  @@map("sales_quotation_revisions")
+}
+
+model QuotationContentTemplate {
+  id              String   @id @default(uuid())
+  category        String   // ACCESSORIES_LIBRARY, SPEC_TEMPLATE, WARRANTY, TERMS_GENERAL, TERMS_OTHER, TERMS_PAYMENT, TERMS_DELIVERY, STATUTORY_COMPLIANCE
+  title           String
+  content         String
+  productCategory String?
+  isDefault       Boolean  @default(false)
+  version         Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("quotation_content_templates")
+}
+
+// ─── Central Sales Order Hub ──────────────────────────────────────────────────
+
+model SalesOrder {
+  id                      String                    @id @default(uuid())
+  orderNumber             String                    @unique // e.g. PPS/ORD/2026-27/0001
+  orderDate               DateTime                  @default(now())
+  companyProfileId        String
+  companyProfile          CompanyProfile            @relation(fields: [companyProfileId], references: [id])
+  customerId              String
+  customer                BusinessParty             @relation(fields: [customerId], references: [id])
+  source                  SalesOrderSource          @default(DIRECT_ENTRY)
+  quotationId             String?
+  quotation               SalesQuotation?           @relation(fields: [quotationId], references: [id])
+  quotationRef            String?
+  proformaInvoiceId       String?
+  piNumber                String?
+  customerPoNumber        String?
+  customerPoDate          DateTime?
+  customerPoFileUrl       String?
+  currency                String                    @default("INR")
+  subtotal                Decimal                   @db.Decimal(12, 2) @default(0)
+  taxAmount               Decimal                   @db.Decimal(12, 2) @default(0)
+  grandTotal              Decimal                   @db.Decimal(12, 2) @default(0)
+  placeOfSupply           String?                   @default("Delhi")
+  placeOfSupplyStateCode  String?                   @default("07")
+  freightAmount           Decimal?                  @db.Decimal(12, 2) @default(0)
+  cgstAmount              Decimal?                  @db.Decimal(12, 2) @default(0)
+  sgstAmount              Decimal?                  @db.Decimal(12, 2) @default(0)
+  igstAmount              Decimal?                  @db.Decimal(12, 2) @default(0)
+  accessoriesText         String?
+  termsJson               Json?
+  status                  SalesOrderStatus          @default(DRAFT)
+  statusReason            String?
+  billingAddressSnapshot  Json?
+  shippingAddressSnapshot Json?
+  siteContactSnapshot     Json?
+  createdById             String?
+  createdBy               User?                     @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  approvedById            String?
+  approvedBy              User?                     @relation("OrderApprovedBy", fields: [approvedById], references: [id])
+  nextFollowupDate        DateTime?
+  followupStatus          String?                   @default("PENDING")
+  lastFollowupDate        DateTime?
+  followupCount           Int                       @default(0)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+
+  items                   SalesOrderItem[]
+  proformaInvoices        ProformaInvoice[]
+  packingLists            PackingList[]
+  hardwareIssues          HardwareIssueList[]
+  statusHistory           SalesOrderStatusHistory[]
+  exportOrder             ExportOrder?
+  followups               SalesOrderFollowup[]
+  dispatchRecords         DispatchRecord[]
+  invoices                Invoice[]
+
+  @@index([orderNumber])
+  @@index([customerId])
+  @@index([companyProfileId])
+  @@index([status])
+  @@index([nextFollowupDate])
+  @@map("sales_orders")
+}
+
+model SalesOrderFollowup {
+  id               String     @id @default(uuid())
+  orderId          String
+  order            SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  channel          String     @default("CALL")
+  status           String     @default("COMPLETED")
+  discussionNotes  String
+  nextFollowupDate DateTime?
+  contactPerson    String?
+  contactPhone     String?
+  contactEmail     String?
+  performedById    String?
+  performedByName  String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([orderId])
+  @@index([nextFollowupDate])
+  @@map("sales_order_followups")
+}
+
+enum SalesOrderSource {
+  DIRECT_ENTRY
+  CONVERTED_QUOTATION
+  CONVERTED_PROFORMA
+  B2B_SELF_SERVICE
+  CUSTOMER_PO_UPLOAD
+}
+
+enum SalesOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  WAITING_FOR_ADVANCE
+  APPROVED
+  PI_ISSUED
+  IN_PRODUCTION
+  PARTIALLY_DISPATCHED
+  FULLY_DISPATCHED
+  COMPLETED
+  CANCELLED
+}
+
+model SalesOrderItem {
+  id                  String     @id @default(uuid())
+  orderId             String
+  order               SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  serialNumber        Int
+  productId           String?
+  product             Product?   @relation(fields: [productId], references: [id])
+  description         String
+  quantity            Decimal    @db.Decimal(10, 2)
+  dispatchedQuantity  Decimal    @db.Decimal(10, 2) @default(0)
+  unit                String     @default("NOS")
+  rate                Decimal    @db.Decimal(12, 2)
+  amount              Decimal    @db.Decimal(12, 2)
+  specsJson           Json?
+  boardType           String?
+  boardThickness      String?
+  boardColor          String?
+  cubicleSize         String?
+  doorSize            String?
+  overallHeight       String?
+  hardwarePackage     String?
+
+  @@map("sales_order_items")
+}
+
+model SalesOrderStatusHistory {
+  id              String           @id @default(uuid())
+  orderId         String
+  order           SalesOrder       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus      SalesOrderStatus?
+  toStatus        SalesOrderStatus
+  changedById     String?
+  changedBy       User?            @relation(fields: [changedById], references: [id])
+  comment         String?
+  createdAt       DateTime         @default(now())
+
+  @@map("sales_order_status_history")
+}
+
+// ─── Packing Lists & Dispatch System ─────────────────────────────────────────
+
+model PackingList {
+  id                      String                   @id @default(uuid())
+  packingListNumber       String                   @unique // e.g. PPS/PL/2026-27/0424
+  orderId                 String?
+  order                   SalesOrder?              @relation(fields: [orderId], references: [id])
+  proformaInvoiceId       String?
+  proformaInvoice         ProformaInvoice?         @relation(fields: [proformaInvoiceId], references: [id])
+  customerId              String
+  customer                BusinessParty            @relation(fields: [customerId], references: [id])
+  companyProfileId        String
+  companyProfile          CompanyProfile           @relation(fields: [companyProfileId], references: [id])
+  date                    DateTime                 @default(now())
+  consignorName           String
+  consignorAddress        String
+  shipToName              String
+  shipToAddress           String
+  siteContactName         String?
+  siteContactPhone        String?
+  isPartialDispatch       Boolean                  @default(false)
+  isStandalone            Boolean                  @default(false)
+  totalQuantity           Decimal                  @db.Decimal(10, 2) @default(0)
+  totalPackages           Int?
+  receiptStatus           PackingListReceiptStatus @default(DISPATCHED)
+  checkedByName           String?
+  authorisedSignatoryName String?
+  receivedByName          String?
+  receivedByPhone         String?
+  receivedAt              DateTime?
+  receiptSignatureData    String?
+  digitalAckToken         String?                  @unique
+  createdById             String?
+  createdBy               User?                    @relation("PackingListCreatedBy", fields: [createdById], references: [id])
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  items                   PackingListItem[]
+  dispatchRecords         DispatchRecord[]
+
+  @@index([packingListNumber])
+  @@index([orderId])
+  @@index([customerId])
+  @@map("packing_lists")
+}
+
+enum PackingListReceiptStatus {
+  DISPATCHED
+  DELIVERED
+  ACKNOWLEDGED
+}
+
+model PackingListItem {
+  id              String      @id @default(uuid())
+  packingListId   String
+  packingList     PackingList @relation(fields: [packingListId], references: [id], onDelete: Cascade)
+  serialNumber    Int
+  description     String
+  size            String?
+  designNo        String?
+  quantity        Decimal     @db.Decimal(10, 2)
+  noOfPackets     Int?
+  natureOfPacket  String?
+
+  @@map("packing_list_items")
+}
+
+// ─── Dispatch Records ────────────────────────────────────────────────────────
+
+model DispatchRecord {
+  id                      String            @id @default(uuid())
+  dispatchNumber          String            @unique // e.g. PPS/DISP/2026-27/0101
+  orderId                 String?
+  order                   SalesOrder?       @relation(fields: [orderId], references: [id])
+  packingListId           String?
+  packingList             PackingList?      @relation(fields: [packingListId], references: [id])
+  customerId              String?
+  customer                BusinessParty?    @relation(fields: [customerId], references: [id])
+  transporterName         String?
+  vehicleNumber           String?
+  driverName              String?
+  driverPhone             String?
+  lrNumber                String?
+  lrDate                  DateTime?
+  ewayBillNumber          String?
+  dispatchDate            DateTime          @default(now())
+  totalPackages           Int?
+  status                  String            @default("DISPATCHED") // DISPATCHED, IN_TRANSIT, DELIVERED, ACKNOWLEDGED
+  termsAndConditions      String?
+  notes                   String?
+  createdById             String?
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  @@index([dispatchNumber])
+  @@index([orderId])
+  @@index([packingListId])
+  @@map("dispatch_records")
+}
+
+model PacketNatureLookup {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+
+  @@map("packet_nature_lookups")
+}
+
+model ProductBom {
+  id                   String   @id @default(uuid())
+  productId            String
+  product              Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  componentDescription String
+  defaultSize          String?
+  defaultDesignNo      String?
+  ratioPerUnit         Decimal  @db.Decimal(10, 4) @default(1)
+  natureOfPacket       String?
+  category             String?
+  sortOrder            Int      @default(0)
+
+  @@map("product_boms")
+}
+
+// ─── Hardware Issue List & Catalog System ────────────────────────────────────
+
+model HardwareCatalogItem {
+  id           String                  @id @default(uuid())
+  name         String                  @unique
+  category     String                  // Cubicle Hardware, Locker Hardware, Aluminium Extrusions, Screws & Fasteners, Accessories
+  defaultSize  String?
+  defaultColor String?
+  sortOrder    Int                     @default(0)
+  isActive     Boolean                 @default(true)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  items        HardwareIssueListItem[]
+
+  @@map("hardware_catalog_items")
+}
+
+model HardwareIssueList {
+  id                  String                 @id @default(uuid())
+  issueNumber         String                 @unique // e.g. PPS/HIL/2026-27/0101
+  date                DateTime               @default(now())
+  customerId          String
+  customer            BusinessParty          @relation(fields: [customerId], references: [id])
+  orderId             String?
+  order               SalesOrder?            @relation(fields: [orderId], references: [id])
+  proformaInvoiceId   String?
+  proformaInvoice     ProformaInvoice?       @relation(fields: [proformaInvoiceId], references: [id])
+  buyerName           String
+  buyerAddress        String
+  projectName         String?
+  status              HardwareIssueStatus    @default(DRAFT)
+  storeKeeperName     String?
+  storeKeeperSignedAt DateTime?
+  packedByName        String?
+  packedBySignedAt    DateTime?
+  checkedByName       String?
+  checkedBySignedAt   DateTime?
+  inchargeName        String?
+  inchargeSignedAt    DateTime?
+  createdById         String?
+  createdBy           User?                  @relation("HardwareIssueCreatedBy", fields: [createdById], references: [id])
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  items               HardwareIssueListItem[]
+
+  @@index([issueNumber])
+  @@index([orderId])
+  @@index([customerId])
+  @@map("hardware_issue_lists")
+}
+
+enum HardwareIssueStatus {
+  DRAFT
+  ISSUED
+  VERIFIED
+}
+
+model HardwareIssueListItem {
+  id                    String               @id @default(uuid())
+  issueListId           String
+  issueList             HardwareIssueList    @relation(fields: [issueListId], references: [id], onDelete: Cascade)
+  serialNumber          Int
+  hardwareCatalogItemId String?
+  catalogItem           HardwareCatalogItem? @relation(fields: [hardwareCatalogItemId], references: [id])
+  description           String
+  category              String
+  color                 String?
+  size                  String?
+  quantity              Decimal              @db.Decimal(10, 2)
+  remarks               String?
+  isCustomItem          Boolean              @default(false)
+
+  @@map("hardware_issue_list_items")
+}
+
+// ─── Board Inventory & Stock Movements ──────────────────────────────────────────
+
+model BoardInventoryItem {
+  id               String               @id @default(uuid())
+  itemCode         String               @unique
+  serialNumber     Int                  @default(autoincrement())
+  category         String               @default("RESTROOM_CUBICLE")
+  warehouse        String               @default("DELHI")
+  designNo         String
+  designName       String?
+  size             String
+  thickness        String
+  boardType        String
+  
+  vendorId         String
+  vendor           VendorProfile        @relation(fields: [vendorId], references: [id])
+  vendorName       String?
+  
+  openingStock     Decimal              @db.Decimal(10, 2) @default(0)
+  currentStock     Decimal              @db.Decimal(10, 2) @default(0)
+  totalInward      Decimal              @db.Decimal(10, 2) @default(0)
+  totalIssued      Decimal              @db.Decimal(10, 2) @default(0)
+  reorderLevel     Decimal              @db.Decimal(10, 2) @default(10)
+  unit             String               @default("Sheets")
+  
+  unitCost         Decimal?             @db.Decimal(12, 2)
+  locationRack     String?
+  status           String               @default("ACTIVE")
+  notes            String?
+  lastAlertSentAt  DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  movements        BoardStockMovement[]
+
+  @@index([category])
+  @@index([warehouse])
+  @@index([vendorId])
+  @@index([designNo])
+  @@index([boardType])
+  @@index([thickness])
+  @@index([status])
+  @@map("board_inventory_items")
+}
+
+enum BoardMovementType {
+  INWARD
+  ISSUE_AUTO
+  ISSUE_MANUAL
+  ADJUSTMENT_ADD
+  ADJUSTMENT_SUB
+  RETURN_VENDOR
+}
+
+model BoardStockMovement {
+  id                  String             @id @default(uuid())
+  movementNumber      String             @unique
+  inventoryItemId     String
+  inventoryItem       BoardInventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  warehouse           String             @default("DELHI")
+  movementType        BoardMovementType
+  movementDate        DateTime           @default(now())
+  quantity            Decimal            @db.Decimal(10, 2)
+  stockBefore         Decimal            @db.Decimal(10, 2)
+  stockAfter          Decimal            @db.Decimal(10, 2)
+  
+  // Inward details
+  supplierInvoiceNo   String?
+  supplierInvoiceDate DateTime?
+  batchLotNo         String?
+  unitCost            Decimal?           @db.Decimal(12, 2)
+  totalValue          Decimal?           @db.Decimal(14, 2)
+  
+  // Outward / Issue details
+  issueListId         String?
+  issueListNumber     String?
+  dispatchRecordId    String?
+  packingListId       String?
+  orderId             String?
+  
+  issueReference      String?
+  issuedToPerson      String?
+  
+  notes               String?
+  createdById         String?
+  createdAt           DateTime           @default(now())
+
+  @@index([inventoryItemId])
+  @@index([movementType])
+  @@index([movementDate])
+  @@index([issueListId])
+  @@index([dispatchRecordId])
+  @@index([packingListId])
+  @@index([orderId])
+  @@map("board_stock_movements")
+}
+
+// ─── Customer Deduplication & Merge System ───────────────────────────────────
+
+model CustomerMergeLog {
+  id                   String   @id @default(uuid())
+  canonicalCustomerId String
+  mergedCustomerId     String
+  mergedCustomerData   Json
+  performedByUserId    String?
+  performedAt          DateTime @default(now())
+  reason               String?
+
+  @@map("customer_merge_logs")
+}
+
+// ─── Finance, Payments & Follow-ups ──────────────────────────────────────────
+
+model Payment {
+  id                 String              @id @default(uuid())
+  companyProfileId   String
+  companyProfile     CompanyProfile      @relation(fields: [companyProfileId], references: [id])
+  partyId            String
+  party              BusinessParty       @relation(fields: [partyId], references: [id])
+  paymentType        PaymentType         @default(CUSTOMER_PAYMENT)
+  paymentMethod      PaymentMethod       @default(NEFT_RTGS)
+  referenceNumber    String?             // UTR / Cheque / Txn ID
+  paymentDate        DateTime            @default(now())
+  amount             Decimal             @db.Decimal(12, 2)
+  unallocatedAmount  Decimal             @db.Decimal(12, 2)
+  currency           String              @default("INR")
+  notes              String?
+  status             PaymentRecordStatus @default(CONFIRMED)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  allocations        PaymentAllocation[]
+  transactions       FinancialTransaction[]
+  exportMilestones   ExportPaymentMilestone[]
+  exportRealizations ExportBankRealization[]
+
+  @@index([partyId])
+  @@index([paymentDate])
+  @@index([referenceNumber])
+  @@map("payments")
+}
+
+enum PaymentType {
+  CUSTOMER_PAYMENT
+  VENDOR_PAYMENT
+  ADVANCE
+  REFUND
+}
+
+enum PaymentMethod {
+  NEFT_RTGS
+  IMPS
+  UPI
+  CHEQUE
+  CASH
+  CARD
+}
+
+enum PaymentRecordStatus {
+  CONFIRMED
+  REVERSED
+}
+
+model PaymentAllocation {
+  id                String           @id @default(uuid())
+  paymentId         String
+  payment           Payment          @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  documentType      String           // PI, PO, INVOICE
+  documentId        String
+  proformaInvoiceId String?
+  proformaInvoice   ProformaInvoice? @relation(fields: [proformaInvoiceId], references: [id])
+  allocatedAmount   Decimal          @db.Decimal(12, 2)
+  createdAt         DateTime         @default(now())
+
+  @@map("payment_allocations")
+}
+
+model FinancialTransaction {
+  id              String        @id @default(uuid())
+  paymentId       String?
+  payment         Payment?      @relation(fields: [paymentId], references: [id])
+  accountType     String        // ASSET, LIABILITY, INCOME, EXPENSE
+  transactionType String        // DEBIT, CREDIT
+  amount          Decimal       @db.Decimal(12, 2)
+  description     String
+  referenceId     String?
+  createdAt       DateTime      @default(now())
+
+  @@map("financial_transactions")
+}
+
+model ReceivableEntry {
+  id                String           @id @default(uuid())
+  customerId        String
+  customer          CustomerProfile  @relation(fields: [customerId], references: [id])
+  proformaInvoiceId String?
+  proformaInvoice   ProformaInvoice? @relation(fields: [proformaInvoiceId], references: [id])
+  totalAmount       Decimal          @db.Decimal(12, 2)
+  paidAmount        Decimal          @db.Decimal(12, 2) @default(0)
+  balanceAmount     Decimal          @db.Decimal(12, 2)
+  dueDate           DateTime?
+  status            ReceivableStatus @default(OPEN)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@map("receivable_entries")
+}
+
+enum ReceivableStatus {
+  OPEN
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+}
+
+model PayableEntry {
+  id              String        @id @default(uuid())
+  vendorId        String
+  vendor          VendorProfile @relation(fields: [vendorId], references: [id])
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  totalAmount     Decimal       @db.Decimal(12, 2)
+  paidAmount      Decimal       @db.Decimal(12, 2) @default(0)
+  balanceAmount   Decimal       @db.Decimal(12, 2)
+  dueDate         DateTime?
+  status          ReceivableStatus @default(OPEN)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("payable_entries")
+}
+
+model PaymentFollowup {
+  id                   String           @id @default(uuid())
+  customerId           String
+  customer             BusinessParty    @relation(fields: [customerId], references: [id])
+  proformaInvoiceId    String?
+  proformaInvoice      ProformaInvoice? @relation(fields: [proformaInvoiceId], references: [id])
+  outstandingAmount    Decimal          @db.Decimal(12, 2)
+  dueDate              DateTime?
+  followupStatus       FollowupStatus   @default(PENDING)
+  priority             FollowupPriority @default(MEDIUM)
+  assignedUserId       String?
+  assignedUser         User?            @relation("FollowupAssignedTo", fields: [assignedUserId], references: [id])
+  nextFollowupDate     DateTime?
+  promisedPaymentDate  DateTime?
+  promisedAmount       Decimal?         @db.Decimal(12, 2)
+  notes                String?
+  communicationChannel String           @default("PHONE") // PHONE, EMAIL, WHATSAPP, VISIT
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  logs                 PaymentFollowupLog[]
+  reminders            PaymentFollowupReminder[]
+
+  @@index([customerId])
+  @@index([dueDate])
+  @@index([nextFollowupDate])
+  @@index([followupStatus])
+  @@index([assignedUserId])
+  @@map("payment_followups")
+}
+
+enum FollowupStatus {
+  PENDING
+  CONTACTED
+  PROMISED_TO_PAY
+  DISPUTED
+  RESOLVED
+}
+
+enum FollowupPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model PaymentFollowupLog {
+  id          String          @id @default(uuid())
+  followupId  String
+  followup    PaymentFollowup @relation(fields: [followupId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?           @relation(fields: [userId], references: [id])
+  notes       String
+  response    String?
+  createdAt   DateTime        @default(now())
+
+  @@map("payment_followup_logs")
+}
+
+model PaymentFollowupReminder {
+  id           String          @id @default(uuid())
+  followupId   String
+  followup     PaymentFollowup @relation(fields: [followupId], references: [id], onDelete: Cascade)
+  reminderDate DateTime
+  isCompleted  Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+
+  @@map("payment_followup_reminders")
+}
+
+// ─── QR Code Subsystem ───────────────────────────────────────────────────────
+
+model QrCode {
+  id                String           @id @default(uuid())
+  entityType        String           // PI, PO, PRODUCT, INVENTORY
+  entityId          String
+  token             String           @unique // Cryptographically secure token
+  qrData            String           // e.g. "https://domain.com/verify/pi/{token}"
+  qrImageUrl        String?          // Data URL or storage URL
+  status            String           @default("ACTIVE") // ACTIVE, REVOKED
+  expiresAt         DateTime?
+  createdAt         DateTime         @default(now())
+
+  // Optional entity relations
+  proformaInvoiceId String?
+  proformaInvoice   ProformaInvoice? @relation(fields: [proformaInvoiceId], references: [id])
+  purchaseOrderId   String?
+  purchaseOrder     PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id])
+  productId         String?
+  product           Product?         @relation(fields: [productId], references: [id])
+
+  scanLogs          QrScanLog[]
+  exportContainers  ExportContainer[]
+
+  @@index([token])
+  @@index([entityType, entityId])
+  @@map("qr_codes")
+}
+
+model DocumentVerificationToken {
+  id                     String          @id @default(uuid())
+  token                  String          @unique
+  documentType           String          // PI, PO
+  documentId             String
+  proformaInvoiceId      String?
+  proformaInvoice        ProformaInvoice? @relation(fields: [proformaInvoiceId], references: [id])
+  verificationPayloadJson Json           // Public-safe snapshot
+  isValid                Boolean         @default(true)
+  createdAt              DateTime        @default(now())
+
+  @@index([token])
+  @@map("document_verification_tokens")
+}
+
+model QrScanLog {
+  id              String    @id @default(uuid())
+  qrCodeId        String?
+  qrCode          QrCode?   @relation(fields: [qrCodeId], references: [id])
+  token           String
+  scannedByUserId String?
+  ipAddress       String?
+  userAgent       String?
+  scannedAt       DateTime  @default(now())
+
+  @@map("qr_scan_logs")
+}
+
+// ─── Audit System ─────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String   // CREATE, UPDATE, DELETE, ISSUE, APPROVE, CANCEL, ALLOCATE, SCAN
+  module     String   // CRM, Procurement, Sales, Finance, Settings, QR
+  entityType String   // BusinessParty, PurchaseOrder, ProformaInvoice, Payment, CompanyProfile
+  entityId   String
+  oldData    Json?
+  newData    Json?
+  ipAddress  String?
+  userAgent  String?
+  timestamp  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+// ─── Legacy & Website CMS Models (Maintained for backward compatibility) ───────
+
+model Solution {
+  id                String    @id @default(uuid()) @db.Uuid
+  slug              String    @unique
+  title             String
+  subtitle          String
+  description       String
+  iconName          String    @map("icon_name")
+  imageUrl          String    @map("image_url")
+  additionalImages  Json      @default("[]") @map("additional_images")
+  features          Json      @default("[]")
+  clients           Json      @default("[]")
+  sortOrder         Int       @default(0) @map("sort_order")
+  published         Boolean   @default(true)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  altText           String?   @map("alt_text")
+  bottomDescription String?   @map("bottom_description")
+  colors            Json?     @default("[]")
+
+  @@map("solutions")
+}
+
+model ConfiguratorDesign {
+  id             String             @id @default(uuid())
+  designName     String?
+  configuration  Json
+  estimatedPrice Decimal?           @db.Decimal(12, 2)
+  status         ConfiguratorStatus @default(DRAFT)
+  leadId         String?
+  lead           Lead?              @relation(fields: [leadId], references: [id])
+  notes          String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  quotations     Quotation[]
+
+  @@map("configurator_designs")
+}
+
+enum ConfiguratorStatus {
+  DRAFT
+  SUBMITTED
+  QUOTED
+  CONVERTED
+}
+
+model Lead {
+  id          String     @id @default(uuid())
+  firstName   String
+  lastName    String?
+  email       String
+  phone       String?
+  company     String?
+  message     String?
+  source      LeadSource @default(WEBSITE)
+  status      LeadStatus @default(NEW)
+  tags        String[]
+  notes       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  quotations          Quotation[]
+  configuratorDesigns ConfiguratorDesign[]
+
+  @@map("leads")
+}
+
+enum LeadSource {
+  WEBSITE
+  CONFIGURATOR
+  REFERRAL
+  DIRECT
+  SOCIAL
+  EMAIL
+  PHONE
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL_SENT
+  NEGOTIATING
+  WON
+  LOST
+  INACTIVE
+}
+
+model Quotation {
+  id             String             @id @default(uuid())
+  quoteNumber    String             @unique
+  leadId         String?
+  lead           Lead?              @relation(fields: [leadId], references: [id])
+  designId       String?
+  design         ConfiguratorDesign? @relation(fields: [designId], references: [id])
+  createdById    String?
+  createdBy      User?              @relation(fields: [createdById], references: [id])
+  status         QuotationStatus    @default(DRAFT)
+  validUntil     DateTime?
+  subtotal       Decimal            @db.Decimal(12, 2) @default(0)
+  taxAmount      Decimal            @db.Decimal(12, 2) @default(0)
+  discountAmount Decimal            @db.Decimal(12, 2) @default(0)
+  totalAmount    Decimal            @db.Decimal(12, 2) @default(0)
+  currency       String             @default("INR")
+  notes          String?
+  terms          String?
+  items          QuotationItem[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  invoice        Invoice?
+
+  @@map("quotations")
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  VIEWED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CONVERTED
+}
+
+model QuotationItem {
+  id          String    @id @default(uuid())
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?  @relation(fields: [productId], references: [id])
+  description String
+  quantity    Int       @default(1)
+  unitPrice   Decimal   @db.Decimal(12, 2)
+  totalPrice  Decimal   @db.Decimal(12, 2)
+  notes       String?
+
+  @@map("quotation_items")
+}
+
+model CommercialProject {
+  id            String        @id @default(uuid())
+  title         String
+  clientName    String
+  clientCompany String?
+  description   String?
+  location      String?
+  status        ProjectStatus @default(INQUIRY)
+  budget        Decimal?      @db.Decimal(15, 2)
+  startDate     DateTime?
+  endDate       DateTime?
+  completedAt   DateTime?
+  images        Json          @default("[]")
+  tags          String[]
+  isFeatured    Boolean       @default(false)
+  assignedToId  String?
+  assignedTo    User?         @relation(fields: [assignedToId], references: [id])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  invoices      Invoice[]
+
+  @@map("commercial_projects")
+}
+
+enum ProjectStatus {
+  INQUIRY
+  DESIGN
+  PROPOSAL
+  APPROVED
+  IN_PROGRESS
+  INSTALLATION
+  COMPLETED
+  ON_HOLD
+  CANCELLED
+}
+
+model Invoice {
+  id            String             @id @default(uuid())
+  invoiceNumber String             @unique
+  quotationId   String?            @unique
+  quotation     Quotation?         @relation(fields: [quotationId], references: [id])
+  projectId     String?
+  project       CommercialProject? @relation(fields: [projectId], references: [id])
+  orderId       String?
+  order         SalesOrder?        @relation(fields: [orderId], references: [id])
+  proformaInvoiceId String?
+  status        InvoiceStatus      @default(DRAFT)
+  issueDate     DateTime           @default(now())
+  dueDate       DateTime?
+  paidAt        DateTime?
+  subtotal      Decimal            @db.Decimal(12, 2) @default(0)
+  taxAmount     Decimal            @db.Decimal(12, 2) @default(0)
+  totalAmount   Decimal            @db.Decimal(12, 2) @default(0)
+  currency      String             @default("INR")
+  notes         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model Blog {
+  id            String    @id @default(uuid()) @db.Uuid
+  slug          String    @unique
+  title         String
+  excerpt       String
+  content       String
+  coverImageUrl String    @map("cover_image_url")
+  author        String
+  category      String
+  tags          Json      @default("[]")
+  published     Boolean   @default(false)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  altText       String?   @map("alt_text")
+
+  @@map("blogs")
+}
+
+model GalleryImage {
+  id           String   @id @default(uuid()) @db.Uuid
+  title        String
+  category     String
+  imageUrl     String   @map("image_url")
+  sortOrder    Int      @default(0) @map("sort_order")
+  published    Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  locationSlug String?  @map("location_slug")
+  placement    String   @default("general")
+  altText      String?  @map("alt_text")
+
+  @@map("gallery_images")
+}
+
+model HeroSlide {
+  id          String   @id @default(uuid())
+  title       String
+  subtitle    String?
+  description String?
+  imageUrl    String
+  ctaText     String?
+  ctaLink     String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("hero_slides")
+}
+
+model Catalog {
+  id           String    @id @default(uuid()) @db.Uuid
+  title        String
+  description  String
+  fileUrl      String    @map("file_url")
+  fileType     String    @map("file_type")
+  fileSize     BigInt    @map("file_size")
+  thumbnailUrl String    @map("thumbnail_url")
+  productId    String?   @map("product_id") @db.Uuid
+  sortOrder    Int       @default(0) @map("sort_order")
+  published    Boolean   @default(true)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  documentType String    @map("document_type")
+  category     String
+
+  @@map("catalogs")
+}
+
+model Faq {
+  id        String   @id @default(uuid())
+  question  String
+  answer    String
+  category  String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("faqs")
+}
+
+model Testimonial {
+  id          String   @id @default(uuid())
+  clientName  String
+  company     String?
+  designation String?
+  message     String
+  rating      Int?     @default(5)
+  avatarUrl   String?
+  projectRef  String?
+  isFeatured  Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("testimonials")
+}
+
+model HeroImage {
+  id          String    @id @default(uuid()) @db.Uuid
+  url         String
+  description String
+  sortOrder   Int       @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  altText     String?   @map("alt_text")
+
+  @@map("hero_images")
+}
+
+model CoreService {
+  id          String    @id @default(uuid()) @db.Uuid
+  title       String
+  description String
+  imageUrl    String    @map("image_url")
+  sortOrder   Int       @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  altText     String?   @map("alt_text")
+
+  @@map("core_services")
+}
+
+model PageBanner {
+  id        String    @id @default(uuid()) @db.Uuid
+  pageSlug  String    @map("page_slug")
+  imageUrl  String    @map("image_url")
+  title     String
+  subtitle  String
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  altText   String?   @map("alt_text")
+
+  @@map("page_banners")
+}
+
+model VisitorLead {
+  id               String    @id @default(uuid()) @db.Uuid
+  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  ipAddress        String?   @map("ip_address")
+  country          String?
+  city             String?
+  region           String?
+  email            String?
+  age              Int?
+  deviceType       String?   @map("device_type")
+  browser          String?
+  os               String?
+  screenResolution String?   @map("screen_resolution")
+  referrer         String?
+  consentGiven     Boolean?  @map("consent_given")
+
+  @@map("visitor_leads")
+}
+
+model WebsiteProduct {
+  id                String    @id @default(uuid()) @db.Uuid
+  slug              String    @unique
+  title             String
+  subtitle          String
+  description       String
+  bottomDescription String?   @map("bottom_description")
+  category          String
+  imageUrl          String    @map("image_url")
+  altText           String?   @map("alt_text")
+  additionalImages  Json      @default("[]") @map("additional_images")
+  features          Json      @default("[]")
+  specifications    Json      @default("[]")
+  applications      Json      @default("[]")
+  colors            Json?     @default("[]")
+  isFeatured        Boolean   @default(false) @map("is_featured")
+  sortOrder         Int       @default(0) @map("sort_order")
+  published         Boolean   @default(true)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("products")
+}
+
+// ─── Export & International Trade Management Module ──────────────────────────
+
+model ExportCountry {
+  id                   String              @id @default(uuid())
+  countryCode          String              @unique @map("country_code")
+  name                 String
+  region               String?
+  currencyCode         String?             @default("USD") @map("currency_code")
+  dialCode             String?             @map("dial_code")
+  requiresCoo          Boolean             @default(false) @map("requires_coo")
+  requiresLegalization Boolean             @default(false) @map("requires_legalization")
+  inspectionAgency     String?             @map("inspection_agency")
+  isActive             Boolean             @default(true) @map("is_active")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @default(now()) @updatedAt @map("updated_at")
+
+  rules                ExportCountryRule[]
+  ports                ExportPort[]
+  customerProfiles     ExportCustomerProfile[]
+  customerBankAccounts ExportCustomerBankAccount[]
+  rfqs                 ExportRfq[]
+  quotations           ExportQuotation[]
+  orders               ExportOrder[]
+  customsRecords       ExportCustomsRecord[]
+
+  @@map("export_countries")
+}
+
+model ExportCountryRule {
+  id                   String        @id @default(uuid())
+  countryId            String        @map("country_id")
+  country              ExportCountry @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  ruleType             String        @map("rule_type")
+  ruleKey              String        @map("rule_key")
+  ruleValue            String?       @map("rule_value")
+  requiredDocChecklist Json          @default("[]") @map("required_doc_checklist")
+  restrictedHsCodes    Json          @default("[]") @map("restricted_hs_codes")
+  isActive             Boolean       @default(true) @map("is_active")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_country_rules")
+}
+
+model ExportPort {
+  id                   String         @id @default(uuid())
+  countryId            String?        @map("country_id")
+  country              ExportCountry? @relation(fields: [countryId], references: [id])
+  portCode             String         @unique @map("port_code")
+  name                 String
+  portType             String         @default("SEA") @map("port_type")
+  unLocode             String?        @map("un_locode")
+  customsStationCode   String?        @map("customs_station_code")
+  isActive             Boolean        @default(true) @map("is_active")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @default(now()) @updatedAt @map("updated_at")
+
+  customerProfiles     ExportCustomerProfile[]
+  rfqs                 ExportRfq[]
+  loadingQuotes        ExportQuotation[]      @relation("QuotePortOfLoading")
+  destinationQuotes    ExportQuotation[]      @relation("QuotePortOfDestination")
+  loadingOrders        ExportOrder[]          @relation("OrderPortOfLoading")
+  destinationOrders    ExportOrder[]          @relation("OrderPortOfDestination")
+  loadingShipments     ExportShipment[]       @relation("ShipmentPortOfLoading")
+  destinationShipments ExportShipment[]       @relation("ShipmentPortOfDestination")
+
+  @@map("export_ports")
+}
+
+model ExportIncoterm {
+  id                          String                  @id @default(uuid())
+  code                        String                  @unique
+  name                        String
+  freightResponsibility       String?                 @map("freight_responsibility")
+  insuranceResponsibility     String?                 @map("insurance_responsibility")
+  riskTransferPoint           String?                 @map("risk_transfer_point")
+  customsExportResponsibility String?                 @map("customs_export_responsibility")
+  customsImportResponsibility String?                 @map("customs_import_responsibility")
+  description                 String?
+  isActive                    Boolean                 @default(true) @map("is_active")
+  createdAt                   DateTime                @default(now()) @map("created_at")
+  updatedAt                   DateTime                @default(now()) @updatedAt @map("updated_at")
+
+  customerProfiles            ExportCustomerProfile[]
+  rfqs                        ExportRfq[]
+  quotations                  ExportQuotation[]
+  orders                      ExportOrder[]
+
+  @@map("export_incoterms")
+}
+
+model ExportCurrency {
+  id           String               @id @default(uuid())
+  currencyCode String               @unique @map("currency_code")
+  name         String
+  symbol       String?
+  isBase       Boolean              @default(false) @map("is_base")
+  isActive     Boolean              @default(true) @map("is_active")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @default(now()) @updatedAt @map("updated_at")
+
+  rates        ExportExchangeRate[]
+
+  @@map("export_currencies")
+}
+
+model ExportExchangeRate {
+  id            String         @id @default(uuid())
+  currencyId    String         @map("currency_id")
+  currency      ExportCurrency @relation(fields: [currencyId], references: [id], onDelete: Cascade)
+  rateToInr     Decimal        @map("rate_to_inr") @db.Decimal(12, 4)
+  rateToUsd     Decimal        @map("rate_to_usd") @db.Decimal(12, 4)
+  effectiveDate DateTime       @map("effective_date") @db.Date
+  source        String         @default("MANUAL")
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  @@map("export_exchange_rates")
+}
+
+model ExportHsCode {
+  id                 String                @id @default(uuid())
+  hsCode             String                @unique @map("hs_code")
+  description        String
+  chapter            String?
+  dutyRate           Decimal               @default(0) @map("duty_rate") @db.Decimal(6, 2)
+  rodtepRate         Decimal               @default(0) @map("rodtep_rate") @db.Decimal(6, 2)
+  drawbackRate       Decimal               @default(0) @map("drawback_rate") @db.Decimal(6, 2)
+  gstRate            Decimal               @default(18.00) @map("gst_rate") @db.Decimal(6, 2)
+  requiresInspection Boolean               @default(false) @map("requires_inspection")
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @default(now()) @updatedAt @map("updated_at")
+
+  quotationItems     ExportQuotationItem[]
+
+  @@map("export_hs_codes")
+}
+
+model ExportCustomerProfile {
+  id                       String          @id @default(uuid())
+  partyId                  String          @unique @map("party_id")
+  party                    BusinessParty   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  countryId                String?         @map("country_id")
+  country                  ExportCountry?  @relation(fields: [countryId], references: [id])
+  foreignTaxId             String?         @map("foreign_tax_id")
+  vatTrn                   String?         @map("vat_trn")
+  defaultIncotermId        String?         @map("default_incoterm_id")
+  defaultIncoterm          ExportIncoterm? @relation(fields: [defaultIncotermId], references: [id])
+  defaultCurrency          String          @default("USD") @map("default_currency")
+  defaultDestinationPortId String?         @map("default_destination_port_id")
+  defaultDestinationPort   ExportPort?     @relation(fields: [defaultDestinationPortId], references: [id])
+  creditTermsDays          Int             @default(30) @map("credit_terms_days")
+  creditLimitUsd           Decimal         @default(0) @map("credit_limit_usd") @db.Decimal(14, 2)
+  riskRating               String          @default("LOW") @map("risk_rating")
+  complianceStatus         String          @default("VERIFIED") @map("compliance_status")
+  notes                    String?
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_customer_profiles")
+}
+
+model ExportCustomerBankAccount {
+  id                  String         @id @default(uuid())
+  partyId             String         @map("party_id")
+  party               BusinessParty  @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  bankName            String         @map("bank_name")
+  swiftBic            String?        @map("swift_bic")
+  iban                String?
+  accountNumberMasked String?        @map("account_number_masked")
+  routingNumber       String?        @map("routing_number")
+  currency            String         @default("USD")
+  countryId           String?        @map("country_id")
+  country             ExportCountry? @relation(fields: [countryId], references: [id])
+  isVerified          Boolean        @default(false) @map("is_verified")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_customer_bank_accounts")
+}
+
+model ExportRfq {
+  id                 String          @id @default(uuid())
+  rfqNumber          String          @unique @map("rfq_number")
+  partyId            String          @map("party_id")
+  party              BusinessParty   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  countryId          String?         @map("country_id")
+  country            ExportCountry?  @relation(fields: [countryId], references: [id])
+  incotermId         String?         @map("incoterm_id")
+  incoterm           ExportIncoterm? @relation(fields: [incotermId], references: [id])
+  destinationPortId  String?         @map("destination_port_id")
+  destinationPort    ExportPort?     @relation(fields: [destinationPortId], references: [id])
+  targetDeliveryDate DateTime?       @map("target_delivery_date") @db.Date
+  currency           String          @default("USD")
+  estimatedValue     Decimal         @default(0) @map("estimated_value") @db.Decimal(14, 2)
+  status             String          @default("RECEIVED")
+  notes              String?
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  items              ExportRfqItem[]
+  quotations         ExportQuotation[]
+
+  @@map("export_rfqs")
+}
+
+model ExportRfqItem {
+  id              String    @id @default(uuid())
+  rfqId           String    @map("rfq_id")
+  rfq             ExportRfq @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  productId       String?   @map("product_id")
+  product         Product?  @relation(fields: [productId], references: [id])
+  itemDescription String    @map("item_description")
+  quantity        Decimal   @db.Decimal(10, 2)
+  unit            String    @default("NOS")
+  targetRate      Decimal?  @map("target_rate") @db.Decimal(12, 2)
+  notes           String?
+
+  @@map("export_rfq_items")
+}
+
+model ExportQuotation {
+  id                  String                @id @default(uuid())
+  quotationNumber     String                @unique @map("quotation_number")
+  rfqId               String?               @map("rfq_id")
+  rfq                 ExportRfq?            @relation(fields: [rfqId], references: [id])
+  partyId             String                @map("party_id")
+  party               BusinessParty         @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  companyProfileId    String?               @map("company_profile_id")
+  companyProfile      CompanyProfile?       @relation(fields: [companyProfileId], references: [id])
+  countryId           String?               @map("country_id")
+  country             ExportCountry?        @relation(fields: [countryId], references: [id])
+  incotermId          String?               @map("incoterm_id")
+  incoterm            ExportIncoterm?       @relation(fields: [incotermId], references: [id])
+  portOfLoadingId     String?               @map("port_of_loading_id")
+  portOfLoading       ExportPort?           @relation("QuotePortOfLoading", fields: [portOfLoadingId], references: [id])
+  portOfDestinationId String?               @map("port_of_destination_id")
+  portOfDestination   ExportPort?           @relation("QuotePortOfDestination", fields: [portOfDestinationId], references: [id])
+  currency            String                @default("USD")
+  exchangeRate        Decimal               @default(1.0000) @map("exchange_rate") @db.Decimal(12, 4)
+  subtotal            Decimal               @default(0) @db.Decimal(14, 2)
+  freightCharges      Decimal               @default(0) @map("freight_charges") @db.Decimal(14, 2)
+  insuranceCharges    Decimal               @default(0) @map("insurance_charges") @db.Decimal(14, 2)
+  otherCharges        Decimal               @default(0) @map("other_charges") @db.Decimal(14, 2)
+  totalAmount         Decimal               @default(0) @map("total_amount") @db.Decimal(14, 2)
+  fobValue            Decimal               @default(0) @map("fob_value") @db.Decimal(14, 2)
+  validUntil          DateTime?             @map("valid_until") @db.Date
+  paymentTerms        String?               @map("payment_terms")
+  deliveryTerms       String?               @map("delivery_terms")
+  status              String                @default("DRAFT")
+  notes               String?
+  createdById         String?               @map("created_by_id")
+  createdBy           User?                 @relation("ExportQuoteCreatedBy", fields: [createdById], references: [id])
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @default(now()) @updatedAt @map("updated_at")
+
+  items               ExportQuotationItem[]
+
+  @@map("export_quotations")
+}
+
+model ExportQuotationItem {
+  id            String          @id @default(uuid())
+  quotationId   String          @map("quotation_id")
+  quotation     ExportQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  productId     String?         @map("product_id")
+  product       Product?        @relation(fields: [productId], references: [id])
+  hsCodeId      String?         @map("hs_code_id")
+  hsCode        ExportHsCode?   @relation(fields: [hsCodeId], references: [id])
+  itemCode      String?         @map("item_code")
+  description   String
+  quantity      Decimal         @db.Decimal(10, 2)
+  unit          String          @default("NOS")
+  unitRate      Decimal         @map("unit_rate") @db.Decimal(12, 2)
+  totalAmount   Decimal         @map("total_amount") @db.Decimal(14, 2)
+  cbm           Decimal         @default(0) @db.Decimal(8, 4)
+  grossWeightKg Decimal         @default(0) @map("gross_weight_kg") @db.Decimal(10, 2)
+  netWeightKg   Decimal         @default(0) @map("net_weight_kg") @db.Decimal(10, 2)
+
+  @@map("export_quotation_items")
+}
+
+model ExportOrder {
+  id                      String                   @id @default(uuid())
+  exportOrderNumber       String                   @unique @map("export_order_number")
+  salesOrderId            String?                  @unique @map("sales_order_id")
+  salesOrder              SalesOrder?              @relation(fields: [salesOrderId], references: [id])
+  partyId                 String                   @map("party_id")
+  party                   BusinessParty            @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  companyProfileId        String?                  @map("company_profile_id")
+  companyProfile          CompanyProfile?          @relation(fields: [companyProfileId], references: [id])
+  countryId               String?                  @map("country_id")
+  country                 ExportCountry?           @relation(fields: [countryId], references: [id])
+  incotermId              String?                  @map("incoterm_id")
+  incoterm                ExportIncoterm?          @relation(fields: [incotermId], references: [id])
+  portOfLoadingId         String?                  @map("port_of_loading_id")
+  portOfLoading           ExportPort?              @relation("OrderPortOfLoading", fields: [portOfLoadingId], references: [id])
+  portOfDestinationId     String?                  @map("port_of_destination_id")
+  portOfDestination       ExportPort?              @relation("OrderPortOfDestination", fields: [portOfDestinationId], references: [id])
+  currency                String                   @default("USD")
+  exchangeRate            Decimal                  @default(1.0000) @map("exchange_rate") @db.Decimal(12, 4)
+  subtotal                Decimal                  @default(0) @db.Decimal(14, 2)
+  freightCost             Decimal                  @default(0) @map("freight_cost") @db.Decimal(14, 2)
+  insuranceCost           Decimal                  @default(0) @map("insurance_cost") @db.Decimal(14, 2)
+  totalOrderValue         Decimal                  @default(0) @map("total_order_value") @db.Decimal(14, 2)
+  fobValue                Decimal                  @default(0) @map("fob_value") @db.Decimal(14, 2)
+  commercialInvoiceNumber String?                  @map("commercial_invoice_number")
+  buyerPoNumber           String?                  @map("buyer_po_number")
+  buyerPoDate             DateTime?                @map("buyer_po_date") @db.Date
+  paymentMethod           String                   @default("ADVANCE_TT") @map("payment_method")
+  stage                   String                   @default("ORDER_CONFIRMED")
+  status                  String                   @default("ACTIVE")
+  createdById             String?                  @map("created_by_id")
+  createdBy               User?                    @relation("ExportOrderCreatedBy", fields: [createdById], references: [id])
+  notes                   String?
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @default(now()) @updatedAt @map("updated_at")
+
+  paymentMilestones       ExportPaymentMilestone[]
+  lcs                     ExportLc[]
+  shipments               ExportShipment[]
+  customsRecords          ExportCustomsRecord[]
+  shippingBills           ExportShippingBill[]
+  complianceChecks        ExportComplianceCheck[]
+  certificates            ExportCertificate[]
+  expenses                ExportExpense[]
+  bankRealizations        ExportBankRealization[]
+  emailLogs               ExportEmailLog[]
+
+  @@map("export_orders")
+}
+
+model ExportPaymentMilestone {
+  id            String      @id @default(uuid())
+  exportOrderId String      @map("export_order_id")
+  exportOrder   ExportOrder @relation(fields: [exportOrderId], references: [id], onDelete: Cascade)
+  milestoneName String      @map("milestone_name")
+  percentage    Decimal     @db.Decimal(5, 2)
+  amount        Decimal     @db.Decimal(14, 2)
+  currency      String      @default("USD")
+  dueDate       DateTime?   @map("due_date") @db.Date
+  isPaid        Boolean     @default(false) @map("is_paid")
+  paidAmount    Decimal     @default(0) @map("paid_amount") @db.Decimal(14, 2)
+  paidDate      DateTime?   @map("paid_date") @db.Date
+  paymentId     String?     @map("payment_id")
+  payment       Payment?    @relation(fields: [paymentId], references: [id])
+  notes         String?
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_payment_milestones")
+}
+
+model ExportLc {
+  id                  String      @id @default(uuid())
+  exportOrderId       String      @map("export_order_id")
+  exportOrder         ExportOrder @relation(fields: [exportOrderId], references: [id], onDelete: Cascade)
+  lcNumber            String      @map("lc_number")
+  issuingBank         String      @map("issuing_bank")
+  advisingBank        String?     @map("advising_bank")
+  amount              Decimal     @db.Decimal(14, 2)
+  currency            String      @default("USD")
+  issueDate           DateTime?   @map("issue_date") @db.Date
+  expiryDate          DateTime?   @map("expiry_date") @db.Date
+  latestShipmentDate  DateTime?   @map("latest_shipment_date") @db.Date
+  tolerancePercentage Decimal     @default(0) @map("tolerance_percentage") @db.Decimal(5, 2)
+  lcType              String      @default("IRREVOCABLE") @map("lc_type")
+  status              String      @default("RECEIVED")
+  discrepancyNotes    String?     @map("discrepancy_notes")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_lcs")
+}
+
+model ExportShipment {
+  id                  String                @id @default(uuid())
+  shipmentNumber      String                @unique @map("shipment_number")
+  exportOrderId       String                @map("export_order_id")
+  exportOrder         ExportOrder           @relation(fields: [exportOrderId], references: [id], onDelete: Cascade)
+  shippingLine        String?               @map("shipping_line")
+  forwarderPartnerId  String?               @map("forwarder_partner_id")
+  forwarderPartner    BusinessParty?        @relation("ForwarderShipments", fields: [forwarderPartnerId], references: [id])
+  bookingNumber       String?               @map("booking_number")
+  vesselName          String?               @map("vessel_name")
+  voyageNumber        String?               @map("voyage_number")
+  blAwbNumber         String?               @map("bl_awb_number")
+  blType              String                @default("ORIGINAL_BL") @map("bl_type")
+  blDate              DateTime?             @map("bl_date") @db.Date
+  etd                 DateTime?             @db.Date
+  eta                 DateTime?             @db.Date
+  actualDeparture     DateTime?             @map("actual_departure") @db.Date
+  actualArrival       DateTime?             @map("actual_arrival") @db.Date
+  portOfLoadingId     String?               @map("port_of_loading_id")
+  portOfLoading       ExportPort?           @relation("ShipmentPortOfLoading", fields: [portOfLoadingId], references: [id])
+  portOfDestinationId String?               @map("port_of_destination_id")
+  portOfDestination   ExportPort?           @relation("ShipmentPortOfDestination", fields: [portOfDestinationId], references: [id])
+  freightTerm         String                @default("PREPAID") @map("freight_term")
+  status              String                @default("BOOKED")
+  notes               String?
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @default(now()) @updatedAt @map("updated_at")
+
+  containers          ExportContainer[]
+  shippingEvents      ExportShippingEvent[]
+  expenses            ExportExpense[]
+
+  @@map("export_shipments")
+}
+
+model ExportContainer {
+  id              String                @id @default(uuid())
+  shipmentId      String                @map("shipment_id")
+  shipment        ExportShipment        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  containerNumber String                @map("container_number")
+  containerType   String                @default("40HC") @map("container_type")
+  sealNumber      String?               @map("seal_number")
+  tareWeightKg    Decimal               @default(0) @map("tare_weight_kg") @db.Decimal(10, 2)
+  payloadWeightKg Decimal               @default(0) @map("payload_weight_kg") @db.Decimal(10, 2)
+  grossWeightKg   Decimal               @default(0) @map("gross_weight_kg") @db.Decimal(10, 2)
+  cbm             Decimal               @default(0) @db.Decimal(8, 4)
+  stuffingDate    DateTime?             @map("stuffing_date") @db.Date
+  gateInDate      DateTime?             @map("gate_in_date") @db.Date
+  qrCodeId        String?               @map("qr_code_id")
+  qrCode          QrCode?               @relation(fields: [qrCodeId], references: [id])
+  status          String                @default("STUFFED")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @default(now()) @updatedAt @map("updated_at")
+
+  shippingEvents  ExportShippingEvent[]
+
+  @@map("export_containers")
+}
+
+model ExportShippingEvent {
+  id             String           @id @default(uuid())
+  shipmentId     String           @map("shipment_id")
+  shipment       ExportShipment   @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  containerId    String?          @map("container_id")
+  container      ExportContainer? @relation(fields: [containerId], references: [id])
+  eventType      String           @map("event_type")
+  eventLocation  String?          @map("event_location")
+  eventTimestamp DateTime         @default(now()) @map("event_timestamp")
+  source         String           @default("PORT_AGENT")
+  notes          String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  @@map("export_shipping_events")
+}
+
+model ExportCustomsRecord {
+  id                  String               @id @default(uuid())
+  exportOrderId       String               @map("export_order_id")
+  exportOrder         ExportOrder          @relation(fields: [exportOrderId], references: [id], onDelete: Cascade)
+  countryId           String?              @map("country_id")
+  country             ExportCountry?       @relation(fields: [countryId], references: [id])
+  filingType          String               @default("EXPORT_CLEARANCE") @map("filing_type")
+  chaPartnerId        String?              @map("cha_partner_id")
+  chaPartner          BusinessParty?       @relation("ChaCustomsRecords", fields: [chaPartnerId], references: [id])
+  status              String               @default("DRAFT")
+  assessmentDate      DateTime?            @map("assessment_date") @db.Date
+  examDate            DateTime?            @map("exam_date") @db.Date
+  letExportOrderDate  DateTime?            @map("let_export_order_date") @db.Date
+  customsOfficerNotes String?              @map("customs_officer_notes")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at")
+
+  shippingBills       ExportShippingBill[]
+
+  @@map("export_customs_records")
+}
+
+model ExportShippingBill {
+  id              String               @id @default(uuid())
+  exportOrderId   String               @map("export_order_id")
+  exportOrder     ExportOrder          @relation(fields: [exportOrderId], references: [id], onDelete: Cascade)
+  customsRecordId String?              @map("customs_record_id")
+  customsRecord   ExportCustomsRecord? @relation(fields: [customsRecordId], references: [id])
+  sbNumber        String               @map("sb_number")
+  sbDate          DateTime?            @map("sb_date") @db.Date
+  portCode        String?              @map("port_code")
+  fobValueInr     Decimal              @default(0) @map("fob_value_inr") @db.Decimal(14, 2)
+  drawbackClaimed Decimal              @default(0) @map("drawback_claimed") @db.Decimal(12, 2)
+  rodtepClaimed   Decimal              @default(0) @map("rodtep_claimed") @db.Decimal(12, 2)
+  leoDate         DateTime?            @map("leo_date") @db.Date
+  status          String               @default("FILED")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_shipping_bills")
+}
+
+model ExportComplianceCheck {
+  id            String         @id @default(uuid())
+  exportOrderId String         @map("export_order_id")
+  exportOrder   ExportOrder    @relation(fields: [exportOrderId], references: [id], onDelete: Cascade)
+  partyId       String?        @map("party_id")
+  party         BusinessParty? @relation(fields: [partyId], references: [id])
+  screeningType String         @default("SANCTIONS") @map("screening_type")
+  status        String         @default("PASSED")
+  matchedList   String?        @map("matched_list")
+  riskScore     Decimal        @default(0) @map("risk_score") @db.Decimal(5, 2)
+  reviewedById  String?        @map("reviewed_by_id")
+  reviewedBy    User?          @relation("ComplianceReviewedBy", fields: [reviewedById], references: [id])
+  reviewNotes   String?        @map("review_notes")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_compliance_checks")
+}
+
+model ExportCertificate {
+  id                String      @id @default(uuid())
+  exportOrderId     String      @map("export_order_id")
+  exportOrder       ExportOrder @relation(fields: [exportOrderId], references: [id], onDelete: Cascade)
+  certificateType   String      @map("certificate_type")
+  certificateNumber String?     @map("certificate_number")
+  issuingAuthority  String?     @map("issuing_authority")
+  issueDate         DateTime?   @map("issue_date") @db.Date
+  expiryDate        DateTime?   @map("expiry_date") @db.Date
+  fileUrl           String?     @map("file_url")
+  status            String      @default("ISSUED")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_certificates")
+}
+
+model ExportExpense {
+  id            String          @id @default(uuid())
+  exportOrderId String          @map("export_order_id")
+  exportOrder   ExportOrder     @relation(fields: [exportOrderId], references: [id], onDelete: Cascade)
+  shipmentId    String?         @map("shipment_id")
+  shipment      ExportShipment? @relation(fields: [shipmentId], references: [id])
+  expenseType   String          @map("expense_type")
+  vendorId      String?         @map("vendor_id")
+  vendor        BusinessParty?  @relation("VendorExportExpenses", fields: [vendorId], references: [id])
+  amount        Decimal         @db.Decimal(14, 2)
+  currency      String          @default("INR")
+  exchangeRate  Decimal         @default(1.0000) @map("exchange_rate") @db.Decimal(12, 4)
+  amountInr     Decimal         @map("amount_inr") @db.Decimal(14, 2)
+  invoiceNumber String?         @map("invoice_number")
+  isPaid        Boolean         @default(false) @map("is_paid")
+  paidDate      DateTime?       @map("paid_date") @db.Date
+  notes         String?
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_expenses")
+}
+
+model ExportBankRealization {
+  id                String        @id @default(uuid())
+  exportOrderId     String        @map("export_order_id")
+  exportOrder       ExportOrder   @relation(fields: [exportOrderId], references: [id], onDelete: Cascade)
+  invoiceNumber     String?       @map("invoice_number")
+  paymentId         String?       @map("payment_id")
+  payment           Payment?      @relation(fields: [paymentId], references: [id])
+  realizedAmount    Decimal       @map("realized_amount") @db.Decimal(14, 2)
+  currency          String        @default("USD")
+  realizedAmountInr Decimal       @map("realized_amount_inr") @db.Decimal(14, 2)
+  realizationDate   DateTime?     @map("realization_date") @db.Date
+  adBankCode        String?       @map("ad_bank_code")
+  adBankName        String?       @map("ad_bank_name")
+  bankRefNumber     String?       @map("bank_ref_number")
+  status            String        @default("PENDING")
+  notes             String?
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  irms              ExportIrm[]
+  ebrcs             ExportEbrc[]
+
+  @@map("export_bank_realizations")
+}
+
+model ExportIrm {
+  id                String                @id @default(uuid())
+  bankRealizationId String                @map("bank_realization_id")
+  bankRealization   ExportBankRealization @relation(fields: [bankRealizationId], references: [id], onDelete: Cascade)
+  irmNumber         String                @unique @map("irm_number")
+  irmDate           DateTime?             @map("irm_date") @db.Date
+  amount            Decimal               @db.Decimal(14, 2)
+  currency          String                @default("USD")
+  remitterName      String?               @map("remitter_name")
+  swiftRef          String?               @map("swift_ref")
+  createdAt         DateTime              @default(now()) @map("created_at")
+
+  @@map("export_irms")
+}
+
+model ExportEbrc {
+  id                String                @id @default(uuid())
+  bankRealizationId String                @map("bank_realization_id")
+  bankRealization   ExportBankRealization @relation(fields: [bankRealizationId], references: [id], onDelete: Cascade)
+  ebrcNumber        String                @unique @map("ebrc_number")
+  ebrcDate          DateTime?             @map("ebrc_date") @db.Date
+  dgftStatus        String                @default("GENERATED") @map("dgft_status")
+  fobValueRealized  Decimal               @map("fob_value_realized") @db.Decimal(14, 2)
+  createdAt         DateTime              @default(now()) @map("created_at")
+
+  @@map("export_ebrcs")
+}
+
+model ExportDocument {
+  id           String    @id @default(uuid())
+  entityType   String    @map("entity_type")
+  entityId     String    @map("entity_id")
+  documentType String    @map("document_type")
+  title        String
+  fileUrl      String    @map("file_url")
+  fileSize     Int       @default(0) @map("file_size")
+  version      Int       @default(1)
+  status       String    @default("ACTIVE")
+  uploadedById String?   @map("uploaded_by_id")
+  uploadedBy   User?     @relation("ExportDocUploadedBy", fields: [uploadedById], references: [id])
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_documents")
+}
+
+model ExportTask {
+  id               String    @id @default(uuid())
+  entityType       String    @map("entity_type")
+  entityId         String    @map("entity_id")
+  title            String
+  department       String    @default("EXPORT_OPS")
+  priority         String    @default("MEDIUM")
+  dueDate          DateTime? @map("due_date") @db.Date
+  slaHours         Int       @default(24) @map("sla_hours")
+  status           String    @default("PENDING")
+  assignedToUserId String?   @map("assigned_to_user_id")
+  assignedToUser   User?     @relation("ExportTaskAssignedTo", fields: [assignedToUserId], references: [id])
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_tasks")
+}
+
+model ExportEmailTemplate {
+  id               String   @id @default(uuid())
+  templateCode     String   @unique @map("template_code")
+  name             String
+  subjectTemplate  String   @map("subject_template")
+  bodyTemplateHtml String   @map("body_template_html")
+  variables        Json     @default("[]")
+  isDefault        Boolean  @default(true) @map("is_default")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("export_email_templates")
+}
+
+model ExportEmailLog {
+  id                String         @id @default(uuid())
+  exportOrderId     String?        @map("export_order_id")
+  exportOrder       ExportOrder?   @relation(fields: [exportOrderId], references: [id])
+  partyId           String?        @map("party_id")
+  party             BusinessParty? @relation(fields: [partyId], references: [id])
+  recipientEmail    String         @map("recipient_email")
+  ccEmails          String?        @map("cc_emails")
+  bccEmails         String?        @map("bcc_emails")
+  subject           String
+  bodyHtml          String         @map("body_html")
+  templateCode      String?        @map("template_code")
+  status            String         @default("SENT")
+  provider          String         @default("MOCK")
+  providerMessageId String?        @map("provider_message_id")
+  errorMessage      String?        @map("error_message")
+  attachments       Json           @default("[]")
+  sentByUserId      String?        @map("sent_by_user_id")
+  sentByUser        User?          @relation("ExportEmailSentBy", fields: [sentByUserId], references: [id])
+  sentAt            DateTime       @default(now()) @map("sent_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
+
+  @@map("export_email_logs")
+}
+
