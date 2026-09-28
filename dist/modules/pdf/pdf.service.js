@@ -7,6 +7,7 @@ exports.pdfService = void 0;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const numberToWords_1 = require("../utils/numberToWords");
+const defaultLogo_1 = require("./defaultLogo");
 let cachedLogoBase64 = null;
 function resolveCompanyLogoDataUri(providedUrl) {
     if (providedUrl && (providedUrl.startsWith('data:') || providedUrl.startsWith('http://') || providedUrl.startsWith('https://'))) {
@@ -16,6 +17,9 @@ function resolveCompanyLogoDataUri(providedUrl) {
         return cachedLogoBase64;
     try {
         const candidatePaths = [
+            path_1.default.resolve(__dirname, '../../../assets/pacific_logo.png'),
+            path_1.default.resolve(__dirname, '../../assets/pacific_logo.png'),
+            path_1.default.resolve(process.cwd(), 'assets/pacific_logo.png'),
             path_1.default.resolve(process.cwd(), '../PACIFIC-Admin/public/pacific_logo.png'),
             'd:/PACIFIC-Admin/public/pacific_logo.png',
             path_1.default.resolve(__dirname, '../../../../PACIFIC-Admin/public/pacific_logo.png'),
@@ -31,7 +35,7 @@ function resolveCompanyLogoDataUri(providedUrl) {
     catch {
         // fallback
     }
-    return providedUrl || '';
+    return defaultLogo_1.DEFAULT_PACIFIC_LOGO_DATA_URI;
 }
 exports.pdfService = {
     /**
@@ -333,8 +337,9 @@ exports.pdfService = {
         ];
         const termsToDisplay = Array.isArray(data.terms) && data.terms.length > 0 ? data.terms : defaultTerms;
         const termsList = termsToDisplay.map((t) => `<li>${t}</li>`).join('');
-        const rawAccessoriesText = data.accessoriesText ||
-            'Standard SS 304 Grade Hardware Package: Gravity Hinges with Nylon Bushing, Coat Hook with Rubber Buffer, Thumb-turn Indicator Lock (Red/White Vacant/Occupied display), Privacy Latch, SS Support Legs (100mm/150mm ground clearance), Top Rail & Wall U-Channels with SS 304 Fasteners.';
+        const rawAccessoriesText = data.accessoriesText && !data.accessoriesText.includes('Standard SS 304 Grade Hardware Package')
+            ? data.accessoriesText
+            : '';
         const accessoriesText = rawAccessoriesText.replace(/\[SS Hardware\]/gi, '').replace(/\s{2,}/g, ' ').trim();
         return `<!DOCTYPE html>
 <html lang="en">
@@ -480,9 +485,19 @@ exports.pdfService = {
       body {
         margin: 0;
         padding: 0;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
       }
       .container {
         border: 1px solid #000000;
+      }
+      img {
+        max-width: 100% !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
       }
     }
   </style>
@@ -493,7 +508,7 @@ exports.pdfService = {
     <table class="header-table">
       <tr>
         <td style="width: 50%; vertical-align: top;">
-          ${logoSrc ? `<img src="${logoSrc}" height="64" alt="Logo" style="margin-bottom: 4px; display: block; object-fit: contain; max-width: 220px;" />` : ''}
+          ${logoSrc ? `<img src="${logoSrc}" height="64" alt="Logo" style="margin-bottom: 4px; display: block; object-fit: contain; max-width: 220px; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;" />` : ''}
           <div style="font-size: 15px; letter-spacing: 0.3px; font-weight: bold;">${data.companyName}</div>
           <div style="font-size: 10px; margin: 2px 0;">${data.companyAddress}${data.companyAddress && !data.companyAddress.includes('110093') ? ', PIN: 110093' : ''}</div>
           <div style="font-size: 10px;">
@@ -514,8 +529,8 @@ exports.pdfService = {
         <td style="width: 16%; vertical-align: top; text-align: right; padding-left: 6px;">
           ${data.qrDataUrl ? `
             <div style="display: inline-block; text-align: center;">
-              <img src="${data.qrDataUrl}" width="75" height="75" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important;" />
-              <div style="font-size: 8px; text-transform: uppercase; margin-top: 2px;">Verify Document</div>
+              <img src="${data.qrDataUrl}" width="75" height="75" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; image-rendering: -webkit-optimize-contrast; image-rendering: pixelated;" />
+              <div style="font-size: 8px; text-transform: uppercase; margin-top: 2px; font-weight: bold; letter-spacing: 0.3px;">Verify Document</div>
             </div>
           ` : ''}
         </td>
@@ -1560,8 +1575,9 @@ exports.pdfService = {
         ];
         const termsToDisplay = Array.isArray(data.terms) && data.terms.length > 0 ? data.terms : defaultTerms;
         const termsList = termsToDisplay.map((t) => `<li>${t}</li>`).join('');
-        const rawAccessoriesText = data.accessoriesText ||
-            'Standard SS 304 Grade Hardware Package: Gravity Hinges with Nylon Bushing, Coat Hook with Rubber Buffer, Thumb-turn Indicator Lock (Red/White Vacant/Occupied display), Privacy Latch, SS Support Legs (100mm/150mm ground clearance), Top Rail & Wall U-Channels with SS 304 Fasteners.';
+        const rawAccessoriesText = data.accessoriesText && !data.accessoriesText.includes('Standard SS 304 Grade Hardware Package')
+            ? data.accessoriesText
+            : '';
         const accessoriesText = rawAccessoriesText.replace(/\[SS Hardware\]/gi, '').replace(/\s{2,}/g, ' ').trim();
         return `<!DOCTYPE html>
 <html lang="en">

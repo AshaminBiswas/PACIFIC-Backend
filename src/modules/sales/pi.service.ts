@@ -1,4 +1,6 @@
 import { prisma } from '../../config/database';
+import { env } from '../../config/env';
+import QRCode from 'qrcode';
 import { sequenceService } from '../sequences/sequence.service';
 import { calculateGstTax } from '../tax/tax.engine';
 import { qrService } from '../qr/qr.service';
@@ -519,18 +521,37 @@ export const piService = {
 
     const shipToParty = pi.parties.find((p) => p.partyRole === 'SHIP_TO') || billToParty;
 
-    const qr = await qrService.getOrCreateDocumentQr({
-      documentType: 'PI',
-      documentId: id,
-      documentNumber: pi.piNumber,
-      companyName: pi.companyProfile.companyName,
-      partyName: billToParty?.partyName || pi.customer.legalName,
-      date: pi.piDate.toISOString(),
-      totalAmount: Number(pi.grandTotal),
-      currency: pi.currency || 'INR',
-      status: pi.status,
-    });
-    const qrDataUrl = qr.qrDataUrl ? (qr.qrDataUrl.startsWith('data:') ? qr.qrDataUrl : await fetchImageAsDataUri(qr.qrDataUrl)) : undefined;
+    let qrDataUrl: string | undefined = undefined;
+    try {
+      const qr = await qrService.getOrCreateDocumentQr({
+        documentType: 'PI',
+        documentId: id,
+        documentNumber: pi.piNumber,
+        companyName: pi.companyProfile.companyName,
+        partyName: billToParty?.partyName || pi.customer.legalName,
+        date: pi.piDate.toISOString(),
+        totalAmount: Number(pi.grandTotal),
+        currency: pi.currency || 'INR',
+        status: pi.status,
+      });
+      qrDataUrl = qr.qrDataUrl ? (qr.qrDataUrl.startsWith('data:') ? qr.qrDataUrl : await fetchImageAsDataUri(qr.qrDataUrl)) : undefined;
+    } catch (qrErr) {
+      console.error('Failed to getOrCreateDocumentQr for PI:', qrErr);
+    }
+
+    if (!qrDataUrl || !qrDataUrl.startsWith('data:')) {
+      try {
+        const fallbackVerifyUrl = `${env.frontend.adminUrl || 'https://pacific-admin-one.vercel.app'}/verify/${pi.piNumber}`;
+        qrDataUrl = await QRCode.toDataURL(fallbackVerifyUrl, {
+          margin: 1,
+          width: 150,
+          errorCorrectionLevel: 'M',
+          color: { dark: '#000000', light: '#ffffff' },
+        });
+      } catch (fallbackErr) {
+        console.error('Failed to generate fallback QR code data URI:', fallbackErr);
+      }
+    }
 
     const signatories = (pi.companyProfile as any)?.signatories || [];
     const authSignatory =

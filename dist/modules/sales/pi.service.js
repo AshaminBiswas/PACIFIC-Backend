@@ -1,7 +1,12 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.piService = void 0;
 const database_1 = require("../../config/database");
+const env_1 = require("../../config/env");
+const qrcode_1 = __importDefault(require("qrcode"));
 const sequence_service_1 = require("../sequences/sequence.service");
 const tax_engine_1 = require("../tax/tax.engine");
 const qr_service_1 = require("../qr/qr.service");
@@ -489,18 +494,38 @@ exports.piService = {
             email: pi.customer.email,
         };
         const shipToParty = pi.parties.find((p) => p.partyRole === 'SHIP_TO') || billToParty;
-        const qr = await qr_service_1.qrService.getOrCreateDocumentQr({
-            documentType: 'PI',
-            documentId: id,
-            documentNumber: pi.piNumber,
-            companyName: pi.companyProfile.companyName,
-            partyName: billToParty?.partyName || pi.customer.legalName,
-            date: pi.piDate.toISOString(),
-            totalAmount: Number(pi.grandTotal),
-            currency: pi.currency || 'INR',
-            status: pi.status,
-        });
-        const qrDataUrl = qr.qrDataUrl ? (qr.qrDataUrl.startsWith('data:') ? qr.qrDataUrl : await fetchImageAsDataUri(qr.qrDataUrl)) : undefined;
+        let qrDataUrl = undefined;
+        try {
+            const qr = await qr_service_1.qrService.getOrCreateDocumentQr({
+                documentType: 'PI',
+                documentId: id,
+                documentNumber: pi.piNumber,
+                companyName: pi.companyProfile.companyName,
+                partyName: billToParty?.partyName || pi.customer.legalName,
+                date: pi.piDate.toISOString(),
+                totalAmount: Number(pi.grandTotal),
+                currency: pi.currency || 'INR',
+                status: pi.status,
+            });
+            qrDataUrl = qr.qrDataUrl ? (qr.qrDataUrl.startsWith('data:') ? qr.qrDataUrl : await fetchImageAsDataUri(qr.qrDataUrl)) : undefined;
+        }
+        catch (qrErr) {
+            console.error('Failed to getOrCreateDocumentQr for PI:', qrErr);
+        }
+        if (!qrDataUrl || !qrDataUrl.startsWith('data:')) {
+            try {
+                const fallbackVerifyUrl = `${env_1.env.frontend.adminUrl || 'https://pacific-admin-one.vercel.app'}/verify/${pi.piNumber}`;
+                qrDataUrl = await qrcode_1.default.toDataURL(fallbackVerifyUrl, {
+                    margin: 1,
+                    width: 150,
+                    errorCorrectionLevel: 'M',
+                    color: { dark: '#000000', light: '#ffffff' },
+                });
+            }
+            catch (fallbackErr) {
+                console.error('Failed to generate fallback QR code data URI:', fallbackErr);
+            }
+        }
         const signatories = pi.companyProfile?.signatories || [];
         const authSignatory = signatories.find((s) => s.isDefault && s.signatureUrl) ||
             signatories.find((s) => s.signatureUrl) ||
