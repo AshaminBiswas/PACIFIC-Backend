@@ -123,7 +123,52 @@ exports.piService = {
             throw new Error('No active company profile found. Please configure company profile.');
         }
         companyProfileId = company.id;
-        // 2. Generate official sequential number starting with PPS (e.g. PPS/PI/2026-27/0001)
+        // 2. Resolve Customer Party (business_parties)
+        let customerId = data.customerId;
+        if (customerId) {
+            const party = await database_1.prisma.businessParty.findUnique({ where: { id: customerId } });
+            if (!party)
+                customerId = null;
+        }
+        if (!customerId) {
+            const partyName = data.billTo?.partyName?.trim() || 'Direct Customer Party';
+            const gstin = data.billTo?.gstin ? data.billTo.gstin.toUpperCase().trim() : undefined;
+            let matchedParty = gstin ? await database_1.prisma.businessParty.findFirst({ where: { gstin } }) : null;
+            if (!matchedParty && partyName) {
+                matchedParty = await database_1.prisma.businessParty.findFirst({
+                    where: { legalName: { equals: partyName, mode: 'insensitive' } },
+                });
+            }
+            if (!matchedParty) {
+                matchedParty = await database_1.prisma.businessParty.create({
+                    data: {
+                        legalName: partyName,
+                        tradeName: partyName,
+                        partyType: 'CUSTOMER',
+                        gstin: gstin || null,
+                        pan: gstin && gstin.length >= 12 ? gstin.slice(2, 12) : null,
+                        phone: data.billTo?.phone || null,
+                        email: data.billTo?.email || null,
+                        companyProfileId,
+                    },
+                });
+            }
+            customerId = matchedParty.id;
+        }
+        // 3. Validate candidate product IDs against erp_products
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const candidateProductIds = rawItems
+            .map((it) => it.productId)
+            .filter((pid) => typeof pid === 'string' && pid.trim().length > 0);
+        const validProductMap = new Set();
+        if (candidateProductIds.length > 0) {
+            const dbProducts = await database_1.prisma.product.findMany({
+                where: { id: { in: candidateProductIds } },
+                select: { id: true },
+            });
+            dbProducts.forEach((p) => validProductMap.add(p.id));
+        }
+        // 4. Generate official sequential number starting with PPS (e.g. PPS/PI/2026-27/0001)
         let officialPiNumber = data.piNumber;
         if (!officialPiNumber || officialPiNumber.startsWith('DRAFT-')) {
             const seq = await sequence_service_1.sequenceService.getNextDocumentNumber(companyProfileId, 'PI');
@@ -132,12 +177,12 @@ exports.piService = {
         return database_1.prisma.$transaction(async (tx) => {
             const sellerStateCode = (company.stateCode || '07').trim();
             const posStateCode = (data.placeOfSupplyStateCode || sellerStateCode).trim();
-            // 3. Compute Tax Engine Totals on the server
+            // 5. Compute Tax Engine Totals on the server
             const taxResult = (0, tax_engine_1.calculateGstTax)({
                 sellerStateCode,
                 placeOfSupplyStateCode: posStateCode,
-                items: (data.items || []).map((it) => ({
-                    productId: it.productId,
+                items: rawItems.map((it) => ({
+                    productId: (it.productId && validProductMap.has(it.productId)) ? it.productId : null,
                     description: it.description,
                     quantity: Number(it.quantity) || 1,
                     rate: Number(it.rate) || 0,
@@ -146,9 +191,9 @@ exports.piService = {
                 freightAmount: Number(data.freightAmount) || 0,
                 isReverseCharge: Boolean(data.reverseCharge),
             });
-            // 4. Amount in words
+            // 6. Amount in words
             const words = (0, numberToWords_1.numberToWords)(taxResult.grandTotal, company.currency || 'INR');
-            // 5. Default Terms
+            // 7. Default Terms
             const defaultTerms = [
                 'Goods once sold will not be taken back or exchanged.',
                 'If the bill is not paid by the due date, interest will be charged at 18% per annum.',
@@ -157,13 +202,13 @@ exports.piService = {
                 'Subject to Delhi jurisdiction only.',
             ];
             const termsList = Array.isArray(data.terms) && data.terms.length > 0 ? data.terms : defaultTerms;
-            // 6. Create Proforma Invoice with official PPS number
+            // 8. Create Proforma Invoice with official PPS number
             const pi = await tx.proformaInvoice.create({
                 data: {
                     piNumber: officialPiNumber,
                     piDate: data.piDate ? new Date(data.piDate) : new Date(),
                     companyProfileId,
-                    customerId: data.customerId,
+                    customerId,
                     placeOfSupply: data.placeOfSupply || 'Delhi',
                     placeOfSupplyStateCode: posStateCode,
                     reverseCharge: Boolean(data.reverseCharge),
@@ -197,11 +242,11 @@ exports.piService = {
                     items: {
                         create: taxResult.items.map((it, idx) => ({
                             serialNumber: idx + 1,
-                            productId: it.productId,
+                            productId: (rawItems[idx]?.productId && validProductMap.has(rawItems[idx]?.productId)) ? rawItems[idx]?.productId : null,
                             description: it.description,
-                            hsnSac: data.items?.[idx]?.hsnSac || '9403',
+                            hsnSac: rawItems[idx]?.hsnSac || '9403',
                             quantity: it.quantity,
-                            unit: data.items?.[idx]?.unit || 'NOS',
+                            unit: rawItems[idx]?.unit || 'NOS',
                             rate: it.rate,
                             amount: it.amount,
                             gstRate: it.gstRate,
@@ -210,13 +255,13 @@ exports.piService = {
                             sgst: it.sgst,
                             igst: it.igst,
                             totalAmount: it.totalAmount,
-                            boardType: data.items?.[idx]?.boardType || null,
-                            boardThickness: data.items?.[idx]?.boardThickness || null,
-                            boardColor: data.items?.[idx]?.boardColor || null,
-                            cubicleSize: data.items?.[idx]?.cubicleSize || null,
-                            doorSize: data.items?.[idx]?.doorSize || null,
-                            overallHeight: data.items?.[idx]?.overallHeight || null,
-                            hardwarePackage: data.items?.[idx]?.hardwarePackage || null,
+                            boardType: rawItems[idx]?.boardType || null,
+                            boardThickness: rawItems[idx]?.boardThickness || null,
+                            boardColor: rawItems[idx]?.boardColor || null,
+                            cubicleSize: rawItems[idx]?.cubicleSize || null,
+                            doorSize: rawItems[idx]?.doorSize || null,
+                            overallHeight: rawItems[idx]?.overallHeight || null,
+                            hardwarePackage: rawItems[idx]?.hardwarePackage || null,
                         })),
                     },
                     taxSummary: {
@@ -566,6 +611,25 @@ exports.piService = {
     },
     async update(id, data, userId) {
         const existing = await this.getById(id);
+        // Validate customerId if provided
+        let customerIdToSet = existing.customerId;
+        if (data.customerId) {
+            const party = await database_1.prisma.businessParty.findUnique({ where: { id: data.customerId } });
+            if (party)
+                customerIdToSet = party.id;
+        }
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const candidateProductIds = rawItems
+            .map((it) => it.productId)
+            .filter((pid) => typeof pid === 'string' && pid.trim().length > 0);
+        const validProductMap = new Set();
+        if (candidateProductIds.length > 0) {
+            const dbProducts = await database_1.prisma.product.findMany({
+                where: { id: { in: candidateProductIds } },
+                select: { id: true },
+            });
+            dbProducts.forEach((p) => validProductMap.add(p.id));
+        }
         return database_1.prisma.$transaction(async (tx) => {
             let itemsUpdate = undefined;
             let taxSummaryUpdate = undefined;
@@ -585,8 +649,8 @@ exports.piService = {
                 const taxCalc = (0, tax_engine_1.calculateGstTax)({
                     sellerStateCode: originStateCode,
                     placeOfSupplyStateCode: destinationStateCode,
-                    items: data.items.map((it) => ({
-                        productId: it.productId,
+                    items: rawItems.map((it) => ({
+                        productId: (it.productId && validProductMap.has(it.productId)) ? it.productId : null,
                         description: it.description,
                         quantity: Number(it.quantity) || 1,
                         rate: Number(it.rate) || 0,
@@ -598,11 +662,11 @@ exports.piService = {
                 itemsUpdate = {
                     create: taxCalc.items.map((it, idx) => ({
                         serialNumber: idx + 1,
-                        productId: it.productId,
+                        productId: (rawItems[idx]?.productId && validProductMap.has(rawItems[idx]?.productId)) ? rawItems[idx]?.productId : null,
                         description: it.description,
-                        hsnSac: data.items[idx]?.hsnSac || '94032090',
+                        hsnSac: rawItems[idx]?.hsnSac || '94032090',
                         quantity: it.quantity,
-                        unit: data.items[idx]?.unit || 'NOS',
+                        unit: rawItems[idx]?.unit || 'NOS',
                         rate: it.rate,
                         taxableAmount: it.taxableAmount,
                         gstRate: it.gstRate,
@@ -611,13 +675,13 @@ exports.piService = {
                         igst: it.igst,
                         totalAmount: it.totalAmount,
                         amount: it.amount,
-                        boardType: data.items[idx]?.boardType || null,
-                        boardThickness: data.items[idx]?.boardThickness || null,
-                        boardColor: data.items[idx]?.boardColor || null,
-                        cubicleSize: data.items[idx]?.cubicleSize || null,
-                        doorSize: data.items[idx]?.doorSize || null,
-                        overallHeight: data.items[idx]?.overallHeight || null,
-                        hardwarePackage: data.items[idx]?.hardwarePackage || null,
+                        boardType: rawItems[idx]?.boardType || null,
+                        boardThickness: rawItems[idx]?.boardThickness || null,
+                        boardColor: rawItems[idx]?.boardColor || null,
+                        cubicleSize: rawItems[idx]?.cubicleSize || null,
+                        doorSize: rawItems[idx]?.doorSize || null,
+                        overallHeight: rawItems[idx]?.overallHeight || null,
+                        hardwarePackage: rawItems[idx]?.hardwarePackage || null,
                     })),
                 };
                 taxSummaryUpdate = {
@@ -642,6 +706,7 @@ exports.piService = {
             const updated = await tx.proformaInvoice.update({
                 where: { id },
                 data: {
+                    customerId: customerIdToSet,
                     placeOfSupply: data.placeOfSupply ?? existing.placeOfSupply,
                     placeOfSupplyStateCode: data.placeOfSupplyStateCode ?? existing.placeOfSupplyStateCode,
                     modeOfTransport: data.modeOfTransport ?? existing.modeOfTransport,
