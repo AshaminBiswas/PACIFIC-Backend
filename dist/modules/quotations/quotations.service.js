@@ -1,0 +1,936 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.quotationsService = void 0;
+const https_1 = __importDefault(require("https"));
+const http_1 = __importDefault(require("http"));
+const database_1 = require("../../config/database");
+const sequence_service_1 = require("../sequences/sequence.service");
+const numberToWords_1 = require("../utils/numberToWords");
+const pdf_service_1 = require("../pdf/pdf.service");
+const audit_service_1 = require("../audit/audit.service");
+const orders_service_1 = require("../orders/orders.service");
+const pi_service_1 = require("../sales/pi.service");
+const cache_1 = require("../../utils/cache");
+const qr_service_1 = require("../qr/qr.service");
+const email_service_1 = require("../../utils/email.service");
+const htmlToPdf_1 = require("../../utils/htmlToPdf");
+const uuid_1 = require("uuid");
+/** Fetches a remote image URL and converts it to a base64 data URI for offline embedding. */
+async function fetchImageAsDataUri(url) {
+    return new Promise((resolve) => {
+        try {
+            const client = url.startsWith('https://') ? https_1.default : http_1.default;
+            const req = client.get(url, { timeout: 5000 }, (res) => {
+                const chunks = [];
+                res.on('data', (chunk) => chunks.push(chunk));
+                res.on('end', () => {
+                    const contentType = res.headers['content-type'] || 'image/png';
+                    const b64 = Buffer.concat(chunks).toString('base64');
+                    resolve(`data:${contentType};base64,${b64}`);
+                });
+                res.on('error', () => resolve(url));
+            });
+            req.on('error', () => resolve(url));
+            req.on('timeout', () => { req.destroy(); resolve(url); });
+        }
+        catch {
+            resolve(url);
+        }
+    });
+}
+function formatQuotationOutput(q) {
+    if (!q)
+        return q;
+    return {
+        ...q,
+        quotationNumber: q.referenceNumber,
+        basicPrice: Number(q.basicPrice || 0),
+        installationCharge: Number(q.installationCharge || 0),
+        freightAmount: Number(q.freightAmount || 0),
+        gstRate: Number(q.gstRate || 0),
+        gstAmount: Number(q.gstAmount || 0),
+        grandTotal: Number(q.grandTotal || 0),
+        items: Array.isArray(q.items)
+            ? q.items.map((it) => ({
+                ...it,
+                quantity: Number(it.quantity || 0),
+                rate: Number(it.rate || 0),
+                unitPrice: Number(it.rate || 0),
+                amount: Number(it.amount || 0),
+                totalAmount: Number(it.amount || 0),
+                itemDescription: it.description,
+                boardType: it.boardType || it.customSpecsJson?.boardType || undefined,
+                hardwarePackage: it.hardwarePackage || it.customSpecsJson?.hardwarePackage || undefined,
+            }))
+            : q.items,
+        nextFollowupDate: q.nextFollowupDate || undefined,
+        followupStatus: q.followupStatus || 'PENDING',
+        lastFollowupDate: q.lastFollowupDate || undefined,
+        followupCount: Number(q.followupCount || 0),
+        followups: q.followups || undefined,
+    };
+}
+exports.quotationsService = {
+    async list(params) {
+        const page = Number(params?.page) || 1;
+        const limit = Number(params?.limit) || 20;
+        const skip = (page - 1) * limit;
+        const where = {};
+        if (params?.status)
+            where.status = params.status;
+        if (params?.customerId)
+            where.customerId = params.customerId;
+        if (params?.startDate || params?.endDate) {
+            where.date = {};
+            if (params.startDate)
+                where.date.gte = new Date(params.startDate);
+            if (params.endDate)
+                where.date.lte = new Date(params.endDate);
+        }
+        if (params?.search) {
+            where.OR = [
+                { referenceNumber: { contains: params.search, mode: 'insensitive' } },
+                { projectName: { contains: params.search, mode: 'insensitive' } },
+                { recipientName: { contains: params.search, mode: 'insensitive' } },
+                { recipientCompany: { contains: params.search, mode: 'insensitive' } },
+            ];
+        }
+        const [total, items] = await Promise.all([
+            database_1.prisma.salesQuotation.count({ where }),
+            database_1.prisma.salesQuotation.findMany({
+                where,
+                skip,
+                take: limit,
+                orderBy: { date: 'desc' },
+                include: {
+                    customer: true,
+                    issuingStaff: { select: { id: true, firstName: true, lastName: true, email: true } },
+                    items: true,
+                    followups: { orderBy: { createdAt: 'desc' }, take: 5 },
+                },
+            }),
+        ]);
+        return {
+            items: items.map(formatQuotationOutput),
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
+    },
+    async getById(id) {
+        const quote = await database_1.prisma.salesQuotation.findUnique({
+            where: { id },
+            include: {
+                customer: { include: { addresses: true, contacts: true } },
+                companyProfile: { include: { addresses: true, signatories: true } },
+                issuingStaff: { select: { id: true, firstName: true, lastName: true, email: true } },
+                items: { orderBy: { serialNumber: 'asc' } },
+                revisions: { orderBy: { revisionNumber: 'desc' } },
+                followups: { orderBy: { createdAt: 'desc' } },
+            },
+        });
+        if (!quote)
+            throw new Error('Sales Quotation not found');
+        return formatQuotationOutput(quote);
+    },
+    async create(data, userId) {
+        if (!data.customerId)
+            throw new Error('Customer is required');
+        if (!data.companyProfileId)
+            throw new Error('Company Profile is required');
+        if (!data.items || !Array.isArray(data.items) || data.items.length === 0) {
+            throw new Error('At least one quotation line item is required');
+        }
+        // Auto-resolve company profile or fallback
+        const company = await database_1.prisma.companyProfile.findUnique({ where: { id: data.companyProfileId } });
+        if (!company)
+            throw new Error('Valid Company Profile is required');
+        // Customer validation & default address
+        const customer = await database_1.prisma.businessParty.findUnique({
+            where: { id: data.customerId },
+            include: { addresses: true, contacts: true },
+        });
+        if (!customer)
+            throw new Error('Customer record not found');
+        // Sequence generation
+        const seq = await sequence_service_1.sequenceService.getNextDocumentNumber(company.id, 'QUOTATION');
+        const referenceNumber = seq.number;
+        // Calculations
+        const itemsData = (data.items || []).map((it, idx) => {
+            const qty = Number(it.quantity) || 1;
+            const rate = Number(it.rate ?? it.unitPrice ?? 0);
+            const amount = Number(it.amount ?? (qty * rate));
+            const description = it.description || it.itemDescription || 'Pacific Restroom Cubicle Partition';
+            return {
+                serialNumber: idx + 1,
+                productId: it.productId || null,
+                description,
+                unit: it.unit || 'NOS',
+                quantity: qty,
+                rate,
+                amount,
+                cubicleSize: it.cubicleSize || it.specifications || null,
+                boardColor: it.boardColor || null,
+                boardThickness: it.boardThickness || null,
+                doorSize: it.doorSize || null,
+                overallHeight: it.overallHeight || null,
+                customSpecsJson: (it.hardwarePackage || it.boardType)
+                    ? {
+                        hardwarePackage: it.hardwarePackage || null,
+                        boardType: it.boardType || null,
+                        ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
+                    }
+                    : (it.customSpecsJson || null),
+            };
+        });
+        const basicPrice = itemsData.reduce((sum, it) => sum + it.amount, 0);
+        const installationCharge = Number(data.installationCharge) || 0;
+        const freightAmount = Number(data.freightAmount) || 0;
+        const discountAmount = Number(data.discountAmount) || 0;
+        const isSezExempt = Boolean(data.isSezExempt ?? data.isSez);
+        const gstRate = isSezExempt ? 0 : Number(data.gstRate ?? 18);
+        const taxable = Math.max(0, basicPrice - discountAmount) + installationCharge + (data.freightTerms === 'Fixed' || (data.freightTerms === 'Extra as Actual / To pay' && freightAmount > 0) ? freightAmount : 0);
+        const gstAmount = isSezExempt ? 0 : Math.round((taxable * (gstRate / 100)) * 100) / 100;
+        const grandTotal = Math.round(taxable + gstAmount);
+        const currency = data.currency || company.currency || 'INR';
+        const amountInWords = (0, numberToWords_1.numberToWords)(grandTotal, currency);
+        const validityDays = Number(data.validityDays) || 30;
+        const date = data.date ? new Date(data.date) : new Date();
+        const validUntil = new Date(date.getTime() + validityDays * 24 * 60 * 60 * 1000);
+        const quotation = await database_1.prisma.salesQuotation.create({
+            data: {
+                referenceNumber,
+                revisionNumber: 1,
+                date,
+                companyProfileId: company.id,
+                customerId: customer.id,
+                issuingStaffId: data.issuingStaffId || userId || null,
+                createdById: userId || null,
+                recipientSalutation: data.recipientSalutation || 'Mr.',
+                recipientName: data.recipientName || customer.contacts?.[0]?.name || customer.legalName,
+                recipientCompany: data.recipientCompany || customer.tradeName || customer.legalName,
+                recipientAddress: data.recipientAddress || data.siteAddress || customer.addresses?.[0]?.addressLine1 || '',
+                recipientEmail: data.recipientEmail || customer.email || '',
+                recipientPhone: data.recipientPhone || customer.phone || '',
+                projectName: data.projectName || data.siteName || 'Restroom Cubicles Project',
+                subject: data.subject || 'Submission of Commercial Offer for Supply of Toilet Cubicles',
+                title: data.title || 'Quotation for Supply of Toilet Cubicles',
+                currency,
+                basicPrice,
+                installationCharge,
+                freightTerms: data.freightTerms || 'Extra as Actual / To pay',
+                freightAmount,
+                gstRate,
+                isSezExempt,
+                sezCertificateRef: data.sezCertificateRef || null,
+                gstAmount,
+                grandTotal,
+                amountInWords,
+                accessoriesText: data.accessoriesText || null,
+                warrantyText: data.warrantyText || 'We provide ten (10) years of warranty for partitions against any moisture-related defects and one (1) year warranty for workmanship and hardware against manufacturing defects.',
+                generalTerms: data.generalTerms || null,
+                otherTerms: data.otherTerms || null,
+                paymentTerms: data.paymentTerms || '50% Advance along with confirmed Purchase Order. Balance 50% prior to dispatch.',
+                deliveryTerms: data.deliveryTerms || '2-3 weeks from receipt of advance, approved shop drawings, and color confirmation.',
+                statutoryComplianceTerms: data.statutoryComplianceTerms || null,
+                validityDays,
+                validUntil,
+                status: 'DRAFT',
+                nextFollowupDate: new Date(Date.now() + 2.5 * 60 * 60 * 1000),
+                followupStatus: 'PENDING',
+                followupCount: 0,
+                items: {
+                    create: itemsData,
+                },
+                followups: {
+                    create: [
+                        {
+                            channel: 'CALL',
+                            status: 'SCHEDULED',
+                            discussionNotes: 'Initial follow-up auto-scheduled within 2.5 hours of quotation creation.',
+                            nextFollowupDate: new Date(Date.now() + 2.5 * 60 * 60 * 1000),
+                            contactPerson: data.recipientName || customer.contacts?.[0]?.name || customer.legalName,
+                            contactPhone: data.recipientPhone || customer.phone || null,
+                            contactEmail: data.recipientEmail || customer.email || null,
+                            performedByName: 'Auto Scheduler',
+                        },
+                    ],
+                },
+            },
+            include: {
+                items: true,
+                customer: true,
+                followups: { orderBy: { createdAt: 'desc' } },
+            },
+        });
+        if (userId) {
+            await audit_service_1.auditService.logMutation({
+                userId,
+                action: 'CREATE',
+                module: 'Sales',
+                entityType: 'SalesQuotation',
+                entityId: quotation.id,
+                newData: { referenceNumber, grandTotal, recipientName: quotation.recipientName },
+            });
+        }
+        return formatQuotationOutput(quotation);
+    },
+    async revise(id, updateData, reason, userId) {
+        const existing = await this.getById(id);
+        // Save previous snapshot in revisions
+        await database_1.prisma.salesQuotationRevision.create({
+            data: {
+                quotationId: existing.id,
+                revisionNumber: existing.revisionNumber,
+                snapshotJson: existing,
+                reason: reason || 'Price or site specification revision',
+            },
+        });
+        const newRevNumber = existing.revisionNumber + 1;
+        // Recompute items if provided
+        let itemsUpdate = undefined;
+        if (updateData.items && Array.isArray(updateData.items)) {
+            await database_1.prisma.salesQuotationItem.deleteMany({ where: { quotationId: id } });
+            itemsUpdate = {
+                create: updateData.items.map((it, idx) => {
+                    const qty = Number(it.quantity) || 1;
+                    const rate = Number(it.rate ?? it.unitPrice ?? 0);
+                    return {
+                        serialNumber: idx + 1,
+                        productId: it.productId || null,
+                        description: it.description || it.itemDescription || 'Pacific Restroom Cubicle Partition',
+                        unit: it.unit || 'NOS',
+                        quantity: qty,
+                        rate,
+                        amount: Number(it.amount ?? (qty * rate)),
+                        cubicleSize: it.cubicleSize || it.specifications || null,
+                        boardColor: it.boardColor || null,
+                        boardThickness: it.boardThickness || null,
+                        doorSize: it.doorSize || null,
+                        overallHeight: it.overallHeight || null,
+                        customSpecsJson: (it.hardwarePackage || it.boardType)
+                            ? {
+                                hardwarePackage: it.hardwarePackage || null,
+                                boardType: it.boardType || null,
+                                ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
+                            }
+                            : (it.customSpecsJson || null),
+                    };
+                }),
+            };
+        }
+        const updated = await database_1.prisma.salesQuotation.update({
+            where: { id },
+            data: {
+                revisionNumber: newRevNumber,
+                projectName: updateData.projectName ?? existing.projectName,
+                subject: updateData.subject ?? existing.subject,
+                basicPrice: updateData.basicPrice ?? existing.basicPrice,
+                installationCharge: updateData.installationCharge ?? existing.installationCharge,
+                freightAmount: updateData.freightAmount ?? existing.freightAmount,
+                freightTerms: updateData.freightTerms ?? existing.freightTerms,
+                gstRate: updateData.gstRate ?? existing.gstRate,
+                isSezExempt: updateData.isSezExempt ?? existing.isSezExempt,
+                sezCertificateRef: updateData.sezCertificateRef ?? existing.sezCertificateRef,
+                gstAmount: updateData.gstAmount ?? existing.gstAmount,
+                grandTotal: updateData.grandTotal ?? existing.grandTotal,
+                amountInWords: updateData.amountInWords ?? existing.amountInWords,
+                accessoriesText: updateData.accessoriesText ?? existing.accessoriesText,
+                warrantyText: updateData.warrantyText ?? existing.warrantyText,
+                generalTerms: updateData.generalTerms ?? existing.generalTerms,
+                otherTerms: updateData.otherTerms ?? existing.otherTerms,
+                paymentTerms: updateData.paymentTerms ?? existing.paymentTerms,
+                deliveryTerms: updateData.deliveryTerms ?? existing.deliveryTerms,
+                items: itemsUpdate,
+            },
+            include: { items: true, customer: true },
+        });
+        if (userId) {
+            await audit_service_1.auditService.logMutation({
+                userId,
+                action: 'UPDATE',
+                module: 'Sales',
+                entityType: 'SalesQuotation',
+                entityId: id,
+                newData: { revisionNumber: newRevNumber, reason },
+            });
+        }
+        return formatQuotationOutput(updated);
+    },
+    async send(id, userId) {
+        const quote = await this.getById(id);
+        if (quote.isSezExempt && !quote.sezCertificateRef) {
+            throw new Error('SEZ zero-GST quotation requires a valid SEZ Certificate / Form-I confirmation reference before marking as Sent.');
+        }
+        const nextDate = new Date(Date.now() + 2.5 * 60 * 60 * 1000);
+        const updated = await database_1.prisma.salesQuotation.update({
+            where: { id },
+            data: {
+                status: 'SENT',
+                nextFollowupDate: nextDate,
+                followupStatus: 'PENDING',
+            },
+        });
+        await database_1.prisma.quotationFollowup.create({
+            data: {
+                quotationId: id,
+                channel: 'CALL',
+                status: 'SCHEDULED',
+                discussionNotes: `Quotation issued & marked as SENT. First follow-up scheduled for ${nextDate.toLocaleTimeString('en-IN')}.`,
+                nextFollowupDate: nextDate,
+                contactPerson: quote.recipientName,
+                contactPhone: quote.recipientPhone,
+                contactEmail: quote.recipientEmail,
+                performedById: userId || null,
+                performedByName: userId ? 'Staff' : 'Quotation Dispatcher',
+            },
+        });
+        if (userId) {
+            await audit_service_1.auditService.logMutation({
+                userId,
+                action: 'ISSUE',
+                module: 'Sales',
+                entityType: 'SalesQuotation',
+                entityId: id,
+                newData: { status: 'SENT' },
+            });
+        }
+        return formatQuotationOutput(updated);
+    },
+    async convertToPI(id, userId) {
+        const quote = await this.getById(id);
+        if (quote.status === 'CONVERTED' && quote.convertedPiId) {
+            const existingPi = await database_1.prisma.proformaInvoice.findUnique({
+                where: { id: quote.convertedPiId },
+            });
+            if (existingPi)
+                return existingPi;
+        }
+        // Call PI service to create PI from this Quotation
+        const pi = await pi_service_1.piService.createFromQuotation(quote, userId);
+        return pi;
+    },
+    async convertToOrder(id, userId) {
+        const quote = await this.getById(id);
+        if (quote.status === 'CONVERTED') {
+            throw new Error(`Quotation ${quote.referenceNumber} has already been converted to an Order.`);
+        }
+        // Call order service to create Order from this Quotation
+        const order = await orders_service_1.ordersService.createFromQuotation(quote, userId);
+        // Mark quotation as converted
+        await database_1.prisma.salesQuotation.update({
+            where: { id },
+            data: {
+                status: 'CONVERTED',
+                convertedOrderId: order.id,
+            },
+        });
+        return order;
+    },
+    async getPdfHtml(id) {
+        const quote = await this.getById(id);
+        const qr = await qr_service_1.qrService.getOrCreateDocumentQr({
+            documentType: 'QUOTATION',
+            documentId: quote.id,
+            documentNumber: quote.referenceNumber,
+            companyName: quote.companyProfile.companyName,
+            partyName: quote.recipientName,
+            date: quote.date.toISOString(),
+            totalAmount: Number(quote.grandTotal),
+            currency: quote.currency,
+            status: quote.status,
+        });
+        const signatories = quote.companyProfile?.signatories || [];
+        const authSignatory = signatories.find((s) => s.isDefault && s.signatureUrl) ||
+            signatories.find((s) => s.signatureUrl) ||
+            signatories[0];
+        const rawSignatureUrl = authSignatory?.signatureUrl || quote.companyProfile?.signatureUrl || undefined;
+        const issuingStaffName = authSignatory?.name || (quote.issuingStaff ? `${quote.issuingStaff.firstName} ${quote.issuingStaff.lastName}` : undefined);
+        const issuingStaffDesignation = authSignatory?.designation || undefined;
+        // Convert QR external URL → inline base64 so it renders in downloaded HTML files
+        const qrDataUrl = qr.qrDataUrl
+            ? await fetchImageAsDataUri(qr.qrDataUrl)
+            : undefined;
+        // Convert signature URL → inline base64 for offline embedding if it's a remote URL
+        const signatureUrl = rawSignatureUrl && (rawSignatureUrl.startsWith('http://') || rawSignatureUrl.startsWith('https://'))
+            ? await fetchImageAsDataUri(rawSignatureUrl)
+            : rawSignatureUrl;
+        return pdf_service_1.pdfService.generateQuotationPdfHtml({
+            referenceNumber: quote.referenceNumber,
+            revisionNumber: quote.revisionNumber,
+            date: quote.date.toISOString(),
+            projectName: quote.projectName,
+            subject: quote.subject,
+            title: quote.title,
+            companyName: quote.companyProfile.companyName,
+            companyAddress: quote.companyProfile.addresses?.[0]?.addressLine1 || 'H-3, JR Complex, Mandoli, New Delhi - 110093',
+            companyPhone: quote.companyProfile.phone || '',
+            companyEmail: quote.companyProfile.email || '',
+            companyGstin: quote.companyProfile.gstin || '',
+            logoUrl: quote.companyProfile.logoUrl || undefined,
+            recipientSalutation: quote.recipientSalutation,
+            recipientName: quote.recipientName,
+            recipientCompany: quote.recipientCompany || undefined,
+            recipientAddress: quote.recipientAddress || undefined,
+            issuingStaffName,
+            issuingStaffDesignation,
+            issuingStaffEmail: quote.issuingStaff?.email,
+            currency: quote.currency,
+            items: (quote.items || []).map((it) => ({
+                serialNumber: it.serialNumber,
+                description: it.description,
+                unit: it.unit,
+                quantity: Number(it.quantity),
+                rate: Number(it.rate),
+                amount: Number(it.amount),
+                cubicleSize: it.cubicleSize || undefined,
+                boardColor: it.boardColor || undefined,
+                boardThickness: it.boardThickness || undefined,
+                doorSize: it.doorSize || undefined,
+                overallHeight: it.overallHeight || undefined,
+                boardType: it.boardType || it.customSpecsJson?.boardType || undefined,
+                hardwarePackage: it.hardwarePackage || it.customSpecsJson?.hardwarePackage || undefined,
+            })),
+            basicPrice: Number(quote.basicPrice),
+            installationCharge: Number(quote.installationCharge),
+            freightTerms: quote.freightTerms,
+            freightAmount: Number(quote.freightAmount),
+            gstRate: Number(quote.gstRate),
+            isSezExempt: quote.isSezExempt,
+            sezCertificateRef: quote.sezCertificateRef || undefined,
+            gstAmount: Number(quote.gstAmount),
+            grandTotal: Number(quote.grandTotal),
+            amountInWords: quote.amountInWords || undefined,
+            accessoriesText: quote.accessoriesText || undefined,
+            warrantyText: quote.warrantyText || undefined,
+            generalTerms: quote.generalTerms || undefined,
+            otherTerms: quote.otherTerms || undefined,
+            paymentTerms: quote.paymentTerms || undefined,
+            deliveryTerms: quote.deliveryTerms || undefined,
+            statutoryComplianceTerms: quote.statutoryComplianceTerms || undefined,
+            validityDays: quote.validityDays,
+            validUntil: quote.validUntil?.toISOString(),
+            signatureUrl,
+            qrDataUrl,
+        });
+    },
+    async sendEmail(id, options, userId) {
+        const quote = await this.getById(id);
+        const to = options?.recipientEmail || quote.recipientEmail || quote.customer?.email;
+        if (!to) {
+            throw new Error('No recipient email address found for this quotation. Please provide a valid email.');
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(to)) {
+            throw new Error(`Invalid email address: "${to}"`);
+        }
+        const pdfHtml = await this.getPdfHtml(id);
+        const subject = options?.subject || `Pacific Quotation Ref: ${quote.referenceNumber} — ${quote.projectName || 'Commercial Offer'}`;
+        const customMessage = options?.message
+            ? `<div style="margin: 12px 0; padding: 10px; background: #f8fafc; border-left: 3px solid #000; font-size: 13px;">${options.message}</div>`
+            : '';
+        const htmlBody = `
+      <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; color: #000; line-height: 1.5;">
+        <div style="background: #0f172a; padding: 20px; text-align: center; border-radius: 6px 6px 0 0;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 18px; letter-spacing: 0.5px;">PACIFIC PRODUCTS & SOLUTIONS</h1>
+          <p style="color: #cbd5e1; margin: 4px 0 0 0; font-size: 11px; text-transform: uppercase;">Official Commercial Quotation</p>
+        </div>
+        <div style="padding: 24px; background: #ffffff; border: 1px solid #000; border-top: none; border-radius: 0 0 6px 6px;">
+          <p style="font-size: 14px; margin-top: 0;">Dear <strong>${quote.recipientSalutation || 'Mr.'} ${quote.recipientName}</strong>,</p>
+          <p style="font-size: 13px;">We take pleasure in submitting our formal commercial proposal and quotation for your project.</p>
+          ${customMessage}
+          <div style="background: #f8fafc; border: 1px solid #000; padding: 14px 18px; margin: 16px 0; font-size: 12px;">
+            <p style="margin: 0;"><strong>Quotation Ref:</strong> ${quote.referenceNumber}</p>
+            <p style="margin: 4px 0 0 0;"><strong>Project Name:</strong> ${quote.projectName || 'Restroom Cubicles Project'}</p>
+            <p style="margin: 4px 0 0 0;"><strong>Dated:</strong> ${new Date(quote.date).toLocaleDateString('en-IN')}</p>
+            ${quote.validUntil ? `<p style="margin: 4px 0 0 0;"><strong>Valid Until:</strong> ${new Date(quote.validUntil).toLocaleDateString('en-IN')}</p>` : ''}
+            <p style="margin: 4px 0 0 0;"><strong>Grand Total:</strong> ${quote.currency} ${Number(quote.grandTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+          </div>
+          <p style="font-size: 12px; color: #334155;">Please find the formal quotation letter attached as a PDF document for your review and records.</p>
+          <hr style="border: none; border-top: 1px solid #cbd5e1; margin: 20px 0;" />
+          <p style="font-size: 11px; color: #64748b; margin: 0;">
+            ${quote.companyProfile?.companyName || 'Pacific Products & Solutions'}<br/>
+            Phone: ${quote.companyProfile?.phone || '-'}
+          </p>
+        </div>
+      </div>
+    `;
+        const cleanFilename = `Quotation_${quote.referenceNumber.replace(/[\/\\]/g, '_')}.pdf`;
+        // Convert HTML → real PDF buffer via headless Chrome
+        const pdfBuffer = await (0, htmlToPdf_1.htmlToPdfBuffer)(pdfHtml);
+        const sendRes = await email_service_1.emailService.sendEmail({
+            to,
+            subject,
+            html: htmlBody,
+            attachments: [
+                {
+                    filename: cleanFilename,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf',
+                },
+            ],
+        });
+        if (!sendRes.success) {
+            throw new Error(`Failed to send email via Resend: ${sendRes.error || 'Unknown error'}`);
+        }
+        const nextDate = new Date(Date.now() + 2.5 * 60 * 60 * 1000);
+        // Mark as SENT if currently DRAFT and schedule follow-up
+        await database_1.prisma.salesQuotation.update({
+            where: { id },
+            data: {
+                status: quote.status === 'DRAFT' ? 'SENT' : quote.status,
+                nextFollowupDate: nextDate,
+                followupStatus: 'PENDING',
+            },
+        });
+        await database_1.prisma.quotationFollowup.create({
+            data: {
+                quotationId: id,
+                channel: 'EMAIL',
+                status: 'COMPLETED',
+                discussionNotes: `Quotation PDF emailed to ${to}${options?.subject ? ` (Subject: ${options.subject})` : ''}. First follow-up scheduled for ${nextDate.toLocaleTimeString('en-IN')}.`,
+                nextFollowupDate: nextDate,
+                contactEmail: to,
+                contactPerson: quote.recipientName,
+                performedById: userId || null,
+                performedByName: userId ? 'Staff' : 'Quotation Dispatcher',
+            },
+        });
+        if (userId) {
+            await audit_service_1.auditService.log({
+                userId,
+                action: 'ISSUE',
+                module: 'Sales',
+                entityType: 'SalesQuotation',
+                entityId: id,
+                newData: { action: 'EMAIL_SENT', to, subject, emailId: sendRes.id },
+            });
+        }
+        return {
+            success: true,
+            message: `Quotation letter successfully emailed to ${to}`,
+            emailId: sendRes.id,
+        };
+    },
+    async update(id, updateData, userId) {
+        const existing = await this.getById(id);
+        let itemsUpdate = undefined;
+        let basicPrice = updateData.basicPrice !== undefined ? Number(updateData.basicPrice) : Number(existing.basicPrice);
+        if (updateData.items && Array.isArray(updateData.items)) {
+            await database_1.prisma.salesQuotationItem.deleteMany({ where: { quotationId: id } });
+            const itemsList = updateData.items.map((it, idx) => {
+                const qty = Number(it.quantity) || 1;
+                const rate = Number(it.rate ?? it.unitPrice ?? 0);
+                return {
+                    serialNumber: idx + 1,
+                    productId: it.productId || null,
+                    description: it.description || it.itemDescription || 'Pacific Restroom Cubicle Partition',
+                    unit: it.unit || 'NOS',
+                    quantity: qty,
+                    rate,
+                    amount: Number(it.amount ?? (qty * rate)),
+                    cubicleSize: it.cubicleSize || it.specifications || null,
+                    boardColor: it.boardColor || null,
+                    boardThickness: it.boardThickness || null,
+                    doorSize: it.doorSize || null,
+                    overallHeight: it.overallHeight || null,
+                    customSpecsJson: (it.hardwarePackage || it.boardType)
+                        ? {
+                            hardwarePackage: it.hardwarePackage || null,
+                            boardType: it.boardType || null,
+                            ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
+                        }
+                        : (it.customSpecsJson || null),
+                };
+            });
+            itemsUpdate = { create: itemsList };
+            basicPrice = itemsList.reduce((s, it) => s + it.amount, 0);
+        }
+        const installationCharge = updateData.installationCharge !== undefined ? Number(updateData.installationCharge) : Number(existing.installationCharge || 0);
+        const freightAmount = updateData.freightAmount !== undefined ? Number(updateData.freightAmount) : Number(existing.freightAmount || 0);
+        const gstRate = updateData.gstRate !== undefined ? Number(updateData.gstRate) : Number(existing.gstRate || 18);
+        const isSezExempt = updateData.isSezExempt !== undefined ? Boolean(updateData.isSezExempt) : existing.isSezExempt;
+        const subtotal = basicPrice + installationCharge + freightAmount;
+        const gstAmount = isSezExempt ? 0 : Math.round((subtotal * (gstRate / 100)) * 100) / 100;
+        const grandTotal = Math.round(subtotal + gstAmount);
+        const amountInWords = (0, numberToWords_1.numberToWords)(grandTotal, existing.currency || 'INR');
+        const updated = await database_1.prisma.salesQuotation.update({
+            where: { id },
+            data: {
+                recipientSalutation: updateData.recipientSalutation ?? existing.recipientSalutation,
+                recipientName: updateData.recipientName ?? existing.recipientName,
+                recipientCompany: updateData.recipientCompany ?? existing.recipientCompany,
+                recipientAddress: updateData.recipientAddress ?? existing.recipientAddress,
+                recipientEmail: updateData.recipientEmail ?? existing.recipientEmail,
+                recipientPhone: updateData.recipientPhone ?? existing.recipientPhone,
+                projectName: updateData.projectName ?? updateData.siteName ?? existing.projectName,
+                subject: updateData.subject ?? existing.subject,
+                title: updateData.title ?? existing.title,
+                basicPrice,
+                installationCharge,
+                freightAmount,
+                freightTerms: updateData.freightTerms ?? existing.freightTerms,
+                gstRate,
+                isSezExempt,
+                sezCertificateRef: updateData.sezCertificateRef ?? existing.sezCertificateRef,
+                gstAmount,
+                grandTotal,
+                amountInWords,
+                accessoriesText: updateData.accessoriesText ?? existing.accessoriesText,
+                warrantyText: updateData.warrantyText ?? existing.warrantyText,
+                generalTerms: updateData.generalTerms ?? existing.generalTerms,
+                otherTerms: updateData.otherTerms ?? existing.otherTerms,
+                paymentTerms: updateData.paymentTerms ?? existing.paymentTerms,
+                deliveryTerms: updateData.deliveryTerms ?? existing.deliveryTerms,
+                statutoryComplianceTerms: updateData.statutoryComplianceTerms ?? existing.statutoryComplianceTerms,
+                status: updateData.status ?? existing.status,
+                ...(itemsUpdate ? { items: itemsUpdate } : {}),
+            },
+            include: { items: true, customer: true },
+        });
+        if (userId) {
+            await audit_service_1.auditService.logMutation({
+                userId,
+                action: 'UPDATE',
+                module: 'Sales',
+                entityType: 'SalesQuotation',
+                entityId: id,
+                newData: { grandTotal, recipientName: updated.recipientName },
+            });
+        }
+        return formatQuotationOutput(updated);
+    },
+    async delete(id, userId) {
+        const existing = await database_1.prisma.salesQuotation.findUnique({ where: { id } });
+        if (!existing) {
+            return { success: true };
+        }
+        // 1. Unlink any converted/linked sales orders so database integrity is preserved
+        await database_1.prisma.salesOrder.updateMany({
+            where: { quotationId: id },
+            data: { quotationId: null },
+        }).catch(() => { });
+        // 2. Clean up Document Verification Tokens
+        await database_1.prisma.documentVerificationToken.deleteMany({
+            where: { OR: [{ documentId: id }, { documentType: 'QUOTATION', documentId: id }] },
+        }).catch(() => { });
+        // 3. Clean up QR Codes and Scan Logs
+        const qrCodes = await database_1.prisma.qrCode.findMany({
+            where: { entityType: 'QUOTATION', entityId: id },
+            select: { id: true },
+        }).catch(() => []);
+        if (qrCodes && qrCodes.length > 0) {
+            const qrCodeIds = qrCodes.map((q) => q.id);
+            await database_1.prisma.qrScanLog.deleteMany({ where: { qrCodeId: { in: qrCodeIds } } }).catch(() => { });
+            await database_1.prisma.qrCode.deleteMany({ where: { id: { in: qrCodeIds } } }).catch(() => { });
+        }
+        // 4. Delete revisions and items
+        await database_1.prisma.salesQuotationRevision.deleteMany({ where: { quotationId: id } });
+        await database_1.prisma.salesQuotationItem.deleteMany({ where: { quotationId: id } });
+        // 5. Delete the sales quotation
+        await database_1.prisma.salesQuotation.delete({ where: { id } });
+        if (userId) {
+            await audit_service_1.auditService.logMutation({
+                userId,
+                action: 'DELETE',
+                module: 'Sales',
+                entityType: 'SalesQuotation',
+                entityId: id,
+                oldData: { referenceNumber: existing.referenceNumber },
+            }).catch(() => { });
+        }
+        return { success: true };
+    },
+    async getFollowups(quotationId) {
+        const quote = await database_1.prisma.salesQuotation.findUnique({
+            where: { id: quotationId },
+            select: {
+                id: true,
+                referenceNumber: true,
+                customerId: true,
+                recipientName: true,
+                recipientPhone: true,
+                recipientEmail: true,
+                grandTotal: true,
+                currency: true,
+                followupStatus: true,
+                nextFollowupDate: true,
+                lastFollowupDate: true,
+                followupCount: true,
+            },
+        });
+        if (!quote)
+            throw new Error('Quotation not found');
+        const followups = await database_1.prisma.quotationFollowup.findMany({
+            where: { quotationId },
+            orderBy: { createdAt: 'desc' },
+        });
+        return {
+            quotation: quote,
+            followups,
+        };
+    },
+    async createFollowup(quotationId, data, userId) {
+        const quote = await database_1.prisma.salesQuotation.findUnique({
+            where: { id: quotationId },
+            include: { customer: true },
+        });
+        if (!quote)
+            throw new Error('Quotation not found');
+        const nextFollowup = data.nextFollowupDate ? new Date(data.nextFollowupDate) : null;
+        const channel = data.channel || 'CALL';
+        const status = data.status || 'COMPLETED';
+        const followup = await database_1.prisma.quotationFollowup.create({
+            data: {
+                id: (0, uuid_1.v4)(),
+                quotationId,
+                channel,
+                status,
+                discussionNotes: data.discussionNotes,
+                nextFollowupDate: nextFollowup,
+                contactPerson: data.contactPerson || quote.recipientName || quote.customer?.legalName || null,
+                contactPhone: data.contactPhone || quote.recipientPhone || quote.customer?.phone || null,
+                contactEmail: data.contactEmail || quote.recipientEmail || quote.customer?.email || null,
+                performedById: userId || null,
+                performedByName: data.performedByName || (userId ? 'Staff User' : 'Admin'),
+            },
+        });
+        const isOrderConfirmed = status === 'ORDER_CONFIRMED';
+        const quoteUpdateData = {
+            lastFollowupDate: new Date(),
+            followupCount: { increment: 1 },
+            followupStatus: status,
+            nextFollowupDate: nextFollowup,
+        };
+        if (isOrderConfirmed && quote.status !== 'ACCEPTED' && quote.status !== 'CONVERTED') {
+            quoteUpdateData.status = 'ACCEPTED';
+        }
+        const updatedQuote = await database_1.prisma.salesQuotation.update({
+            where: { id: quotationId },
+            data: quoteUpdateData,
+            include: {
+                customer: true,
+                items: true,
+                followups: { orderBy: { createdAt: 'desc' } },
+            },
+        });
+        if (userId) {
+            await audit_service_1.auditService.logMutation({
+                userId,
+                action: 'UPDATE',
+                module: 'Sales',
+                entityType: 'QuotationFollowup',
+                entityId: followup.id,
+                newData: { channel, status, discussionNotes: data.discussionNotes, nextFollowupDate: nextFollowup },
+            });
+        }
+        return {
+            followup,
+            quotation: formatQuotationOutput(updatedQuote),
+        };
+    },
+    async sendFollowupEmail(quotationId, options, userId) {
+        const quote = await this.getById(quotationId);
+        const to = options.recipientEmail || quote.recipientEmail || quote.customer?.email;
+        if (!to) {
+            throw new Error('Recipient email is required for sending follow-up email');
+        }
+        const subject = options.subject || `Follow-up: Pacific Quotation Ref ${quote.referenceNumber} — ${quote.projectName || 'Commercial Offer'}`;
+        const customMessage = options.message || 'We are following up regarding the commercial quotation submitted for your restroom cubicle project. Please let us know if you require any technical clarifications, custom mockups, or revisions.';
+        const htmlBody = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
+        <div style="background: #030213; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h2 style="color: #B5F823; margin: 0; font-size: 20px; letter-spacing: 0.5px;">PACIFIC PRODUCTS & SOLUTIONS</h2>
+          <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 12px; text-transform: uppercase;">Quotation Follow-Up & Project Support</p>
+        </div>
+        <div style="padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
+          <p style="font-size: 14px; margin-top: 0;">Dear <strong>${quote.recipientSalutation || 'Mr.'} ${quote.recipientName}</strong>,</p>
+          <p style="font-size: 14px; color: #334155;">${customMessage}</p>
+          <div style="background: #f8fafc; border-left: 4px solid #7FB706; padding: 14px 18px; margin: 18px 0; border-radius: 4px;">
+            <p style="margin: 0; font-size: 13px;"><strong>Quotation Ref:</strong> ${quote.referenceNumber}</p>
+            <p style="margin: 4px 0 0 0; font-size: 13px;"><strong>Project Name:</strong> ${quote.projectName || 'Restroom Cubicles'}</p>
+            <p style="margin: 4px 0 0 0; font-size: 13px;"><strong>Quotation Date:</strong> ${new Date(quote.date).toLocaleDateString('en-IN')}</p>
+            <p style="margin: 4px 0 0 0; font-size: 13px;"><strong>Grand Total:</strong> ${quote.currency} ${Number(quote.grandTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+          </div>
+          <p style="font-size: 13px; color: #475569;">
+            Our engineering team is at your disposal to schedule a call, answer any questions, or coordinate site measurements.
+          </p>
+          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+          <p style="font-size: 11px; color: #94a3b8; margin: 0; text-align: center;">
+            ${quote.companyProfile?.companyName || 'Pacific Products & Solutions'} • Restroom Cubicles & Lockers Manufacturer
+          </p>
+        </div>
+      </div>
+    `;
+        const sendRes = await email_service_1.emailService.sendEmail({
+            to,
+            subject,
+            html: htmlBody,
+        });
+        if (!sendRes.success) {
+            throw new Error(`Failed to send follow-up email: ${sendRes.error || 'Unknown error'}`);
+        }
+        const nextDate = options.nextFollowupDate ? new Date(options.nextFollowupDate) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+        const followupResult = await this.createFollowup(quotationId, {
+            channel: 'EMAIL',
+            status: 'COMPLETED',
+            discussionNotes: options.notes || `Follow-up email dispatched to ${to} with message: "${customMessage.substring(0, 120)}..."`,
+            nextFollowupDate: nextDate,
+            contactEmail: to,
+            contactPerson: quote.recipientName,
+            performedByName: userId ? 'Staff' : 'Quotation Dispatcher',
+        }, userId);
+        return {
+            success: true,
+            message: `Follow-up email successfully sent to ${to}`,
+            followup: followupResult.followup,
+            quotation: followupResult.quotation,
+        };
+    },
+    async listTemplates(category) {
+        const cacheKey = `templates:quotation:${category || 'all'}`;
+        const cached = cache_1.memoryCache.get(cacheKey);
+        if (cached)
+            return cached;
+        const where = {};
+        if (category)
+            where.category = category;
+        const items = await database_1.prisma.quotationContentTemplate.findMany({
+            where,
+            orderBy: { updatedAt: 'desc' },
+        });
+        cache_1.memoryCache.set(cacheKey, items, 600);
+        return items;
+    },
+    async saveTemplate(data) {
+        cache_1.memoryCache.invalidate('templates:quotation');
+        if (data.id) {
+            return database_1.prisma.quotationContentTemplate.update({
+                where: { id: data.id },
+                data: {
+                    title: data.title,
+                    content: data.content,
+                    productCategory: data.productCategory,
+                    isDefault: Boolean(data.isDefault),
+                    version: { increment: 1 },
+                },
+            });
+        }
+        return database_1.prisma.quotationContentTemplate.create({
+            data: {
+                category: data.category,
+                title: data.title,
+                content: data.content,
+                productCategory: data.productCategory,
+                isDefault: Boolean(data.isDefault),
+            },
+        });
+    },
+};
+//# sourceMappingURL=quotations.service.js.map

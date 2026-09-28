@@ -1,0 +1,22 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const pi_controller_1 = require("./pi.controller");
+const auth_middleware_1 = require("../../middleware/auth.middleware");
+const rbac_middleware_1 = require("../../middleware/rbac.middleware");
+const router = (0, express_1.Router)();
+router.get('/', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:view'), pi_controller_1.piController.list);
+router.get('/:id', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:view'), pi_controller_1.piController.getById);
+router.get('/:id/pdf', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:download'), pi_controller_1.piController.getPdfHtml);
+router.post('/', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:create'), pi_controller_1.piController.create);
+router.post('/:id/issue', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:issue'), pi_controller_1.piController.issue);
+router.post('/:id/duplicate', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:duplicate'), pi_controller_1.piController.duplicate);
+router.post('/:id/cancel', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:cancel'), pi_controller_1.piController.cancel);
+router.post('/:id/advance-payment', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:create'), pi_controller_1.piController.recordAdvancePayment);
+router.post('/:id/convert-to-order', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:create'), pi_controller_1.piController.convertToOrder);
+router.get('/:id/followups', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:view'), pi_controller_1.piController.getFollowups);
+router.post('/:id/followups', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:create'), pi_controller_1.piController.addFollowup);
+router.patch('/:id', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:create'), pi_controller_1.piController.update);
+router.delete('/:id', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('pi:cancel'), pi_controller_1.piController.delete);
+exports.default = router;
+//# sourceMappingURL=pi.routes.js.map

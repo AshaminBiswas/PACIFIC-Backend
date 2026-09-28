@@ -1,0 +1,26 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const orders_controller_1 = require("./orders.controller");
+const auth_middleware_1 = require("../../middleware/auth.middleware");
+const rbac_middleware_1 = require("../../middleware/rbac.middleware");
+const router = (0, express_1.Router)();
+router.get('/search', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:view'), orders_controller_1.ordersController.globalSearch);
+router.get('/', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:view'), orders_controller_1.ordersController.list);
+router.get('/:id', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:view'), orders_controller_1.ordersController.getById);
+router.get('/:id/timeline', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:view'), orders_controller_1.ordersController.getTimeline);
+router.get('/:id/follow-ups', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:view'), orders_controller_1.ordersController.getFollowups);
+router.post('/:id/follow-ups', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:edit'), orders_controller_1.ordersController.createFollowup);
+router.post('/:id/send-followup-email', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:edit'), orders_controller_1.ordersController.sendFollowupEmail);
+router.post('/', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:create'), orders_controller_1.ordersController.createDirect);
+router.patch('/:id', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:edit'), orders_controller_1.ordersController.update);
+router.patch('/:id/status', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:edit'), orders_controller_1.ordersController.updateStatus);
+router.delete('/:id', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:delete'), orders_controller_1.ordersController.delete);
+router.post('/:id/approve', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:approve'), orders_controller_1.ordersController.approve);
+router.post('/:id/cancel', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:cancel'), orders_controller_1.ordersController.cancel);
+router.get('/:id/pdf', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:view'), orders_controller_1.ordersController.getPdf);
+router.post('/:id/dispatch', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:edit'), orders_controller_1.ordersController.createDispatch);
+router.get('/:id/dispatch/:dispatchId/pdf', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:view'), orders_controller_1.ordersController.getDispatchPdf);
+router.delete('/:id/dispatch/:dispatchId', auth_middleware_1.requireAuth, (0, rbac_middleware_1.requirePermission)('order:edit'), orders_controller_1.ordersController.deleteDispatch);
+exports.default = router;
+//# sourceMappingURL=orders.routes.js.map

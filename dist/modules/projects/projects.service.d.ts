@@ -1,0 +1,134 @@
+export declare const projectsService: {
+    list(query: {
+        page: number;
+        limit: number;
+        status?: string;
+        search?: string;
+    }): Promise<{
+        items: {
+            status: import(".prisma/client").$Enums.ProjectStatus;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            description: string | null;
+            isFeatured: boolean;
+            images: import("@prisma/client/runtime/library").JsonValue;
+            tags: string[];
+            title: string;
+            clientName: string;
+            clientCompany: string | null;
+            location: string | null;
+            budget: import("@prisma/client/runtime/library").Decimal | null;
+            startDate: Date | null;
+            endDate: Date | null;
+            completedAt: Date | null;
+            assignedToId: string | null;
+        }[];
+        total: number;
+        page: number;
+        limit: number;
+        totalPages: number;
+    }>;
+    getById(id: string): Promise<{
+        assignedTo: {
+            firstName: string;
+            lastName: string;
+            id: string;
+        } | null;
+        invoices: {
+            status: import(".prisma/client").$Enums.InvoiceStatus;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            notes: string | null;
+            subtotal: import("@prisma/client/runtime/library").Decimal;
+            taxAmount: import("@prisma/client/runtime/library").Decimal;
+            totalAmount: import("@prisma/client/runtime/library").Decimal;
+            currency: string;
+            quotationId: string | null;
+            proformaInvoiceId: string | null;
+            orderId: string | null;
+            invoiceNumber: string;
+            projectId: string | null;
+            issueDate: Date;
+            dueDate: Date | null;
+            paidAt: Date | null;
+        }[];
+    } & {
+        status: import(".prisma/client").$Enums.ProjectStatus;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        description: string | null;
+        isFeatured: boolean;
+        images: import("@prisma/client/runtime/library").JsonValue;
+        tags: string[];
+        title: string;
+        clientName: string;
+        clientCompany: string | null;
+        location: string | null;
+        budget: import("@prisma/client/runtime/library").Decimal | null;
+        startDate: Date | null;
+        endDate: Date | null;
+        completedAt: Date | null;
+        assignedToId: string | null;
+    }>;
+    create(data: any, userId?: string): Promise<{
+        status: import(".prisma/client").$Enums.ProjectStatus;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        description: string | null;
+        isFeatured: boolean;
+        images: import("@prisma/client/runtime/library").JsonValue;
+        tags: string[];
+        title: string;
+        clientName: string;
+        clientCompany: string | null;
+        location: string | null;
+        budget: import("@prisma/client/runtime/library").Decimal | null;
+        startDate: Date | null;
+        endDate: Date | null;
+        completedAt: Date | null;
+        assignedToId: string | null;
+    }>;
+    update(id: string, data: any): Promise<{
+        status: import(".prisma/client").$Enums.ProjectStatus;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        description: string | null;
+        isFeatured: boolean;
+        images: import("@prisma/client/runtime/library").JsonValue;
+        tags: string[];
+        title: string;
+        clientName: string;
+        clientCompany: string | null;
+        location: string | null;
+        budget: import("@prisma/client/runtime/library").Decimal | null;
+        startDate: Date | null;
+        endDate: Date | null;
+        completedAt: Date | null;
+        assignedToId: string | null;
+    }>;
+    delete(id: string): Promise<{
+        status: import(".prisma/client").$Enums.ProjectStatus;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        description: string | null;
+        isFeatured: boolean;
+        images: import("@prisma/client/runtime/library").JsonValue;
+        tags: string[];
+        title: string;
+        clientName: string;
+        clientCompany: string | null;
+        location: string | null;
+        budget: import("@prisma/client/runtime/library").Decimal | null;
+        startDate: Date | null;
+        endDate: Date | null;
+        completedAt: Date | null;
+        assignedToId: string | null;
+    }>;
+};
+//# sourceMappingURL=projects.service.d.ts.map
