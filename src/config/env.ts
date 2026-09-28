@@ -34,7 +34,10 @@ export const env = {
 
   cors: {
     origin: optional('CORS_ORIGIN', 'http://localhost:5176'),
-    allowedOrigins: optional('ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:5176'),
+    allowedOrigins: optional(
+      'ALLOWED_ORIGINS',
+      'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:3000,https://admin-delta-kohl.vercel.app,https://pacific-backend-psuw.onrender.com'
+    ),
   },
 
   frontend: {

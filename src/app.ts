@@ -55,19 +55,43 @@ if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    // Allow any localhost port
-    if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    // Allow any localhost or 127.0.0.1 port
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      return callback(null, true);
+    }
+    // Allow all Vercel preview & production deployments (*.vercel.app)
+    if (/^https:\/\/.*\.vercel\.app$/.test(origin)) {
+      return callback(null, true);
+    }
+    // Allow all Render services (*.onrender.com)
+    if (/^https:\/\/.*\.onrender\.com$/.test(origin)) {
+      return callback(null, true);
+    }
+    // Allow all Netlify deployments (*.netlify.app)
+    if (/^https:\/\/.*\.netlify\.app$/.test(origin)) {
       return callback(null, true);
     }
     // Allow configured origins
     const allowed = env.cors.allowedOrigins.split(',').map((s) => s.trim());
     if (allowed.includes(origin)) return callback(null, true);
-    // Permissive fallback
+    // Permissive fallback: dynamically mirror origin
     return callback(null, true);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Cache-Control',
+    'X-Refresh-Token',
+    'x-client-info',
+    'Pragma',
+    'Range',
+  ],
+  exposedHeaders: ['Content-Range', 'X-Content-Range', 'Authorization'],
   optionsSuccessStatus: 204,
   maxAge: 86400,
 };
