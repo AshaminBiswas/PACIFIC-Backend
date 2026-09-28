@@ -329,18 +329,35 @@ exports.pdfService = {
         })
             .join('');
         const defaultTerms = [
-            'Goods once sold will not be taken back or exchanged.',
-            'If the bill is not paid by the due date, interest will be charged at 18% per annum.',
-            'The seller is not responsible for any loss or damage to goods in transit.',
-            'Payment Terms: 50% advance along with confirmed order, balance against proforma invoice before dispatch.',
-            'Subject to Delhi jurisdiction only.',
+            'Payment Terms: 50% Advance along with confirmed Purchase Order. Balance 50% prior to dispatch.',
+            'Delivery Terms: 2-3 weeks from receipt of advance, approved shop drawings, and color confirmation.',
+            'Warranty: We provide ten (10) years of warranty for partitions against any moisture-related defects and one (1) year warranty for workmanship and hardware against manufacturing defects.',
+            'Goods once fabricated to custom restroom sizes cannot be cancelled or exchanged.',
+            'GST and transport charges applicable as per statutory rates.',
+            'Subject to Delhi/NCR jurisdiction.',
         ];
-        const termsToDisplay = Array.isArray(data.terms) && data.terms.length > 0 ? data.terms : defaultTerms;
-        const termsList = termsToDisplay.map((t) => `<li>${t}</li>`).join('');
-        const rawAccessoriesText = data.accessoriesText && !data.accessoriesText.includes('Standard SS 304 Grade Hardware Package')
-            ? data.accessoriesText
-            : '';
-        const accessoriesText = rawAccessoriesText.replace(/\[SS Hardware\]/gi, '').replace(/\s{2,}/g, ' ').trim();
+        const isOldGenericTerms = !data.terms ||
+            data.terms.length === 0 ||
+            (data.terms.length <= 5 &&
+                data.terms.some((t) => t.toLowerCase().includes('goods once sold will not be taken back')));
+        const termsToDisplay = isOldGenericTerms ? defaultTerms : data.terms;
+        const defaultBank = {
+            bankName: 'Central Bank Of India',
+            accountName: 'Pacific Restroom Cubicle & Locker Solutions',
+            accountNumber: '3466708013',
+            ifscCode: 'CBIN0283809',
+            branch: 'B-20, Ganga Vihar, Gokalpuri, Delhi - 110094',
+        };
+        const bank = {
+            bankName: data.bankDetails?.bankName || defaultBank.bankName,
+            accountName: data.bankDetails?.accountName || data.companyName || defaultBank.accountName,
+            accountNumber: data.bankDetails?.accountNumber || defaultBank.accountNumber,
+            ifscCode: data.bankDetails?.ifscCode || defaultBank.ifscCode,
+            branch: data.bankDetails?.branch || defaultBank.branch,
+        };
+        const issuingStaffName = data.issuingStaffName || 'Ejajul Shaikh';
+        const issuingStaffDesignation = data.issuingStaffDesignation || 'Company Head';
+        const issuingStaffPhone = data.issuingStaffPhone || '+91 9818592113 / 9882056529';
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -357,14 +374,14 @@ exports.pdfService = {
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      font-size: 11.5px;
-      line-height: 1.4;
+      font-size: 10.5px;
+      line-height: 1.35;
       color: #000000;
       margin: 0;
       padding: 0;
       background: #fff;
     }
-    .container {
+    .page-container {
       width: 100%;
       max-width: 194mm;
       margin: 0 auto;
@@ -372,6 +389,20 @@ exports.pdfService = {
       padding: 0;
       box-sizing: border-box;
       background: #fff;
+      display: flex;
+      flex-direction: column;
+    }
+    .page-1 {
+      page-break-after: always;
+      break-after: page;
+      min-height: 275mm;
+    }
+    .page-2 {
+      page-break-before: always;
+      break-before: page;
+      page-break-after: avoid;
+      break-after: avoid;
+      min-height: 275mm;
     }
     .header-table {
       width: 100%;
@@ -379,7 +410,7 @@ exports.pdfService = {
       border-bottom: 1px solid #000000;
     }
     .header-table td {
-      padding: 8px 10px;
+      padding: 7px 10px;
       vertical-align: top;
     }
     .title-badge {
@@ -389,7 +420,7 @@ exports.pdfService = {
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      font-weight: normal;
+      font-weight: bold;
     }
     .info-table {
       width: 100%;
@@ -397,99 +428,124 @@ exports.pdfService = {
       border-bottom: 1px solid #000000;
     }
     .info-table td {
-      padding: 8px 10px;
+      padding: 6px 10px;
       vertical-align: top;
     }
     .body-wrapper {
       padding: 6px 10px;
+      flex-grow: 1;
     }
     .items-table {
       width: 100%;
       border-collapse: collapse;
-      margin: 6px 0;
-      font-size: 10.5px;
+      margin: 4px 0 6px 0;
+      font-size: 10px;
       border: 1px solid #000000;
     }
     .items-table th {
       background: #ffffff;
       padding: 5px 6px;
       text-align: left;
-      font-size: 10.5px;
+      font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 0.3px;
       border: 1px solid #000000;
       font-weight: bold !important;
     }
     .items-table td {
-      padding: 4px 6px;
+      padding: 3.5px 6px;
       border: 1px solid #000000;
       vertical-align: top;
       font-weight: normal;
     }
     .spec-box {
       border: none !important;
-      padding: 2px 0 2px 0;
-      margin: 2px 0 0 0;
-      font-size: 10px;
+      padding: 2px 0 1px 0;
+      margin: 1px 0 0 0;
+      font-size: 9.5px;
       line-height: 1.35;
       font-weight: normal;
+      color: #222 !important;
     }
-    .section-title {
+    .section-title-p2 {
       font-size: 11px;
-      margin: 8px 0 3px 0;
+      margin: 10px 0 4px 0;
       text-transform: uppercase;
-      letter-spacing: 0.3px;
+      letter-spacing: 0.4px;
       font-weight: bold !important;
+      border-bottom: 1.5px solid #000000;
+      padding-bottom: 2px;
     }
-    .accessories-box {
+    .bank-box-p2 {
       border: 1px solid #000000;
-      padding: 6px 8px;
-      font-size: 10px;
+      font-size: 10.5px;
       line-height: 1.4;
-      margin-bottom: 4px;
-      font-weight: normal;
-      white-space: pre-line;
+      margin-bottom: 10px;
+      background: #ffffff;
     }
-    .bank-box {
+    .terms-box-p2 {
       border: 1px solid #000000;
-      padding: 6px 8px;
+      padding: 8px 12px;
       font-size: 10px;
-      line-height: 1.4;
-      margin-bottom: 4px;
-      font-weight: normal;
+      line-height: 1.45;
+      margin-bottom: 10px;
+      background: #ffffff;
     }
-    .terms-box {
-      font-size: 10px;
-      line-height: 1.35;
-      margin-top: 3px;
-      font-weight: normal;
-    }
-    .terms-box ol {
-      margin: 2px 0;
-      padding-left: 16px;
-    }
-    .terms-box li {
-      margin-bottom: 2px;
-    }
-    .sign-table {
+    .sign-table-p2 {
       width: 100%;
-      margin-top: 10px;
       border-top: 1px solid #000000;
       border-collapse: collapse;
+      margin-top: auto;
       page-break-inside: avoid;
+      break-inside: avoid;
     }
-    .sign-table td {
-      padding: 8px 10px 0 10px;
+    .page-footer-note {
+      border-top: 1px solid #000000;
+      padding: 4px 10px;
+      font-size: 8.5px;
+      color: #555;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: auto;
+      background: #fafafa;
+    }
+    @media screen {
+      body {
+        background: #f1f5f9;
+        padding: 16px 0;
+      }
+      .page-container {
+        margin-bottom: 24px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
     }
     @media print {
       body {
         margin: 0;
         padding: 0;
+        background: #fff;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
       }
-      .container {
+      .page-container {
         border: 1px solid #000000;
+        box-shadow: none !important;
+        margin: 0 auto;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+      .page-1 {
+        page-break-after: always !important;
+        break-after: page !important;
+        min-height: 275mm;
+      }
+      .page-2 {
+        page-break-before: always !important;
+        break-before: page !important;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+        min-height: 275mm;
       }
       img {
         max-width: 100% !important;
@@ -503,7 +559,8 @@ exports.pdfService = {
   </style>
 </head>
 <body>
-  <div class="container">
+  <!-- PAGE 1: Line Items, Technical Specifications & Commercial Evaluation -->
+  <div class="page-container page-1">
     <!-- Header -->
     <table class="header-table">
       <tr>
@@ -562,7 +619,7 @@ exports.pdfService = {
     </table>
 
     <div class="body-wrapper">
-      <!-- Line Items Table -->
+      <!-- Line Items Table (Description & Technical Specification) -->
       <table class="items-table">
         <thead>
           <tr>
@@ -633,57 +690,117 @@ exports.pdfService = {
       </table>
 
       <!-- Amount in Words -->
-      <p style="margin: 3px 0 6px 0; font-size: 9px; font-style: italic;">
+      <p style="margin: 4px 0 8px 0; font-size: 9.5px; font-style: italic;">
         Amount in Words: <strong>${amountInWordsText}</strong>
       </p>
-
-      <!-- Standard Inclusions & Hardware Accessories Box -->
-      ${accessoriesText ? `
-        <div class="section-title">Standard Inclusions & Hardware Accessories</div>
-        <div class="accessories-box">${accessoriesText}</div>
-      ` : ''}
-
-      <!-- Bank Remittance Details Box -->
-      ${data.bankDetails ? `
-        <div class="section-title">Bank Remittance & Payment Details</div>
-        <div class="bank-box">
-          <strong>Bank Name:</strong> ${data.bankDetails.bankName} &nbsp;|&nbsp; 
-          <strong>Account Name:</strong> ${data.bankDetails.accountName || data.companyName} &nbsp;|&nbsp; 
-          <strong>A/C No:</strong> ${data.bankDetails.accountNumber} &nbsp;|&nbsp; 
-          <strong>IFSC Code:</strong> ${data.bankDetails.ifscCode || '-'} &nbsp;|&nbsp; 
-          <strong>Branch:</strong> ${data.bankDetails.branch || '-'}
-        </div>
-      ` : ''}
-
-      <!-- Commercial Terms & Conditions -->
-      <div class="section-title">Commercial Terms & Conditions</div>
-      <div class="terms-box">
-        <ol>
-          ${termsList}
-        </ol>
-      </div>
     </div>
 
-    <!-- Sign-off Block -->
-    <table class="sign-table" style="margin-top: 8px; margin-bottom: 0; padding-bottom: 0;">
+    <!-- Page 1 Bottom Continuation Banner -->
+    <div class="page-footer-note">
+      <span>Page 1 of 2 — Technical Specifications & Commercial Evaluation</span>
+      <span style="font-weight: bold;">[ Continued on Page 2 for Bank Remittance, Terms &amp; Acceptance Signatures &gt;&gt; ]</span>
+    </div>
+  </div>
+
+  <!-- PAGE BREAK -->
+
+  <!-- PAGE 2: Bank Remittance, Commercial Terms & Conditions, and Sign-off -->
+  <div class="page-container page-2">
+    <!-- Page 2 Header Banner -->
+    <table class="header-table">
       <tr>
-        <td style="width: 50%; vertical-align: bottom; padding-bottom: 0;">
-          <p style="margin: 0; font-size: 9px;">Client Acceptance Signature &amp; Stamp:</p>
-          <div style="height: 30px; border-bottom: 1px solid #000000; width: 170px; margin-top: 14px;"></div>
-          <p style="margin: 2px 0 0 0; font-size: 8.5px;">Authorized Signatory / Date</p>
+        <td style="width: 55%; vertical-align: top;">
+          ${logoSrc ? `<img src="${logoSrc}" height="50" alt="Logo" style="margin-bottom: 3px; display: block; object-fit: contain; max-width: 180px; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;" />` : ''}
+          <div style="font-size: 13px; font-weight: bold; letter-spacing: 0.3px;">${data.companyName}</div>
+          <div style="font-size: 9px; color: #333;">Restroom Cubicles, Urinal Partitions &amp; Locker Systems</div>
         </td>
-        <td style="width: 50%; vertical-align: bottom; text-align: right; padding-bottom: 0; padding-right: 20px;">
-          <p style="margin: 0; font-size: 10px; text-align: right;">Best Regards,</p>
-          <p style="margin: 0; font-size: 11px; text-align: right; font-weight: bold;">For ${data.companyName}</p>
-          <div style="height: 55px; display: flex; align-items: flex-end; justify-content: flex-end; margin-bottom: 0;">
-            ${data.signatureUrl ? `<img src="${data.signatureUrl}" height="50" alt="Authorized Signature" style="display: block; max-height: 55px; object-fit: contain; object-position: right bottom; margin-left: auto;" />` : ''}
+        <td style="width: 45%; vertical-align: top; text-align: right;">
+          <div class="title-badge" style="font-size: 10px; font-weight: bold; padding: 3px 6px;">PROFORMA INVOICE — ANNEXURE</div>
+          <div style="margin: 4px 0 2px 0; font-size: 11px; font-family: monospace; font-weight: bold;">Ref: ${data.piNumber}</div>
+          <div style="font-size: 9.5px;">Date: ${formattedDate}</div>
+          <div style="font-size: 9.5px; margin-top: 2px;">
+            Grand Total: <strong>${currSym} ${data.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+            &nbsp;|&nbsp; Advance (${data.advancePercentage || 50}%): <strong>${currSym} ${(data.advanceRequiredAmount || Math.round(data.grandTotal * 0.5)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
           </div>
-          <p style="margin: 0; font-size: 10.5px; text-align: right; font-weight: bold;">${data.issuingStaffName || 'Authorized Signatory'}</p>
-          ${data.issuingStaffDesignation ? `<p style="margin: 0; font-size: 9.5px; text-align: right;">${data.issuingStaffDesignation}</p>` : ''}
-          ${data.issuingStaffPhone ? `<p style="margin: 0; font-size: 9px; text-align: right;">Mobile: ${data.issuingStaffPhone}</p>` : ''}
         </td>
       </tr>
     </table>
+
+    <div class="body-wrapper" style="padding: 10px 14px; flex-grow: 1;">
+      <!-- BANK REMITTANCE & PAYMENT DETAILS -->
+      <div class="section-title-p2">BANK REMITTANCE &amp; PAYMENT DETAILS</div>
+      <div class="bank-box-p2">
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <td style="width: 50%; padding: 8px 12px; border-right: 1px solid #000000; vertical-align: top;">
+              <div style="font-size: 9px; text-transform: uppercase; color: #444; font-weight: bold;">Bank Name:</div>
+              <div style="font-size: 13px; font-weight: bold; margin-top: 1px; margin-bottom: 8px;">${bank.bankName}</div>
+              <div style="font-size: 9px; text-transform: uppercase; color: #444; font-weight: bold;">Account Name:</div>
+              <div style="font-size: 11.5px; font-weight: bold; margin-top: 1px;">${bank.accountName}</div>
+            </td>
+            <td style="width: 50%; padding: 8px 12px; vertical-align: top;">
+              <div style="font-size: 9px; text-transform: uppercase; color: #444; font-weight: bold;">A/C No:</div>
+              <div style="font-size: 14px; font-weight: bold; font-family: monospace; letter-spacing: 0.5px; margin-top: 1px; margin-bottom: 8px;">${bank.accountNumber}</div>
+              <div style="font-size: 9px; text-transform: uppercase; color: #444; font-weight: bold;">IFSC Code:</div>
+              <div style="font-size: 13px; font-weight: bold; font-family: monospace; margin-top: 1px;">${bank.ifscCode}</div>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2" style="padding: 7px 12px; border-top: 1px solid #000000; background: #fafafa;">
+              <span style="font-size: 9px; text-transform: uppercase; color: #444; font-weight: bold;">Branch:</span>
+              <span style="font-size: 10.5px; font-weight: 600; margin-left: 6px;">${bank.branch}</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- COMMERCIAL TERMS & CONDITIONS -->
+      <div class="section-title-p2" style="margin-top: 12px;">COMMERCIAL TERMS &amp; CONDITIONS</div>
+      <div class="terms-box-p2">
+        <table style="width: 100%; border-collapse: collapse;">
+          <tbody>
+            ${termsToDisplay
+            .map((t, idx) => {
+            const formattedTerm = t.replace(/^(Payment Terms|Delivery Terms|Warranty|Payment|Delivery|Jurisdiction):/i, '<strong>$1:</strong>');
+            return `
+                  <tr>
+                    <td style="width: 22px; vertical-align: top; font-weight: bold; padding: 4px 0; font-size: 10.5px;">${idx + 1}.</td>
+                    <td style="padding: 4px 0; font-size: 10px; line-height: 1.45;">${formattedTerm}</td>
+                  </tr>
+                `;
+        })
+            .join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Sign-off Block on Page 2 -->
+    <table class="sign-table-p2">
+      <tr>
+        <td style="width: 50%; vertical-align: top; border-right: 1px solid #000000; padding: 14px 14px 12px 14px;">
+          <div style="font-size: 10px; font-weight: bold; text-transform: uppercase;">Client Acceptance Signature &amp; Stamp:</div>
+          <div style="font-size: 9px; color: #555; margin-top: 2px;">We confirm and accept the specifications, pricing, and terms:</div>
+          <div style="height: 45px; border-bottom: 1px solid #000000; width: 85%; margin-top: 20px;"></div>
+          <div style="margin: 4px 0 0 0; font-size: 9.5px; font-weight: bold;">Authorized Signatory / Date</div>
+        </td>
+        <td style="width: 50%; vertical-align: top; text-align: right; padding: 14px 14px 12px 14px;">
+          <div style="font-size: 10px; text-align: right; color: #333;">Best Regards,</div>
+          <div style="font-size: 11.5px; text-align: right; font-weight: bold;">For ${data.companyName || 'Pacific Restroom Cubicle & Locker Solutions'}</div>
+          <div style="height: 52px; display: flex; align-items: flex-end; justify-content: flex-end; margin-top: 4px; margin-bottom: 4px;">
+            ${data.signatureUrl ? `<img src="${data.signatureUrl}" height="48" alt="Authorized Signature" style="display: block; max-height: 52px; object-fit: contain; object-position: right bottom; margin-left: auto;" />` : ''}
+          </div>
+          <div style="font-size: 11px; text-align: right; font-weight: bold;">${issuingStaffName}</div>
+          <div style="font-size: 9.5px; text-align: right; color: #333;">${issuingStaffDesignation}</div>
+          <div style="font-size: 9px; text-align: right; color: #333; margin-top: 1px;">Mobile: ${issuingStaffPhone}</div>
+        </td>
+      </tr>
+    </table>
+
+    <div class="page-footer-note">
+      <span>Page 2 of 2 — Commercial Terms &amp; Acceptance Annexure</span>
+      <span>${data.companyName}</span>
+    </div>
   </div>
 </body>
 </html>`;

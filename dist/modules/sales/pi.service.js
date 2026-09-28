@@ -539,10 +539,24 @@ exports.piService = {
                 ? `${pi.issuedBy.firstName} ${pi.issuedBy.lastName}`
                 : pi.createdBy
                     ? `${pi.createdBy.firstName} ${pi.createdBy.lastName}`
-                    : 'Authorized Signatory');
-        const issuingStaffDesignation = authSignatory?.designation || undefined;
-        const issuingStaffPhone = authSignatory?.phone || pi.companyProfile.phone || undefined;
-        const primaryBank = pi.companyProfile.bankAccounts.find((b) => b.isDefault) || pi.companyProfile.bankAccounts[0];
+                    : 'Ejajul Shaikh');
+        const issuingStaffDesignation = authSignatory?.designation || 'Company Head';
+        const issuingStaffPhone = authSignatory?.phone || pi.companyProfile.phone || '+91 9818592113 / 9882056529';
+        const defaultBank = {
+            bankName: 'Central Bank Of India',
+            accountName: 'Pacific Restroom Cubicle & Locker Solutions',
+            accountNumber: '3466708013',
+            ifscCode: 'CBIN0283809',
+            branch: 'B-20, Ganga Vihar, Gokalpuri, Delhi - 110094',
+        };
+        const primaryBank = pi.companyProfile.bankAccounts?.find((b) => b.isDefault) || pi.companyProfile.bankAccounts?.[0];
+        const bankDetails = {
+            bankName: primaryBank?.bankName || defaultBank.bankName,
+            accountNumber: primaryBank?.accountNumber || defaultBank.accountNumber,
+            ifscCode: primaryBank?.ifscCode || defaultBank.ifscCode,
+            branch: primaryBank?.branch || defaultBank.branch,
+            accountName: primaryBank?.accountName || pi.companyProfile.companyName || defaultBank.accountName,
+        };
         const companyAddress = pi.companyProfile.addresses?.[0]?.addressLine1 ||
             [pi.companyProfile.state, pi.companyProfile.country].filter(Boolean).join(', ') ||
             'H-3, JR Complex, Mandoli, New Delhi - 110093';
@@ -631,15 +645,7 @@ exports.piService = {
             accessoriesText: pi.accessoriesText || pi.notes || undefined,
             advanceRequiredAmount: Number(pi.advanceRequiredAmount) || Math.round(Number(pi.grandTotal) * 0.5),
             advancePercentage: Number(pi.advancePercentage) || 50,
-            bankDetails: primaryBank
-                ? {
-                    bankName: primaryBank.bankName,
-                    accountNumber: primaryBank.accountNumber,
-                    ifscCode: primaryBank.ifscCode || undefined,
-                    branch: primaryBank.branch || undefined,
-                    accountName: pi.companyProfile.companyName,
-                }
-                : undefined,
+            bankDetails,
         });
     },
     async update(id, data, userId) {
@@ -986,11 +992,11 @@ exports.piService = {
                 });
             });
         });
-        // Terms without legacy hardware inclusions block
+        // 6 Official Commercial Terms & Conditions
         const terms = [
-            ...(quotation.paymentTerms ? [`Payment Terms: ${quotation.paymentTerms}`] : ['Payment: 50% advance along with formal order confirmation, balance against inspection / prior to dispatch.']),
-            ...(quotation.deliveryTerms ? [`Delivery Terms: ${quotation.deliveryTerms}`] : ['Production lead time begins upon receipt of advance payment and approval of final drawings.']),
-            ...(quotation.warrantyText ? [`Warranty: ${quotation.warrantyText}`] : ['We provide ten (10) years of warranty for partitions against any moisture-related defects and one (1) year warranty for workmanship and hardware against manufacturing defects.']),
+            quotation.paymentTerms ? `Payment Terms: ${quotation.paymentTerms}` : 'Payment Terms: 50% Advance along with confirmed Purchase Order. Balance 50% prior to dispatch.',
+            quotation.deliveryTerms ? `Delivery Terms: ${quotation.deliveryTerms}` : 'Delivery Terms: 2-3 weeks from receipt of advance, approved shop drawings, and color confirmation.',
+            quotation.warrantyText ? `Warranty: ${quotation.warrantyText}` : 'Warranty: We provide ten (10) years of warranty for partitions against any moisture-related defects and one (1) year warranty for workmanship and hardware against manufacturing defects.',
             'Goods once fabricated to custom restroom sizes cannot be cancelled or exchanged.',
             'GST and transport charges applicable as per statutory rates.',
             'Subject to Delhi/NCR jurisdiction.',
