@@ -33,12 +33,12 @@ exports.env = {
         refreshExpiresIn: optional('JWT_REFRESH_EXPIRES_IN', '7d'),
     },
     cors: {
-        origin: optional('CORS_ORIGIN', 'http://localhost:5176'),
-        allowedOrigins: optional('ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:3000,https://admin-delta-kohl.vercel.app,https://pacific-backend-psuw.onrender.com'),
+        origin: optional('CORS_ORIGIN', 'https://pacific-admin-one.vercel.app'),
+        allowedOrigins: optional('ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:3000,https://pacific-admin-one.vercel.app,https://admin-delta-kohl.vercel.app,https://pacific-backend-psuw.onrender.com'),
     },
     frontend: {
         url: optional('FRONTEND_URL', 'http://localhost:5173'),
-        adminUrl: optional('ADMIN_URL', 'http://localhost:5176'),
+        adminUrl: optional('ADMIN_URL', 'https://pacific-admin-one.vercel.app'),
     },
     smtp: {
         host: optional('SMTP_HOST', 'smtp.gmail.com'),

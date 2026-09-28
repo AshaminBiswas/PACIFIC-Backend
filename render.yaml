@@ -11,4 +11,8 @@ services:
       - key: PORT
         value: 5001
       - key: ALLOWED_ORIGINS
-        value: "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:3000,https://admin-delta-kohl.vercel.app,https://pacific-backend-psuw.onrender.com"
+        value: "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:3000,https://pacific-admin-one.vercel.app,https://admin-delta-kohl.vercel.app,https://pacific-backend-psuw.onrender.com"
+      - key: CORS_ORIGIN
+        value: "https://pacific-admin-one.vercel.app"
+      - key: ADMIN_URL
+        value: "https://pacific-admin-one.vercel.app"
