@@ -338,6 +338,9 @@ export const piService = {
       });
 
       return pi;
+    }, {
+      maxWait: 15000,
+      timeout: 45000,
     });
   },
 
@@ -432,6 +435,9 @@ export const piService = {
       });
 
       return updated;
+    }, {
+      maxWait: 15000,
+      timeout: 45000,
     });
   },
 
@@ -849,6 +855,9 @@ export const piService = {
       }
 
       return updated;
+    }, {
+      maxWait: 15000,
+      timeout: 45000,
     });
   },
 

@@ -6,7 +6,7 @@ export interface AuthRequest extends Request {
         role: string;
     };
 }
-export declare const requireAuth: (req: AuthRequest, res: Response, next: NextFunction) => void;
+export declare const requireAuth: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>;
 export declare const requireSuperAdmin: (req: AuthRequest, res: Response, next: NextFunction) => void;
 export declare const requireRole: (...roles: string[]) => (req: AuthRequest, res: Response, next: NextFunction) => void;
 //# sourceMappingURL=auth.middleware.d.ts.map

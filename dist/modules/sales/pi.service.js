@@ -327,6 +327,9 @@ exports.piService = {
                 newData: pi,
             });
             return pi;
+        }, {
+            maxWait: 15000,
+            timeout: 45000,
         });
     },
     /**
@@ -415,6 +418,9 @@ exports.piService = {
                 newData: { piNumber: officialPiNumber, status: 'ISSUED' },
             });
             return updated;
+        }, {
+            maxWait: 15000,
+            timeout: 45000,
         });
     },
     async duplicate(id, userId) {
@@ -795,6 +801,9 @@ exports.piService = {
                 });
             }
             return updated;
+        }, {
+            maxWait: 15000,
+            timeout: 45000,
         });
     },
     async delete(id, userId) {
