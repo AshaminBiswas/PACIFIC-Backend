@@ -560,6 +560,8 @@ export const piService = {
       signatories[0];
     const rawSignatureUrl = authSignatory?.signatureUrl || (pi.companyProfile as any)?.signatureUrl || undefined;
     const signatureUrl = rawSignatureUrl ? await fetchImageAsDataUri(rawSignatureUrl) : undefined;
+    const rawLogoUrl = pi.companyProfile.logoUrl || undefined;
+    const logoUrl = rawLogoUrl ? await fetchImageAsDataUri(rawLogoUrl) : undefined;
     const issuingStaffName =
       authSignatory?.name ||
       (pi.issuedBy
@@ -592,7 +594,7 @@ export const piService = {
       companyPan: pi.companyProfile.pan || 'CIJPS1392A',
       companyPhone: pi.companyProfile.phone || undefined,
       companyEmail: pi.companyProfile.email || undefined,
-      logoUrl: pi.companyProfile.logoUrl || undefined,
+      logoUrl,
       placeOfSupply: pi.placeOfSupply,
       placeOfSupplyStateCode: pi.placeOfSupplyStateCode,
       reverseCharge: pi.reverseCharge,
@@ -989,8 +991,9 @@ export const piService = {
       : [quotation.recipientAddress || billingAddress?.addressLine1, billingAddress?.city, billingAddress?.state].filter(Boolean);
     const shipAddressLine = shipAddressParts.join(', ') || 'Delivery Site Address';
 
-    // Map items with full cubicle specifications and hardware package!
-    const piItems = (quotation.items || []).map((it: any) => {
+    // Map items with full cubicle specifications and auto-generate individual hardware line items!
+    const piItems: any[] = [];
+    (quotation.items || []).forEach((it: any) => {
       let desc = it.description || it.productName || 'Pacific Restroom Cubicle System';
       const specs: string[] = [];
       if (it.boardType) specs.push(`Board: ${it.boardType}`);
@@ -1003,11 +1006,12 @@ export const piService = {
       if (specs.length > 0) {
         desc += `\n(${specs.join(' | ')})`;
       }
-      return {
+      const qty = Number(it.quantity) || 1;
+      piItems.push({
         productId: it.productId || null,
         description: desc,
         hsnSac: it.hsnSac || '9403',
-        quantity: Number(it.quantity) || 1,
+        quantity: qty,
         unit: it.unit || 'NOS',
         rate: Number(it.rate) || 0,
         gstRate: Number(it.gstRate) || 18,
@@ -1018,12 +1022,33 @@ export const piService = {
         doorSize: it.doorSize || null,
         overallHeight: it.overallHeight || null,
         hardwarePackage: it.hardwarePackage || null,
-      };
+      });
+
+      // Individual hardware line items for this cubicle
+      const hardwareDefaults = [
+        { name: 'Gravity Hinges (Self-Closing Pair with Nylon Cam)', unit: 'PAIR', hsn: '8302', qty: 1 },
+        { name: 'Occupancy Indicator Lock with Emergency Release', unit: 'SET', hsn: '8302', qty: 1 },
+        { name: 'Ergonomic Door Pull Handle / Knob', unit: 'NOS', hsn: '8302', qty: 1 },
+        { name: 'Coat Hook with Integrated Rubber Buffer Stop', unit: 'NOS', hsn: '8302', qty: 1 },
+        { name: 'Adjustable Supporting Legs (100–150mm ground clearance)', unit: 'NOS', hsn: '8302', qty: 2 },
+        { name: 'Continuous Top Headrail Stabilizer Box Extrusion', unit: 'RMT', hsn: '7610', qty: 1 },
+        { name: 'Wall Fixing U-Channels & SS 304 Fasteners Pack', unit: 'SET', hsn: '8302', qty: 1 },
+      ];
+      hardwareDefaults.forEach((hw) => {
+        piItems.push({
+          productId: null,
+          description: hw.name,
+          hsnSac: hw.hsn,
+          quantity: hw.qty * qty,
+          unit: hw.unit,
+          rate: 0,
+          gstRate: 18,
+        });
+      });
     });
 
-    // Terms with Hardware Inclusions list
+    // Terms without legacy hardware inclusions block
     const terms = [
-      ...(quotation.accessoriesText ? [`Standard Inclusions & Hardware Accessories:\n${quotation.accessoriesText}`] : []),
       ...(quotation.paymentTerms ? [`Payment Terms: ${quotation.paymentTerms}`] : ['Payment: 50% advance along with formal order confirmation, balance against inspection / prior to dispatch.']),
       ...(quotation.deliveryTerms ? [`Delivery Terms: ${quotation.deliveryTerms}`] : ['Production lead time begins upon receipt of advance payment and approval of final drawings.']),
       ...(quotation.warrantyText ? [`Warranty: ${quotation.warrantyText}`] : ['We provide ten (10) years of warranty for partitions against any moisture-related defects and one (1) year warranty for workmanship and hardware against manufacturing defects.']),
