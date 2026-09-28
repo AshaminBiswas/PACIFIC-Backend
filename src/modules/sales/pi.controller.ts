@@ -83,8 +83,22 @@ export const piController = {
 
   async getPdfHtml(req: Request, res: Response, next: NextFunction) {
     try {
+      const pi = await piService.getById(req.params.id);
+      const billToParty = pi.parties?.find((p) => p.partyRole === 'BILL_TO');
+      const billingName = (billToParty?.partyName || pi.customer?.legalName || 'Customer')
+        .trim()
+        .replace(/[/\\?%*:|"<>]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const cleanPiNumber = (pi.piNumber || 'PI')
+        .trim()
+        .replace(/[/\\?%*:|"<>]/g, '')
+        .trim();
+      const filename = `${billingName}_${cleanPiNumber}.pdf`;
+
       const html = await piService.getPdfHtml(req.params.id);
       res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
       res.send(html);
     } catch (err) {
       next(err);

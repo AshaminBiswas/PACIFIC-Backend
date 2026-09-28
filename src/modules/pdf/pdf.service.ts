@@ -755,11 +755,71 @@ export const pdfService = {
     const issuingStaffDesignation = data.issuingStaffDesignation || 'Company Head';
     const issuingStaffPhone = data.issuingStaffPhone || '+91 9818592113 / 9882056529';
 
+    const safeBillingCompanyName = (data.billTo?.name || 'Customer')
+      .trim()
+      .replace(/[/\\?%*:|"<>]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const safePiNumber = (data.piNumber || 'PI')
+      .trim()
+      .replace(/[/\\?%*:|"<>]/g, '')
+      .trim();
+    const pdfDocTitle = `${safeBillingCompanyName}_${safePiNumber}`;
+
+    // Clean addresses & build single-line rows for BILL TO
+    const cleanBillAddress = (data.billTo.address || '')
+      .replace(/,\s*PAN:\s*[A-Z0-9]+/gi, '')
+      .replace(/PAN:\s*[A-Z0-9]+/gi, '')
+      .replace(/,\s*,/g, ',')
+      .trim()
+      .replace(/^,\s*|,\s*$/g, '');
+
+    const billStatePinPart = [
+      data.billTo.state ? `State: ${data.billTo.state}${data.billTo.stateCode ? ` (${data.billTo.stateCode})` : ''}` : '',
+      cleanBillAddress.toLowerCase().includes('pin') ? '' : (data.billTo as any).pincode ? `PIN: ${(data.billTo as any).pincode}` : '',
+    ].filter(Boolean).join(', ');
+
+    const billFullAddressLine = cleanBillAddress.toLowerCase().includes((data.billTo.state || '').toLowerCase())
+      ? cleanBillAddress
+      : [cleanBillAddress, billStatePinPart].filter(Boolean).join(', ');
+
+    const billTaxParts = [
+      data.billTo.gstin ? `<strong>GSTIN:</strong> ${data.billTo.gstin}` : '',
+      data.billTo.pan ? `<strong>PAN:</strong> ${data.billTo.pan}` : '',
+    ].filter(Boolean);
+
+    const billContactParts = [
+      data.billTo.phone ? `Phone: ${data.billTo.phone}` : '',
+      data.billTo.email ? `Email: ${data.billTo.email}` : '',
+    ].filter(Boolean);
+
+    // SHIP TO single-line rows
+    const cleanShipAddress = (data.shipTo.address || '')
+      .replace(/,\s*PAN:\s*[A-Z0-9]+/gi, '')
+      .replace(/PAN:\s*[A-Z0-9]+/gi, '')
+      .replace(/,\s*,/g, ',')
+      .trim()
+      .replace(/^,\s*|,\s*$/g, '');
+
+    const shipStatePinPart = [
+      data.shipTo.state ? `State: ${data.shipTo.state}${data.shipTo.stateCode ? ` (${data.shipTo.stateCode})` : ''}` : '',
+      cleanShipAddress.toLowerCase().includes('pin') ? '' : (data.shipTo as any).pincode ? `PIN: ${(data.shipTo as any).pincode}` : '',
+    ].filter(Boolean).join(', ');
+
+    const shipFullAddressLine = cleanShipAddress.toLowerCase().includes((data.shipTo.state || '').toLowerCase())
+      ? cleanShipAddress
+      : [cleanShipAddress, shipStatePinPart].filter(Boolean).join(', ');
+
+    const shipTaxAndContact = [
+      data.shipTo.gstin ? `<strong>GSTIN:</strong> ${data.shipTo.gstin}` : '',
+      data.shipTo.phone ? `Contact: ${data.shipTo.phone}` : '',
+    ].filter(Boolean);
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Proforma Invoice - ${data.piNumber}</title>
+  <title>${pdfDocTitle}</title>
   <style>
     @page {
       size: A4;
@@ -997,20 +1057,15 @@ export const pdfService = {
         <td style="vertical-align: top; width: 50%; padding-right: 12px;">
           <div style="font-size: 9.5px; font-weight: bold; text-transform: uppercase;">BILL TO (BUYER):</div>
           <div style="font-size: 11px; font-weight: bold; margin: 2px 0;">${data.billTo.name}</div>
-          <div style="font-size: 9.5px; margin: 1px 0;">${data.billTo.address}</div>
-          <div style="font-size: 9.5px; margin: 1px 0;">State: ${data.billTo.state} ${data.billTo.stateCode ? `(${data.billTo.stateCode})` : ''}</div>
-          ${data.billTo.gstin ? `<div style="font-size: 9.5px; margin: 1px 0;"><strong>GSTIN:</strong> ${data.billTo.gstin}</div>` : ''}
-          ${data.billTo.pan ? `<div style="font-size: 9.5px; margin: 1px 0;"><strong>PAN:</strong> ${data.billTo.pan}</div>` : ''}
-          ${data.billTo.phone ? `<div style="font-size: 9px; margin: 1px 0;">Phone: ${data.billTo.phone}</div>` : ''}
-          ${data.billTo.email ? `<div style="font-size: 9px; margin: 1px 0;">Email: ${data.billTo.email}</div>` : ''}
+          <div style="font-size: 9px; margin: 1.5px 0; line-height: 1.35;">${billFullAddressLine}</div>
+          ${billTaxParts.length > 0 ? `<div style="font-size: 9px; margin: 1.5px 0;">${billTaxParts.join(' &nbsp;|&nbsp; ')}</div>` : ''}
+          ${billContactParts.length > 0 ? `<div style="font-size: 8.5px; margin: 1.5px 0; color: #333;">${billContactParts.join(' &nbsp;|&nbsp; ')}</div>` : ''}
         </td>
         <td style="vertical-align: top; width: 50%; border-left: 1px solid #000000; padding-left: 12px;">
           <div style="font-size: 9.5px; font-weight: bold; text-transform: uppercase;">SHIP TO (DELIVERY SITE):</div>
           <div style="font-size: 11px; font-weight: bold; margin: 2px 0;">${data.shipTo.name}</div>
-          <div style="font-size: 9.5px; margin: 1px 0;">${data.shipTo.address}</div>
-          <div style="font-size: 9.5px; margin: 1px 0;">State: ${data.shipTo.state} ${data.shipTo.stateCode ? `(${data.shipTo.stateCode})` : ''}</div>
-          ${data.shipTo.gstin ? `<div style="font-size: 9.5px; margin: 1px 0;"><strong>GSTIN:</strong> ${data.shipTo.gstin}</div>` : ''}
-          ${data.shipTo.phone ? `<div style="font-size: 9px; margin: 1px 0;">Contact: ${data.shipTo.phone}</div>` : ''}
+          <div style="font-size: 9px; margin: 1.5px 0; line-height: 1.35;">${shipFullAddressLine}</div>
+          ${shipTaxAndContact.length > 0 ? `<div style="font-size: 9px; margin: 1.5px 0;">${shipTaxAndContact.join(' &nbsp;|&nbsp; ')}</div>` : ''}
         </td>
       </tr>
     </table>
