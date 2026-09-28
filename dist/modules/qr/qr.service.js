@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.qrService = void 0;
 const crypto_1 = __importDefault(require("crypto"));
+const qrcode_1 = __importDefault(require("qrcode"));
 const database_1 = require("../../config/database");
 const env_1 = require("../../config/env");
 exports.qrService = {
@@ -88,7 +89,21 @@ exports.qrService = {
             token = reg.token;
             qrData = reg.qrData;
         }
-        const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`;
+        let qrDataUrl = '';
+        try {
+            qrDataUrl = await qrcode_1.default.toDataURL(qrData, {
+                margin: 1,
+                width: 150,
+                errorCorrectionLevel: 'M',
+                color: {
+                    dark: '#000000',
+                    light: '#ffffff',
+                },
+            });
+        }
+        catch {
+            qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`;
+        }
         return { qrDataUrl, qrData, token: token };
     },
     /**

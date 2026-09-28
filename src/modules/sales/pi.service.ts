@@ -477,7 +477,7 @@ export const piService = {
       currency: pi.currency || 'INR',
       status: pi.status,
     });
-    const qrDataUrl = qr.qrDataUrl ? await fetchImageAsDataUri(qr.qrDataUrl) : undefined;
+    const qrDataUrl = qr.qrDataUrl ? (qr.qrDataUrl.startsWith('data:') ? qr.qrDataUrl : await fetchImageAsDataUri(qr.qrDataUrl)) : undefined;
 
     const signatories = (pi.companyProfile as any)?.signatories || [];
     const authSignatory =

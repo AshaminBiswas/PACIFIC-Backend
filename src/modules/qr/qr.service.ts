@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import QRCode from 'qrcode';
 import { prisma } from '../../config/database';
 import { env } from '../../config/env';
 
@@ -128,7 +129,20 @@ export const qrService = {
       qrData = reg.qrData;
     }
 
-    const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`;
+    let qrDataUrl = '';
+    try {
+      qrDataUrl = await QRCode.toDataURL(qrData, {
+        margin: 1,
+        width: 150,
+        errorCorrectionLevel: 'M',
+        color: {
+          dark: '#000000',
+          light: '#ffffff',
+        },
+      });
+    } catch {
+      qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`;
+    }
     return { qrDataUrl, qrData, token: token! };
   },
 

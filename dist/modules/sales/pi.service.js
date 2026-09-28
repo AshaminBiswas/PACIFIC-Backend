@@ -449,7 +449,7 @@ exports.piService = {
             currency: pi.currency || 'INR',
             status: pi.status,
         });
-        const qrDataUrl = qr.qrDataUrl ? await fetchImageAsDataUri(qr.qrDataUrl) : undefined;
+        const qrDataUrl = qr.qrDataUrl ? (qr.qrDataUrl.startsWith('data:') ? qr.qrDataUrl : await fetchImageAsDataUri(qr.qrDataUrl)) : undefined;
         const signatories = pi.companyProfile?.signatories || [];
         const authSignatory = signatories.find((s) => s.isDefault && s.signatureUrl) ||
             signatories.find((s) => s.signatureUrl) ||
