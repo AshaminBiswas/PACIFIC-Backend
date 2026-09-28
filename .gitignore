@@ -11,4 +11,4 @@ Thumbs.db
 .idea/
 coverage/
 prisma/migrations/.migration_lock.toml
-dist
+
