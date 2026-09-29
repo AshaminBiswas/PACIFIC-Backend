@@ -387,8 +387,13 @@ export declare const pdfService: {
      */
     generatePiHtml(data: PiPdfData): string;
     /**
+     * Helper to format quotation accessories text into clean HTML sections with bullet points.
+     */
+    formatQuotationAccessoriesHtml(rawText?: string): string;
+    /**
      * Generates formal Sales Quotation letter PDF HTML with narrative covering letter,
-     * embedded pricing table, specs block, accessories, warranties, T&Cs, and staff sign-off.
+     * embedded pricing table, specs block on Page 1, and hardware accessories, warranties,
+     * commercial terms, and client acceptance sign-off on Page 2.
      */
     generateQuotationPdfHtml(data: QuotationPdfData): string;
     /**

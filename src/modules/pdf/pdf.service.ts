@@ -691,6 +691,13 @@ export const pdfService = {
           boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage
         );
 
+        const descLower = (it.description || '').toLowerCase();
+        const isUrinal = descLower.includes('urinal') || descLower.includes('ump') || (cubicleSize && cubicleSize.includes('450mm'));
+        const isLocker = descLower.includes('locker');
+        const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : 'Cubicle / Depth Size';
+        const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
+        const showDoor = doorSize && !doorSize.toLowerCase().includes('n/a') && (!isUrinal || doorSize.trim() !== 'N/A');
+
         return `
           <tr>
             <td style="text-align: center;">${it.serialNumber || idx + 1}</td>
@@ -701,8 +708,8 @@ export const pdfService = {
                   ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
                   ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
                   ${boardColor ? `<div>• <strong>Board Color:</strong> ${boardColor}</div>` : ''}
-                  ${cubicleSize ? `<div>• <strong>Cubicle / Depth Size:</strong> ${cubicleSize}</div>` : ''}
-                  ${doorSize ? `<div>• <strong>Door Size:</strong> ${doorSize}</div>` : ''}
+                  ${cubicleSize ? `<div>• <strong>${sizeLabel}:</strong> ${cubicleSize}</div>` : ''}
+                  ${showDoor ? `<div>• <strong>${doorLabel}:</strong> ${doorSize}</div>` : ''}
                   ${overallHeight ? `<div>• <strong>Overall Height:</strong> ${overallHeight}</div>` : ''}
                   ${hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${hardwarePackage}</div>` : ''}
                 </div>
@@ -1263,8 +1270,64 @@ export const pdfService = {
   },
 
   /**
+   * Helper to format quotation accessories text into clean HTML sections with bullet points.
+   */
+  formatQuotationAccessoriesHtml(rawText?: string): string {
+    if (!rawText || !rawText.trim()) {
+      return '<div style="padding: 6px 8px; font-size: 9px; color: #555;">Standard Grade 304 Stainless Steel hardware package included.</div>';
+    }
+    // Remove legacy tag, and ensure any inline '--- HEADER ---' gets broken onto a new line
+    let cleaned = rawText
+      .replace(/\[SS Hardware\]/gi, '')
+      .replace(/([^\n])\s*(---+[^-]+---+)/g, '$1\n$2')
+      .trim();
+
+    const lines = cleaned.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+    let html = '';
+    let inList = false;
+
+    for (const line of lines) {
+      const headerMatch = line.match(/^---+?\s*(.+?)\s*---+?$/);
+      if (headerMatch) {
+        if (inList) {
+          html += '</div>';
+          inList = false;
+        }
+        const title = headerMatch[1].trim();
+        html += `
+          <div style="font-size: 9.5px; font-weight: bold; text-transform: uppercase; background: #f4f4f5; border-left: 3px solid #7FB706; padding: 3px 8px; margin: 6px 0 3px 0; letter-spacing: 0.3px;">
+            ${title}
+          </div>
+          <div style="padding-left: 6px; margin-bottom: 4px;">
+        `;
+        inList = true;
+      } else {
+        if (!inList) {
+          html += '<div style="padding-left: 6px; margin-bottom: 4px;">';
+          inList = true;
+        }
+        const isBullet = line.startsWith('•') || line.startsWith('-') || line.startsWith('*');
+        const text = isBullet ? line.replace(/^[•\-\*]\s*/, '') : line;
+        html += `
+          <div style="font-size: 9px; line-height: 1.4; margin-bottom: 2px;">
+            • ${text}
+          </div>
+        `;
+      }
+    }
+
+    if (inList) {
+      html += '</div>';
+    }
+
+    return html;
+  },
+
+  /**
    * Generates formal Sales Quotation letter PDF HTML with narrative covering letter,
-   * embedded pricing table, specs block, accessories, warranties, T&Cs, and staff sign-off.
+   * embedded pricing table, specs block on Page 1, and hardware accessories, warranties,
+   * commercial terms, and client acceptance sign-off on Page 2.
    */
   generateQuotationPdfHtml(data: QuotationPdfData): string {
     const formattedDate = new Date(data.date).toLocaleDateString('en-IN', {
@@ -1273,6 +1336,49 @@ export const pdfService = {
       year: 'numeric',
     });
     const logoSrc = resolveCompanyLogoDataUri(data.logoUrl);
+    const issuingStaffName = data.issuingStaffName || 'Ejajul Shaikh';
+    const issuingStaffDesignation = data.issuingStaffDesignation || 'Company Head';
+    const issuingStaffPhone = data.issuingStaffPhone || '+91 8010834316';
+
+    const termsList: Array<{ label: string; text: string }> = [];
+
+    if (data.generalTerms) {
+      termsList.push({ label: 'General Terms', text: data.generalTerms });
+    } else {
+      termsList.push({
+        label: 'General Terms',
+        text: '1. Price Basis: Ex-works New Delhi factory. 2. Taxes: GST as applicable at the time of invoice. 3. Unloading & Safe Storage: In buyer’s scope at site. 4. Site Readiness: Finished floor level and plumb walls required prior to installation.',
+      });
+    }
+
+    if (data.paymentTerms) {
+      termsList.push({ label: 'Payment Terms', text: data.paymentTerms });
+    } else {
+      termsList.push({
+        label: 'Payment Terms',
+        text: '50% Advance along with confirmed Purchase Order. Balance 50% prior to dispatch.',
+      });
+    }
+
+    if (data.deliveryTerms) {
+      termsList.push({ label: 'Delivery & Lead Time', text: data.deliveryTerms });
+    } else {
+      termsList.push({
+        label: 'Delivery & Lead Time',
+        text: '2-3 weeks from receipt of advance, approved shop drawings, and color confirmation.',
+      });
+    }
+
+    if (data.otherTerms) {
+      termsList.push({ label: 'Other Terms', text: data.otherTerms });
+    }
+
+    if (data.isSezExempt && data.statutoryComplianceTerms) {
+      termsList.push({
+        label: 'Statutory Compliance (SEZ)',
+        text: `${data.statutoryComplianceTerms} ${data.sezCertificateRef ? `[Ref: ${data.sezCertificateRef}]` : ''}`,
+      });
+    }
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -1290,14 +1396,14 @@ export const pdfService = {
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      font-size: 11.5px;
-      line-height: 1.4;
+      font-size: 11px;
+      line-height: 1.35;
       color: #000000;
       margin: 0;
       padding: 0;
       background: #fff;
     }
-    .container {
+    .page-container {
       width: 100%;
       max-width: 194mm;
       margin: 0 auto;
@@ -1305,6 +1411,20 @@ export const pdfService = {
       padding: 0;
       box-sizing: border-box;
       background: #fff;
+      display: flex;
+      flex-direction: column;
+    }
+    .page-1 {
+      page-break-after: always;
+      break-after: page;
+      min-height: 275mm;
+    }
+    .page-2 {
+      page-break-before: always;
+      break-before: page;
+      page-break-after: avoid;
+      break-after: avoid;
+      min-height: 275mm;
     }
     .header-table {
       width: 100%;
@@ -1312,7 +1432,7 @@ export const pdfService = {
       border-bottom: 1px solid #000000;
     }
     .header-table td {
-      padding: 8px 10px;
+      padding: 7px 10px;
       vertical-align: top;
     }
     .title-badge {
@@ -1322,7 +1442,7 @@ export const pdfService = {
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      font-weight: normal;
+      font-weight: bold;
     }
     .info-table {
       width: 100%;
@@ -1330,93 +1450,149 @@ export const pdfService = {
       border-bottom: 1px solid #000000;
     }
     .info-table td {
-      padding: 8px 10px;
+      padding: 6px 10px;
       vertical-align: top;
     }
     .body-wrapper {
       padding: 6px 10px;
+      flex-grow: 1;
     }
     .items-table {
       width: 100%;
       border-collapse: collapse;
-      margin: 6px 0;
-      font-size: 10.5px;
+      margin: 4px 0 6px 0;
+      font-size: 10px;
       border: 1px solid #000000;
     }
     .items-table th {
       background: #ffffff;
       padding: 5px 6px;
       text-align: left;
-      font-size: 10.5px;
+      font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 0.3px;
       border: 1px solid #000000;
       font-weight: bold !important;
     }
     .items-table td {
-      padding: 4px 6px;
+      padding: 3.5px 6px;
       border: 1px solid #000000;
       vertical-align: top;
       font-weight: normal;
     }
     .spec-box {
       border: none !important;
-      padding: 2px 0 2px 0;
-      margin: 2px 0 0 0;
-      font-size: 10px;
+      padding: 2px 0 1px 0;
+      margin: 1px 0 0 0;
+      font-size: 9.5px;
       line-height: 1.35;
       font-weight: normal;
+      color: #222 !important;
     }
-    .section-title {
-      font-size: 11px;
+    .section-title-p2 {
+      font-size: 10.5px;
       margin: 8px 0 3px 0;
       text-transform: uppercase;
-      letter-spacing: 0.3px;
+      letter-spacing: 0.4px;
       font-weight: bold !important;
+      border-bottom: 1.5px solid #000000;
+      padding-bottom: 2px;
     }
-    .accessories-box {
+    .accessories-box-p2 {
       border: 1px solid #000000;
-      padding: 6px 8px;
-      font-size: 10.5px;
-      line-height: 1.4;
+      padding: 6px 10px;
+      background: #ffffff;
       margin-bottom: 4px;
-      font-weight: normal;
-      white-space: pre-line;
     }
-    .terms-box {
-      font-size: 10.5px;
-      line-height: 1.35;
-      margin-top: 3px;
-      font-weight: normal;
+    .warranty-box-p2 {
+      border: 1px solid #000000;
+      padding: 6px 10px;
+      font-size: 9.5px;
+      line-height: 1.45;
+      background: #ffffff;
+      margin-bottom: 4px;
     }
-    .sign-table {
+    .terms-box-p2 {
+      border: 1px solid #000000;
+      padding: 6px 10px;
+      background: #ffffff;
+      margin-bottom: 4px;
+    }
+    .sign-table-p2 {
       width: 100%;
-      margin-top: 12px;
       border-top: 1px solid #000000;
       border-collapse: collapse;
+      margin-top: auto;
       page-break-inside: avoid;
+      break-inside: avoid;
     }
-    .sign-table td {
-      padding: 8px 10px 0 10px;
+    .page-footer-note {
+      border-top: 1px solid #000000;
+      padding: 4px 10px;
+      font-size: 8.5px;
+      color: #555;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: auto;
+      background: #fafafa;
+    }
+    @media screen {
+      body {
+        background: #f1f5f9;
+        padding: 16px 0;
+      }
+      .page-container {
+        margin-bottom: 24px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
     }
     @media print {
       body {
         margin: 0;
         padding: 0;
+        background: #fff;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
       }
-      .container {
+      .page-container {
         border: 1px solid #000000;
+        box-shadow: none !important;
+        margin: 0 auto;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+      .page-1 {
+        page-break-after: always !important;
+        break-after: page !important;
+        min-height: 275mm;
+      }
+      .page-2 {
+        page-break-before: always !important;
+        break-before: page !important;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+        min-height: 275mm;
+      }
+      img {
+        max-width: 100% !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
       }
     }
   </style>
 </head>
 <body>
-  <div class="container">
+  <!-- PAGE 1: Line Items, Technical Specifications & Commercial Summary -->
+  <div class="page-container page-1">
     <!-- Header -->
     <table class="header-table">
       <tr>
         <td style="width: 52%; vertical-align: top;">
-          ${logoSrc ? `<img src="${logoSrc}" height="64" alt="Logo" style="margin-bottom: 4px; display: block; object-fit: contain; max-width: 220px;" />` : ''}
+          ${logoSrc ? `<img src="${logoSrc}" height="60" alt="Logo" style="margin-bottom: 4px; display: block; object-fit: contain; max-width: 220px;" />` : ''}
           <div style="font-size: 15px; letter-spacing: 0.3px; font-weight: bold;">${data.companyName}</div>
           <div style="font-size: 10px; margin: 2px 0;">${data.companyAddress}${data.companyAddress && !data.companyAddress.includes('110093') ? ', PIN: 110093' : ''}</div>
           <div style="font-size: 10px;">
@@ -1427,14 +1603,14 @@ export const pdfService = {
         <td style="width: 32%; vertical-align: top; text-align: right;">
           <div class="title-badge">SALES QUOTATION</div>
           <div style="margin: 5px 0 2px 0; font-size: 12px; font-family: monospace; font-weight: bold;">Ref: ${data.referenceNumber}</div>
-          <div style="margin: 2px 0; font-size: 10.5px;">Date: ${formattedDate}</div>
-          <div style="margin: 2px 0; font-size: 10.5px;">Project: ${data.projectName}</div>
+          <div style="margin: 2px 0; font-size: 10px;">Date: ${formattedDate}</div>
+          <div style="margin: 2px 0; font-size: 10px;">Project: <strong>${data.projectName}</strong></div>
         </td>
         <td style="width: 16%; vertical-align: top; text-align: right; padding-left: 6px;">
           ${data.qrDataUrl ? `
             <div style="display: inline-block; text-align: center;">
-              <img src="${data.qrDataUrl}" width="75" height="75" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important;" />
-              <div style="font-size: 8px; text-transform: uppercase; margin-top: 2px;">Verify Document</div>
+              <img src="${data.qrDataUrl}" width="72" height="72" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important;" />
+              <div style="font-size: 8px; text-transform: uppercase; margin-top: 2px; font-weight: bold;">Verify Document</div>
             </div>
           ` : ''}
         </td>
@@ -1445,23 +1621,23 @@ export const pdfService = {
     <table class="info-table">
       <tr>
         <td style="vertical-align: top; width: 60%;">
-          <div style="font-size: 9px;">To,</div>
-          <div style="font-size: 10.5px;">${data.recipientSalutation} ${data.recipientName}</div>
-          ${data.recipientCompany ? `<div style="font-size: 9.5px; margin: 1px 0;">${data.recipientCompany}</div>` : ''}
-          ${data.recipientAddress ? `<div style="margin: 1px 0; font-size: 9px;">${data.recipientAddress}</div>` : ''}
+          <div style="font-size: 9px; text-transform: uppercase; font-weight: bold; color: #444;">To (Client):</div>
+          <div style="font-size: 11px; font-weight: bold; margin-top: 1px;">${data.recipientSalutation} ${data.recipientName}</div>
+          ${data.recipientCompany ? `<div style="font-size: 10px; font-weight: 600; margin: 1px 0;">${data.recipientCompany}</div>` : ''}
+          ${data.recipientAddress ? `<div style="margin: 1px 0; font-size: 9px; line-height: 1.35;">${data.recipientAddress}</div>` : ''}
         </td>
         <td style="vertical-align: top; width: 40%; text-align: right;">
-          ${data.validUntil ? `<div style="font-size: 9px; margin-bottom: 2px;">Valid Until: ${new Date(data.validUntil).toLocaleDateString('en-IN')}</div>` : ''}
-          <div style="font-size: 9px;">Subject: ${data.subject}</div>
+          ${data.validUntil ? `<div style="font-size: 9.5px; margin-bottom: 2px;"><strong>Valid Until:</strong> ${new Date(data.validUntil).toLocaleDateString('en-IN')}</div>` : ''}
+          <div style="font-size: 9.5px; margin-top: 2px;"><strong>Subject:</strong> ${data.subject}</div>
         </td>
       </tr>
     </table>
 
     <div class="body-wrapper">
       <!-- Narrative Intro -->
-      <p style="margin: 3px 0 6px 0; font-size: 9px;">
+      <p style="margin: 4px 0 6px 0; font-size: 9.5px; line-height: 1.4;">
         Dear Sir / Madam,<br/>
-        With reference to our discussion regarding ${data.projectName}, we are pleased to submit our formal commercial proposal and quotation for ${data.title} as detailed below:
+        With reference to our discussion regarding <strong>${data.projectName}</strong>, we are pleased to submit our formal commercial proposal and quotation for <strong>${data.title}</strong> as detailed below:
       </p>
 
       <!-- Line Items Table -->
@@ -1469,7 +1645,7 @@ export const pdfService = {
         <thead>
           <tr>
             <th style="width: 32px; text-align: center;">S.No</th>
-            <th>Description & Technical Specification</th>
+            <th>Description &amp; Technical Specification</th>
             <th style="width: 48px; text-align: center;">Unit</th>
             <th style="width: 48px; text-align: right;">Qty</th>
             <th style="width: 75px; text-align: right;">Rate (${data.currency})</th>
@@ -1477,9 +1653,17 @@ export const pdfService = {
           </tr>
         </thead>
         <tbody>
-          ${data.items.map((item, idx) => `
+          ${data.items.map((item, idx) => {
+            const descLower = (item.description || '').toLowerCase();
+            const isUrinal = descLower.includes('urinal') || descLower.includes('ump') || (item.cubicleSize && item.cubicleSize.includes('450mm'));
+            const isLocker = descLower.includes('locker');
+            const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : 'Cubicle / Depth Size';
+            const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
+            const showDoor = item.doorSize && !item.doorSize.toLowerCase().includes('n/a') && (!isUrinal || item.doorSize.trim() !== 'N/A');
+
+            return `
             <tr>
-              <td style="text-align: center;">${idx + 1}</td>
+              <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
               <td>
                 <div style="font-weight: bold; font-size: 11px;">${item.description}</div>
                 ${item.boardType || item.cubicleSize || item.boardColor || item.boardThickness || item.doorSize || item.overallHeight || item.hardwarePackage ? `
@@ -1487,8 +1671,8 @@ export const pdfService = {
                     ${item.boardType ? `<div>• <strong>Board Type:</strong> ${item.boardType}</div>` : ''}
                     ${item.boardThickness ? `<div>• <strong>Board Thickness:</strong> ${item.boardThickness}</div>` : ''}
                     ${item.boardColor ? `<div>• <strong>Board Color:</strong> ${item.boardColor}</div>` : ''}
-                    ${item.cubicleSize ? `<div>• <strong>Cubicle / Depth Size:</strong> ${item.cubicleSize}</div>` : ''}
-                    ${item.doorSize ? `<div>• <strong>Door Size:</strong> ${item.doorSize}</div>` : ''}
+                    ${item.cubicleSize ? `<div>• <strong>${sizeLabel}:</strong> ${item.cubicleSize}</div>` : ''}
+                    ${showDoor ? `<div>• <strong>${doorLabel}:</strong> ${item.doorSize}</div>` : ''}
                     ${item.overallHeight ? `<div>• <strong>Overall Height:</strong> ${item.overallHeight}</div>` : ''}
                     ${item.hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${item.hardwarePackage}</div>` : ''}
                   </div>
@@ -1497,14 +1681,15 @@ export const pdfService = {
               <td style="text-align: center;">${item.unit}</td>
               <td style="text-align: right;">${item.quantity}</td>
               <td style="text-align: right;">${item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="text-align: right;">${item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              <td style="text-align: right; font-weight: bold;">${item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
             </tr>
-          `).join('')}
+          `;
+          }).join('')}
 
           <!-- Pricing Summary Rows -->
           <tr>
-            <td colspan="5" style="text-align: right;">Basic Price:</td>
-            <td style="text-align: right;">${data.basicPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+            <td colspan="5" style="text-align: right; font-weight: 600;">Basic Price:</td>
+            <td style="text-align: right; font-weight: bold;">${data.basicPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           </tr>
           ${data.installationCharge ? `
             <tr>
@@ -1539,59 +1724,111 @@ export const pdfService = {
                 </tr>`
           }
           <tr>
-            <td colspan="5" style="text-align: right; font-size: 10px;">Grand Total (${data.currency}):</td>
-            <td style="text-align: right; font-size: 10px;">${data.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+            <td colspan="5" style="text-align: right; font-size: 11px; font-weight: bold; background: #fafafa;">Grand Total (${data.currency}):</td>
+            <td style="text-align: right; font-size: 11px; font-weight: bold; background: #fafafa;">${data.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           </tr>
         </tbody>
       </table>
 
-      ${data.amountInWords ? `<p style="margin: 3px 0; font-size: 8.5px; font-style: italic;">Amount in Words: ${data.amountInWords}</p>` : ''}
-
-      <!-- Accessories Block -->
-      ${data.accessoriesText ? `
-        <div class="section-title">Standard Inclusions & Hardware Accessories</div>
-        <div class="accessories-box">${data.accessoriesText.replace(/\[SS Hardware\]/gi, '').replace(/\s{2,}/g, ' ').trim()}</div>
-      ` : ''}
-
-      <!-- Warranty Block -->
-      ${data.warrantyText ? `
-        <div class="section-title">Warranty Commitment</div>
-        <p style="margin: 2px 0; font-size: 8.5px; line-height: 1.35;">${data.warrantyText}</p>
-      ` : ''}
-
-      <!-- Terms & Conditions -->
-      <div class="section-title">Commercial Terms & Conditions</div>
-      <div class="terms-box">
-        ${data.generalTerms ? `<p style="margin: 1px 0;">General Terms: ${data.generalTerms}</p>` : ''}
-        ${data.paymentTerms ? `<p style="margin: 1px 0;">Payment Terms: ${data.paymentTerms}</p>` : ''}
-        ${data.deliveryTerms ? `<p style="margin: 1px 0;">Delivery & Lead Time: ${data.deliveryTerms}</p>` : ''}
-        ${data.otherTerms ? `<div style="margin: 1px 0;">${data.otherTerms}</div>` : ''}
-        ${data.isSezExempt && data.statutoryComplianceTerms ? `
-          <p style="margin: 2px 0;">Statutory Compliance (SEZ): ${data.statutoryComplianceTerms} ${data.sezCertificateRef ? `[Ref: ${data.sezCertificateRef}]` : ''}</p>
-        ` : ''}
-      </div>
+      ${data.amountInWords ? `<p style="margin: 4px 0 8px 0; font-size: 9px; font-style: italic;">Amount in Words: <strong>${data.amountInWords}</strong></p>` : ''}
     </div>
 
-    <!-- Sign-off Block -->
-    <table class="sign-table" style="margin-top: 8px; margin-bottom: 0; padding-bottom: 0;">
+    <!-- Page 1 Continuation Notice -->
+    <div style="border-top: 1px dashed #000000; padding: 6px 10px; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; background: #fafafa; font-weight: bold;">
+      [ Continued on Page 2 for Hardware Accessories, Warranty, Commercial Terms &amp; Acceptance Sign-off ]
+    </div>
+
+    <!-- Page 1 Footer -->
+    <div class="page-footer-note">
+      <span>Page 1 of 2 — Quotation &amp; Technical Specification Schedule</span>
+      <span>${data.companyName}</span>
+    </div>
+  </div>
+
+  <!-- PAGE 2: Hardware Inclusions, Warranty, Commercial Terms & Sign-off -->
+  <div class="page-container page-2">
+    <!-- Page 2 Header Table -->
+    <table class="header-table">
       <tr>
-        <td style="width: 50%; vertical-align: bottom; padding-bottom: 0;">
-          <p style="margin: 0; font-size: 9px;">Client Acceptance Signature &amp; Stamp:</p>
-          <div style="height: 30px; border-bottom: 1px solid #000000; width: 170px; margin-top: 14px;"></div>
-          <p style="margin: 2px 0 0 0; font-size: 8.5px;">Authorized Signatory / Date</p>
-        </td>
-        <td style="width: 50%; vertical-align: bottom; text-align: right; padding-bottom: 0; padding-right: 20px;">
-          <p style="margin: 0; font-size: 10px; text-align: right;">Best Regards,</p>
-          <p style="margin: 0; font-size: 11px; text-align: right;">For ${data.companyName}</p>
-          <div style="height: 62px; display: flex; align-items: flex-end; justify-content: flex-end; margin-bottom: 0;">
-            ${data.signatureUrl ? `<img src="${data.signatureUrl}" height="57" alt="Authorized Signature" style="display: block; max-height: 62px; object-fit: contain; object-position: right bottom; margin-left: 40px; margin-top: 40px;" />` : ''}
+        <td style="width: 52%; vertical-align: top;">
+          ${logoSrc ? `<img src="${logoSrc}" height="48" alt="Logo" style="margin-bottom: 3px; display: block; object-fit: contain; max-width: 190px;" />` : ''}
+          <div style="font-size: 13px; font-weight: bold;">${data.companyName}</div>
+          <div style="font-size: 9px; margin-top: 1px;">${data.companyAddress}${data.companyAddress && !data.companyAddress.includes('110093') ? ', PIN: 110093' : ''}</div>
+          <div style="font-size: 9px;">
+            ${data.companyPhone ? `Phone: ${data.companyPhone}` : ''}
+            ${data.companyGstin ? ` | GSTIN: ${data.companyGstin}` : ''}
           </div>
-          <p style="margin: 0; font-size: 10.5px; text-align: right;">${data.issuingStaffName || 'Authorized Signatory'}</p>
-          ${data.issuingStaffDesignation ? `<p style="margin: 0; font-size: 9.5px; text-align: right;">${data.issuingStaffDesignation}</p>` : ''}
-          ${data.issuingStaffPhone ? `<p style="margin: 0; font-size: 9px; text-align: right;">Mobile: ${data.issuingStaffPhone}</p>` : ''}
+        </td>
+        <td style="width: 48%; vertical-align: top; text-align: right;">
+          <div class="title-badge" style="background: #fafafa;">ANNEXURE — HARDWARE &amp; TERMS</div>
+          <div style="margin: 4px 0 1px 0; font-size: 11px; font-family: monospace; font-weight: bold;">Ref: ${data.referenceNumber}</div>
+          <div style="font-size: 9.5px;">Date: ${formattedDate} &nbsp;|&nbsp; Project: <strong>${data.projectName}</strong></div>
+          <div style="font-size: 10px; font-weight: bold; margin-top: 3px;">
+            Quotation Grand Total: ${data.currency} ${data.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </div>
         </td>
       </tr>
     </table>
+
+    <div class="body-wrapper">
+      <!-- Standard Inclusions & Hardware Accessories -->
+      <div class="section-title-p2">Standard Inclusions &amp; Hardware Accessories</div>
+      <div class="accessories-box-p2">
+        ${this.formatQuotationAccessoriesHtml(data.accessoriesText)}
+      </div>
+
+      <!-- Warranty Commitment -->
+      <div class="section-title-p2" style="margin-top: 10px;">Warranty Commitment</div>
+      <div class="warranty-box-p2">
+        ${data.warrantyText || 'We provide ten (10) years of warranty for partitions against any moisture-related defects and one (1) year warranty for workmanship and hardware against manufacturing defects.'}
+      </div>
+
+      <!-- Commercial Terms & Conditions -->
+      <div class="section-title-p2" style="margin-top: 10px;">Commercial Terms &amp; Conditions</div>
+      <div class="terms-box-p2">
+        <table style="width: 100%; border-collapse: collapse;">
+          <tbody>
+            ${termsList.map((t, idx) => `
+              <tr>
+                <td style="width: 20px; vertical-align: top; font-weight: bold; padding: 2.5px 0; font-size: 9.5px;">${idx + 1}.</td>
+                <td style="padding: 2.5px 0; font-size: 9px; line-height: 1.45;">
+                  <strong>${t.label}:</strong> ${t.text}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Sign-off Block on Page 2 -->
+    <table class="sign-table-p2">
+      <tr>
+        <td style="width: 50%; vertical-align: top; border-right: 1px solid #000000; padding: 10px 12px;">
+          <div style="font-size: 9.5px; font-weight: bold; text-transform: uppercase;">Client Acceptance Signature &amp; Stamp:</div>
+          <div style="font-size: 8.5px; color: #444; margin-top: 2px;">We confirm and accept the specifications, pricing, and terms:</div>
+          <div style="height: 42px; border-bottom: 1px solid #000000; width: 85%; margin-top: 18px;"></div>
+          <div style="margin: 3px 0 0 0; font-size: 9px; font-weight: bold;">Authorized Signatory / Date</div>
+        </td>
+        <td style="width: 50%; vertical-align: top; text-align: right; padding: 10px 12px;">
+          <div style="font-size: 9.5px; color: #333;">Best Regards,</div>
+          <div style="font-size: 11px; font-weight: bold;">For ${data.companyName || 'Pacific Restroom Cubicle & Locker Solutions'}</div>
+          <div style="height: 46px; display: flex; align-items: flex-end; justify-content: flex-end; margin: 2px 0;">
+            ${data.signatureUrl ? `<img src="${data.signatureUrl}" height="44" alt="Authorized Signature" style="display: block; max-height: 44px; object-fit: contain; object-position: right bottom; margin-left: auto;" />` : ''}
+          </div>
+          <div style="font-size: 8.5px; color: #555; text-transform: uppercase; letter-spacing: 0.5px;">Authorized Signature</div>
+          <div style="font-size: 11px; font-weight: bold; margin-top: 1px;">${issuingStaffName}</div>
+          <div style="font-size: 9.5px; color: #333;">${issuingStaffDesignation}</div>
+          ${issuingStaffPhone ? `<div style="font-size: 9px; color: #333; margin-top: 1px;">Mobile: ${issuingStaffPhone}</div>` : ''}
+        </td>
+      </tr>
+    </table>
+
+    <!-- Page 2 Footer -->
+    <div class="page-footer-note">
+      <span>Page 2 of 2 — Hardware Specifications, Commercial Terms &amp; Acceptance</span>
+      <span>${data.companyName}</span>
+    </div>
   </div>
 </body>
 </html>`;

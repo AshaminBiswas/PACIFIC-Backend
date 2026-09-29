@@ -484,6 +484,7 @@ export const quotationsService = {
     const rawSignatureUrl = authSignatory?.signatureUrl || (quote.companyProfile as any)?.signatureUrl || undefined;
     const issuingStaffName = authSignatory?.name || (quote.issuingStaff ? `${quote.issuingStaff.firstName} ${quote.issuingStaff.lastName}` : undefined);
     const issuingStaffDesignation = authSignatory?.designation || undefined;
+    const issuingStaffPhone = authSignatory?.phone || quote.issuingStaff?.phone || '+91 8010834316';
 
     // Convert QR external URL → inline base64 so it renders in downloaded HTML files
     const qrDataUrl = qr.qrDataUrl
@@ -514,6 +515,7 @@ export const quotationsService = {
       recipientAddress: quote.recipientAddress || undefined,
       issuingStaffName,
       issuingStaffDesignation,
+      issuingStaffPhone,
       issuingStaffEmail: quote.issuingStaff?.email,
       currency: quote.currency,
       items: (quote.items || []).map((it: any) => ({
