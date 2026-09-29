@@ -8,6 +8,7 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const numberToWords_1 = require("../utils/numberToWords");
 const defaultLogo_1 = require("./defaultLogo");
+const tax_engine_1 = require("../tax/tax.engine");
 let cachedLogoBase64 = null;
 function resolveCompanyLogoDataUri(providedUrl) {
     if (providedUrl && (providedUrl.startsWith('data:') || providedUrl.startsWith('http://') || providedUrl.startsWith('https://'))) {
@@ -254,11 +255,7 @@ exports.pdfService = {
         const logoSrc = resolveCompanyLogoDataUri(data.logoUrl);
         const currSym = data.currency === 'AED' ? 'AED' : '₹';
         const amountInWordsText = data.amountInWords || (0, numberToWords_1.numberToWords)(data.grandTotal, data.currency);
-        const isDelhi = Boolean((data.billTo?.gstin && data.billTo.gstin.startsWith('07')) ||
-            /delhi\b/i.test(data.placeOfSupply || '') ||
-            /07\b/i.test(data.placeOfSupplyStateCode || '') ||
-            /delhi\b/i.test(data.billTo?.address || '') ||
-            !(data.placeOfSupply || '').trim());
+        const isDelhi = (0, tax_engine_1.isDelhiGst)(data.billTo?.gstin, data.placeOfSupplyStateCode, data.placeOfSupply || data.billTo?.address || data.billTo?.state);
         // Helper to extract specs from description if not provided directly
         const parseItemSpecs = (desc) => {
             const match = desc.match(/\((Board:.*?)\)/i) || desc.match(/\((.*?Hardware:.*?)\)/i);
@@ -1289,7 +1286,7 @@ exports.pdfService = {
                   <td colspan="5" style="text-align: right;">GST @ 0.00% (SEZ Exemption Claimed):</td>
                   <td style="text-align: right;">0.00</td>
                 </tr>`
-            : (/delhi\b/i.test(data.recipientAddress || '') || /07\b/i.test(data.recipientAddress || '') || !(data.recipientAddress || '').trim() || data.gstRate === 18)
+            : (0, tax_engine_1.isDelhiGst)(data.recipientGstin, undefined, data.recipientAddress)
                 ? `<tr>
                   <td colspan="5" style="text-align: right;">CGST @ 9%:</td>
                   <td style="text-align: right;">${(data.gstAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -1885,11 +1882,7 @@ exports.pdfService = {
         const logoSrc = resolveCompanyLogoDataUri(data.logoUrl);
         const currSym = data.currency === 'AED' ? 'AED' : '₹';
         const amountInWordsText = data.amountInWords || (0, numberToWords_1.numberToWords)(data.grandTotal, data.currency);
-        const isDelhi = Boolean((data.billTo?.gstin && data.billTo.gstin.startsWith('07')) ||
-            /delhi\b/i.test(data.placeOfSupply || '') ||
-            /07\b/i.test(data.placeOfSupplyStateCode || '') ||
-            /delhi\b/i.test(data.billTo?.address || '') ||
-            !(data.placeOfSupply || '').trim());
+        const isDelhi = (0, tax_engine_1.isDelhiGst)(data.billTo?.gstin, data.placeOfSupplyStateCode, data.placeOfSupply || data.billTo?.address || data.billTo?.state);
         const parseItemSpecs = (desc) => {
             const match = desc.match(/\((Board:.*?)\)/i) || desc.match(/\((.*?Hardware:.*?)\)/i);
             if (!match)
@@ -2415,11 +2408,7 @@ exports.pdfService = {
                 <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">Taxable Value:</td>
                 <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1; font-weight: bold;">${currSym} ${Number(data.subtotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
               </tr>
-              ${((data.customerGstin && data.customerGstin.startsWith('07')) ||
-            /delhi\b/i.test(data.placeOfSupply || '') ||
-            /07\b/i.test(data.placeOfSupply || '') ||
-            /delhi\b/i.test(data.customerAddress || '') ||
-            !(data.placeOfSupply || '').trim())
+              ${(0, tax_engine_1.isDelhiGst)(data.customerGstin, undefined, data.placeOfSupply || data.customerAddress)
             ? `<tr>
                       <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">CGST (9%):</td>
                       <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1;">${currSym} ${(Number(data.taxAmount) / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>

@@ -482,6 +482,7 @@ exports.quotationsService = {
             recipientName: quote.recipientName,
             recipientCompany: quote.recipientCompany || undefined,
             recipientAddress: quote.recipientAddress || undefined,
+            recipientGstin: (quote.customer?.gstin || quote.recipientGstin || quote.customerGstin || undefined)?.trim().toUpperCase(),
             issuingStaffName,
             issuingStaffDesignation,
             issuingStaffPhone,

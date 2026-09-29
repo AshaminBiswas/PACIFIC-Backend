@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { numberToWords } from '../utils/numberToWords';
 import { DEFAULT_PACIFIC_LOGO_DATA_URI } from './defaultLogo';
+import { isDelhiGst } from '../tax/tax.engine';
 
 let cachedLogoBase64: string | null = null;
 function resolveCompanyLogoDataUri(providedUrl?: string): string {
@@ -100,6 +101,7 @@ export interface QuotationPdfData {
   recipientName: string;
   recipientCompany?: string;
   recipientAddress?: string;
+  recipientGstin?: string;
   issuingStaffName?: string;
   issuingStaffDesignation?: string;
   issuingStaffPhone?: string;
@@ -641,12 +643,10 @@ export const pdfService = {
     const currSym = data.currency === 'AED' ? 'AED' : '₹';
     const amountInWordsText = data.amountInWords || numberToWords(data.grandTotal, data.currency);
 
-    const isDelhi = Boolean(
-      (data.billTo?.gstin && data.billTo.gstin.startsWith('07')) ||
-      /delhi\b/i.test(data.placeOfSupply || '') ||
-      /07\b/i.test(data.placeOfSupplyStateCode || '') ||
-      /delhi\b/i.test(data.billTo?.address || '') ||
-      !(data.placeOfSupply || '').trim()
+    const isDelhi = isDelhiGst(
+      data.billTo?.gstin,
+      data.placeOfSupplyStateCode,
+      data.placeOfSupply || data.billTo?.address || data.billTo?.state
     );
 
     // Helper to extract specs from description if not provided directly
@@ -1713,7 +1713,7 @@ export const pdfService = {
                   <td colspan="5" style="text-align: right;">GST @ 0.00% (SEZ Exemption Claimed):</td>
                   <td style="text-align: right;">0.00</td>
                 </tr>`
-              : (/delhi\b/i.test(data.recipientAddress || '') || /07\b/i.test(data.recipientAddress || '') || !(data.recipientAddress || '').trim() || data.gstRate === 18)
+              : isDelhiGst(data.recipientGstin, undefined, data.recipientAddress)
               ? `<tr>
                   <td colspan="5" style="text-align: right;">CGST @ 9%:</td>
                   <td style="text-align: right;">${(data.gstAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -2318,12 +2318,10 @@ export const pdfService = {
     const currSym = data.currency === 'AED' ? 'AED' : '₹';
     const amountInWordsText = data.amountInWords || numberToWords(data.grandTotal, data.currency);
 
-    const isDelhi = Boolean(
-      (data.billTo?.gstin && data.billTo.gstin.startsWith('07')) ||
-      /delhi\b/i.test(data.placeOfSupply || '') ||
-      /07\b/i.test(data.placeOfSupplyStateCode || '') ||
-      /delhi\b/i.test(data.billTo?.address || '') ||
-      !(data.placeOfSupply || '').trim()
+    const isDelhi = isDelhiGst(
+      data.billTo?.gstin,
+      data.placeOfSupplyStateCode,
+      data.placeOfSupply || data.billTo?.address || data.billTo?.state
     );
 
     const parseItemSpecs = (desc: string) => {
@@ -2902,11 +2900,7 @@ export const pdfService = {
                 <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1; font-weight: bold;">${currSym} ${Number(data.subtotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
               </tr>
               ${
-                ((data.customerGstin && data.customerGstin.startsWith('07')) ||
-                /delhi\b/i.test(data.placeOfSupply || '') ||
-                /07\b/i.test(data.placeOfSupply || '') ||
-                /delhi\b/i.test(data.customerAddress || '') ||
-                !(data.placeOfSupply || '').trim())
+                isDelhiGst(data.customerGstin, undefined, data.placeOfSupply || data.customerAddress)
                   ? `<tr>
                       <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">CGST (9%):</td>
                       <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1;">${currSym} ${(Number(data.taxAmount) / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>

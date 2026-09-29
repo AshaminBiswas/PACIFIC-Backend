@@ -130,10 +130,13 @@ exports.piService = {
         companyProfileId = company.id;
         // 2. Resolve Customer Party (business_parties)
         let customerId = data.customerId;
+        let customerParty = null;
         if (customerId) {
             const party = await database_1.prisma.businessParty.findUnique({ where: { id: customerId } });
             if (!party)
                 customerId = null;
+            else
+                customerParty = party;
         }
         if (!customerId) {
             const partyName = data.billTo?.partyName?.trim() || 'Direct Customer Party';
@@ -158,6 +161,7 @@ exports.piService = {
                     },
                 });
             }
+            customerParty = matchedParty;
             customerId = matchedParty.id;
         }
         // 3. Validate candidate product IDs against erp_products
@@ -181,11 +185,30 @@ exports.piService = {
         }
         return database_1.prisma.$transaction(async (tx) => {
             const sellerStateCode = (company.stateCode || '07').trim();
-            const posStateCode = (data.placeOfSupplyStateCode || sellerStateCode).trim();
+            const buyerGstin = (data.billTo?.gstin || customerParty?.gstin || '').trim().toUpperCase();
+            const isDelhi = (0, tax_engine_1.isDelhiGst)(buyerGstin, data.placeOfSupplyStateCode, data.placeOfSupply);
+            let posStateCode = (data.placeOfSupplyStateCode || '').trim();
+            let posName = (data.placeOfSupply || '').trim();
+            if (buyerGstin.length >= 2) {
+                if (isDelhi) {
+                    posStateCode = '07';
+                    posName = posName || 'Delhi';
+                }
+                else {
+                    const prefix = buyerGstin.slice(0, 2);
+                    posStateCode = posStateCode || prefix;
+                    posName = posName && posName.toLowerCase() !== 'delhi' ? posName : (tax_engine_1.GST_STATE_CODE_MAP[prefix] || 'Interstate');
+                }
+            }
+            else {
+                posStateCode = posStateCode || (isDelhi ? '07' : sellerStateCode);
+                posName = posName || (isDelhi ? 'Delhi' : (tax_engine_1.GST_STATE_CODE_MAP[posStateCode] || 'Delhi'));
+            }
             // 5. Compute Tax Engine Totals on the server
             const taxResult = (0, tax_engine_1.calculateGstTax)({
                 sellerStateCode,
                 placeOfSupplyStateCode: posStateCode,
+                buyerGstin,
                 items: rawItems.map((it) => ({
                     productId: (it.productId && validProductMap.has(it.productId)) ? it.productId : null,
                     description: it.description,
@@ -214,7 +237,7 @@ exports.piService = {
                     piDate: data.piDate ? new Date(data.piDate) : new Date(),
                     companyProfileId,
                     customerId,
-                    placeOfSupply: data.placeOfSupply || 'Delhi',
+                    placeOfSupply: posName,
                     placeOfSupplyStateCode: posStateCode,
                     reverseCharge: Boolean(data.reverseCharge),
                     modeOfTransport: data.modeOfTransport,
@@ -292,8 +315,8 @@ exports.piService = {
                                 partyName: data.billTo?.partyName || 'Customer Billing Party',
                                 gstin: data.billTo?.gstin ? data.billTo.gstin.toUpperCase().trim() : undefined,
                                 addressLine: data.billTo?.addressLine || 'Registered Address',
-                                state: data.billTo?.state || 'Delhi',
-                                stateCode: data.billTo?.stateCode || '07',
+                                state: data.billTo?.state || posName,
+                                stateCode: data.billTo?.stateCode || posStateCode,
                                 phone: data.billTo?.phone,
                                 email: data.billTo?.email,
                             },
@@ -302,8 +325,8 @@ exports.piService = {
                                 partyName: data.shipTo?.partyName || data.billTo?.partyName || 'Customer Delivery Site',
                                 gstin: data.shipTo?.gstin ? data.shipTo.gstin.toUpperCase().trim() : undefined,
                                 addressLine: data.shipTo?.addressLine || data.billTo?.addressLine || 'Delivery Address',
-                                state: data.shipTo?.state || data.billTo?.state || 'Delhi',
-                                stateCode: data.shipTo?.stateCode || data.billTo?.stateCode || '07',
+                                state: data.shipTo?.state || data.billTo?.state || posName,
+                                stateCode: data.shipTo?.stateCode || data.billTo?.stateCode || posStateCode,
                                 phone: data.shipTo?.phone || data.billTo?.phone,
                             },
                         ],
@@ -587,8 +610,8 @@ exports.piService = {
                 address: billToParty?.addressLine || 'Registered Address',
                 gstin: billToParty?.gstin || undefined,
                 pan: customerPan,
-                state: billToParty?.state || 'Delhi',
-                stateCode: billToParty?.stateCode || '07',
+                state: billToParty?.state || pi.placeOfSupply || 'Delhi',
+                stateCode: billToParty?.stateCode || pi.placeOfSupplyStateCode || '07',
                 phone: billToParty?.phone || undefined,
                 email: billToParty?.email || undefined,
             },
@@ -596,8 +619,8 @@ exports.piService = {
                 name: shipToParty?.partyName || billToParty?.partyName || pi.customer.legalName,
                 address: shipToParty?.addressLine || billToParty?.addressLine || 'Delivery Address',
                 gstin: shipToParty?.gstin || undefined,
-                state: shipToParty?.state || 'Delhi',
-                stateCode: shipToParty?.stateCode || '07',
+                state: shipToParty?.state || billToParty?.state || pi.placeOfSupply || 'Delhi',
+                stateCode: shipToParty?.stateCode || billToParty?.stateCode || pi.placeOfSupplyStateCode || '07',
                 phone: shipToParty?.phone || undefined,
             },
             items: pi.items.map((it) => ({
@@ -684,10 +707,19 @@ exports.piService = {
                 await tx.proformaInvoiceItem.deleteMany({ where: { piId: id } });
                 await tx.proformaInvoiceTaxSummary.deleteMany({ where: { piId: id } });
                 const originStateCode = (existing.companyProfile?.stateCode || '07').trim();
-                const destinationStateCode = (data.placeOfSupplyStateCode || existing.placeOfSupplyStateCode || '07').trim();
+                const buyerGstin = (data.billTo?.gstin || existing.parties?.find((p) => p.partyRole === 'BILL_TO')?.gstin || existing.customer?.gstin || '').trim().toUpperCase();
+                const isDelhi = (0, tax_engine_1.isDelhiGst)(buyerGstin, data.placeOfSupplyStateCode || existing.placeOfSupplyStateCode, data.placeOfSupply || existing.placeOfSupply);
+                let destinationStateCode = (data.placeOfSupplyStateCode || existing.placeOfSupplyStateCode || '').trim();
+                if (buyerGstin.length >= 2) {
+                    destinationStateCode = isDelhi ? '07' : buyerGstin.slice(0, 2);
+                }
+                else {
+                    destinationStateCode = destinationStateCode || (isDelhi ? '07' : originStateCode);
+                }
                 const taxCalc = (0, tax_engine_1.calculateGstTax)({
                     sellerStateCode: originStateCode,
                     placeOfSupplyStateCode: destinationStateCode,
+                    buyerGstin,
                     items: rawItems.map((it) => ({
                         productId: (it.productId && validProductMap.has(it.productId)) ? it.productId : null,
                         description: it.description,
@@ -794,6 +826,9 @@ exports.piService = {
             if (data.billTo || data.shipTo) {
                 await tx.proformaInvoiceParty.deleteMany({ where: { piId: id } });
                 const partiesToCreate = [];
+                const partyGstin = (data.billTo?.gstin || existing.parties?.find((p) => p.partyRole === 'BILL_TO')?.gstin || existing.customer?.gstin || '').trim().toUpperCase();
+                const partyPosCode = partyGstin.length >= 2 ? (partyGstin.startsWith('07') ? '07' : partyGstin.slice(0, 2)) : (data.placeOfSupplyStateCode || existing.placeOfSupplyStateCode || '07');
+                const partyPosName = partyGstin.startsWith('07') ? 'Delhi' : (tax_engine_1.GST_STATE_CODE_MAP[partyPosCode] || data.placeOfSupply || existing.placeOfSupply || 'Delhi');
                 if (data.billTo) {
                     partiesToCreate.push({
                         piId: id,
@@ -801,8 +836,8 @@ exports.piService = {
                         partyName: data.billTo.partyName || existing.customer?.legalName || 'Customer Billing Party',
                         gstin: data.billTo.gstin ? data.billTo.gstin.toUpperCase().trim() : undefined,
                         addressLine: data.billTo.addressLine || 'Registered Address',
-                        state: data.billTo.state || 'Delhi',
-                        stateCode: data.billTo.stateCode || '07',
+                        state: data.billTo.state || partyPosName,
+                        stateCode: data.billTo.stateCode || partyPosCode,
                         phone: data.billTo.phone,
                         email: data.billTo.email,
                     });
@@ -814,8 +849,8 @@ exports.piService = {
                         partyName: data.shipTo.partyName || data.billTo?.partyName || existing.customer?.legalName || 'Delivery Site',
                         gstin: data.shipTo.gstin ? data.shipTo.gstin.toUpperCase().trim() : undefined,
                         addressLine: data.shipTo.addressLine || data.billTo?.addressLine || 'Delivery Address',
-                        state: data.shipTo.state || data.billTo?.state || 'Delhi',
-                        stateCode: data.shipTo.stateCode || data.billTo?.stateCode || '07',
+                        state: data.shipTo.state || data.billTo?.state || partyPosName,
+                        stateCode: data.shipTo.stateCode || data.billTo?.stateCode || partyPosCode,
                         phone: data.shipTo.phone || data.billTo?.phone,
                     });
                 }
@@ -903,10 +938,13 @@ exports.piService = {
         const customer = quotation.customer;
         const billingAddress = customer?.addresses?.find((a) => a.isDefaultBilling || a.addressType === 'BILLING') || customer?.addresses?.[0];
         const shippingAddress = customer?.addresses?.find((a) => a.isDefaultShipping || a.addressType === 'SHIPPING');
+        const customerGstin = (quotation.customerGstin || customer?.gstin || '').trim().toUpperCase();
         const rawPosState = quotation.recipientAddress?.split(',').pop()?.trim() || billingAddress?.state || shippingAddress?.state || 'Delhi';
-        const isDelhi = /delhi\b/i.test(rawPosState) || (customer?.gstin && customer.gstin.startsWith('07')) || billingAddress?.stateCode === '07';
-        const placeOfSupplyStateCode = isDelhi ? '07' : (billingAddress?.stateCode || shippingAddress?.stateCode || '07');
-        const placeOfSupply = isDelhi ? 'Delhi' : rawPosState;
+        const isDelhi = (0, tax_engine_1.isDelhiGst)(customerGstin, billingAddress?.stateCode, rawPosState);
+        const placeOfSupplyStateCode = isDelhi
+            ? '07'
+            : (customerGstin.length >= 2 ? customerGstin.slice(0, 2) : (billingAddress?.stateCode || shippingAddress?.stateCode || '07'));
+        const placeOfSupply = isDelhi ? 'Delhi' : (tax_engine_1.GST_STATE_CODE_MAP[placeOfSupplyStateCode] || rawPosState);
         const grandTotal = Number(quotation.grandTotal) || 0;
         const advancePercentage = 50;
         const advanceRequiredAmount = Math.round(grandTotal * 0.5);
@@ -1016,7 +1054,7 @@ exports.piService = {
             billTo: {
                 partyName: quotation.recipientName || customer?.legalName || 'Valued Customer',
                 addressLine: billAddressLine,
-                state: isDelhi ? 'Delhi' : (billingAddress?.state || 'Delhi'),
+                state: isDelhi ? 'Delhi' : (billingAddress?.state || tax_engine_1.GST_STATE_CODE_MAP[placeOfSupplyStateCode] || 'Delhi'),
                 stateCode: placeOfSupplyStateCode,
                 gstin: quotation.customerGstin || customer?.gstin,
                 phone: quotation.recipientPhone || customer?.phone,
@@ -1025,7 +1063,7 @@ exports.piService = {
             shipTo: {
                 partyName: quotation.recipientName || customer?.legalName || 'Valued Customer',
                 addressLine: shipAddressLine,
-                state: isDelhi ? 'Delhi' : (shippingAddress?.state || billingAddress?.state || 'Delhi'),
+                state: isDelhi ? 'Delhi' : (shippingAddress?.state || billingAddress?.state || tax_engine_1.GST_STATE_CODE_MAP[placeOfSupplyStateCode] || 'Delhi'),
                 stateCode: shippingAddress?.stateCode || placeOfSupplyStateCode,
                 gstin: quotation.customerGstin || customer?.gstin,
                 phone: quotation.recipientPhone || customer?.phone,

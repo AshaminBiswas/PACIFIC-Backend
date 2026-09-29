@@ -13,6 +13,7 @@ export interface TaxLineItemInput {
 export interface TaxCalculationParams {
     sellerStateCode: string;
     placeOfSupplyStateCode: string;
+    buyerGstin?: string;
     items: TaxLineItemInput[];
     freightAmount?: number;
     freightGstRate?: number;
@@ -56,4 +57,6 @@ export interface TaxCalculationResult {
     taxSummary: TaxSummaryRow[];
 }
 export declare function calculateGstTax(params: TaxCalculationParams): TaxCalculationResult;
+export declare const GST_STATE_CODE_MAP: Record<string, string>;
+export declare function isDelhiGst(gstin?: string, stateCode?: string, stateName?: string): boolean;
 //# sourceMappingURL=tax.engine.d.ts.map

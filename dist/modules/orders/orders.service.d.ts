@@ -439,6 +439,9 @@ export declare const ordersService: {
                 totalAmount: import("@prisma/client/runtime/library").Decimal;
                 productId: string | null;
                 quantity: import("@prisma/client/runtime/library").Decimal;
+                cgst: import("@prisma/client/runtime/library").Decimal;
+                sgst: import("@prisma/client/runtime/library").Decimal;
+                igst: import("@prisma/client/runtime/library").Decimal;
                 boardType: string | null;
                 boardThickness: string | null;
                 boardColor: string | null;
@@ -450,9 +453,6 @@ export declare const ordersService: {
                 serialNumber: number;
                 rate: import("@prisma/client/runtime/library").Decimal;
                 amount: import("@prisma/client/runtime/library").Decimal;
-                cgst: import("@prisma/client/runtime/library").Decimal;
-                sgst: import("@prisma/client/runtime/library").Decimal;
-                igst: import("@prisma/client/runtime/library").Decimal;
                 piId: string;
             }[];
         } & {
@@ -1367,6 +1367,9 @@ export declare const ordersService: {
                     totalAmount: import("@prisma/client/runtime/library").Decimal;
                     productId: string | null;
                     quantity: import("@prisma/client/runtime/library").Decimal;
+                    cgst: import("@prisma/client/runtime/library").Decimal;
+                    sgst: import("@prisma/client/runtime/library").Decimal;
+                    igst: import("@prisma/client/runtime/library").Decimal;
                     boardType: string | null;
                     boardThickness: string | null;
                     boardColor: string | null;
@@ -1378,9 +1381,6 @@ export declare const ordersService: {
                     serialNumber: number;
                     rate: import("@prisma/client/runtime/library").Decimal;
                     amount: import("@prisma/client/runtime/library").Decimal;
-                    cgst: import("@prisma/client/runtime/library").Decimal;
-                    sgst: import("@prisma/client/runtime/library").Decimal;
-                    igst: import("@prisma/client/runtime/library").Decimal;
                     piId: string;
                 }[];
             } & {

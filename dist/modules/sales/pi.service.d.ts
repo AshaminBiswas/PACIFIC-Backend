@@ -44,6 +44,9 @@ export declare const piService: {
                 totalAmount: import("@prisma/client/runtime/library").Decimal;
                 productId: string | null;
                 quantity: import("@prisma/client/runtime/library").Decimal;
+                cgst: import("@prisma/client/runtime/library").Decimal;
+                sgst: import("@prisma/client/runtime/library").Decimal;
+                igst: import("@prisma/client/runtime/library").Decimal;
                 boardType: string | null;
                 boardThickness: string | null;
                 boardColor: string | null;
@@ -55,9 +58,6 @@ export declare const piService: {
                 serialNumber: number;
                 rate: import("@prisma/client/runtime/library").Decimal;
                 amount: import("@prisma/client/runtime/library").Decimal;
-                cgst: import("@prisma/client/runtime/library").Decimal;
-                sgst: import("@prisma/client/runtime/library").Decimal;
-                igst: import("@prisma/client/runtime/library").Decimal;
                 piId: string;
             }[];
             customer: {
@@ -96,11 +96,11 @@ export declare const piService: {
             taxSummary: {
                 id: string;
                 gstRate: import("@prisma/client/runtime/library").Decimal;
-                taxableAmount: import("@prisma/client/runtime/library").Decimal;
                 cgst: import("@prisma/client/runtime/library").Decimal;
                 sgst: import("@prisma/client/runtime/library").Decimal;
                 igst: import("@prisma/client/runtime/library").Decimal;
                 totalTax: import("@prisma/client/runtime/library").Decimal;
+                taxableAmount: import("@prisma/client/runtime/library").Decimal;
                 piId: string;
             }[];
         } & {
@@ -281,6 +281,9 @@ export declare const piService: {
             totalAmount: import("@prisma/client/runtime/library").Decimal;
             productId: string | null;
             quantity: import("@prisma/client/runtime/library").Decimal;
+            cgst: import("@prisma/client/runtime/library").Decimal;
+            sgst: import("@prisma/client/runtime/library").Decimal;
+            igst: import("@prisma/client/runtime/library").Decimal;
             boardType: string | null;
             boardThickness: string | null;
             boardColor: string | null;
@@ -292,9 +295,6 @@ export declare const piService: {
             serialNumber: number;
             rate: import("@prisma/client/runtime/library").Decimal;
             amount: import("@prisma/client/runtime/library").Decimal;
-            cgst: import("@prisma/client/runtime/library").Decimal;
-            sgst: import("@prisma/client/runtime/library").Decimal;
-            igst: import("@prisma/client/runtime/library").Decimal;
             piId: string;
         })[];
         terms: {
@@ -367,11 +367,11 @@ export declare const piService: {
         taxSummary: {
             id: string;
             gstRate: import("@prisma/client/runtime/library").Decimal;
-            taxableAmount: import("@prisma/client/runtime/library").Decimal;
             cgst: import("@prisma/client/runtime/library").Decimal;
             sgst: import("@prisma/client/runtime/library").Decimal;
             igst: import("@prisma/client/runtime/library").Decimal;
             totalTax: import("@prisma/client/runtime/library").Decimal;
+            taxableAmount: import("@prisma/client/runtime/library").Decimal;
             piId: string;
         }[];
         statusHistory: ({
@@ -503,6 +503,9 @@ export declare const piService: {
             totalAmount: import("@prisma/client/runtime/library").Decimal;
             productId: string | null;
             quantity: import("@prisma/client/runtime/library").Decimal;
+            cgst: import("@prisma/client/runtime/library").Decimal;
+            sgst: import("@prisma/client/runtime/library").Decimal;
+            igst: import("@prisma/client/runtime/library").Decimal;
             boardType: string | null;
             boardThickness: string | null;
             boardColor: string | null;
@@ -514,9 +517,6 @@ export declare const piService: {
             serialNumber: number;
             rate: import("@prisma/client/runtime/library").Decimal;
             amount: import("@prisma/client/runtime/library").Decimal;
-            cgst: import("@prisma/client/runtime/library").Decimal;
-            sgst: import("@prisma/client/runtime/library").Decimal;
-            igst: import("@prisma/client/runtime/library").Decimal;
             piId: string;
         }[];
         terms: {
@@ -540,11 +540,11 @@ export declare const piService: {
         taxSummary: {
             id: string;
             gstRate: import("@prisma/client/runtime/library").Decimal;
-            taxableAmount: import("@prisma/client/runtime/library").Decimal;
             cgst: import("@prisma/client/runtime/library").Decimal;
             sgst: import("@prisma/client/runtime/library").Decimal;
             igst: import("@prisma/client/runtime/library").Decimal;
             totalTax: import("@prisma/client/runtime/library").Decimal;
+            taxableAmount: import("@prisma/client/runtime/library").Decimal;
             piId: string;
         }[];
     } & {
@@ -683,6 +683,9 @@ export declare const piService: {
             totalAmount: import("@prisma/client/runtime/library").Decimal;
             productId: string | null;
             quantity: import("@prisma/client/runtime/library").Decimal;
+            cgst: import("@prisma/client/runtime/library").Decimal;
+            sgst: import("@prisma/client/runtime/library").Decimal;
+            igst: import("@prisma/client/runtime/library").Decimal;
             boardType: string | null;
             boardThickness: string | null;
             boardColor: string | null;
@@ -694,9 +697,6 @@ export declare const piService: {
             serialNumber: number;
             rate: import("@prisma/client/runtime/library").Decimal;
             amount: import("@prisma/client/runtime/library").Decimal;
-            cgst: import("@prisma/client/runtime/library").Decimal;
-            sgst: import("@prisma/client/runtime/library").Decimal;
-            igst: import("@prisma/client/runtime/library").Decimal;
             piId: string;
         }[];
         terms: {
@@ -720,11 +720,11 @@ export declare const piService: {
         taxSummary: {
             id: string;
             gstRate: import("@prisma/client/runtime/library").Decimal;
-            taxableAmount: import("@prisma/client/runtime/library").Decimal;
             cgst: import("@prisma/client/runtime/library").Decimal;
             sgst: import("@prisma/client/runtime/library").Decimal;
             igst: import("@prisma/client/runtime/library").Decimal;
             totalTax: import("@prisma/client/runtime/library").Decimal;
+            taxableAmount: import("@prisma/client/runtime/library").Decimal;
             piId: string;
         }[];
     } & {
@@ -822,6 +822,9 @@ export declare const piService: {
             totalAmount: import("@prisma/client/runtime/library").Decimal;
             productId: string | null;
             quantity: import("@prisma/client/runtime/library").Decimal;
+            cgst: import("@prisma/client/runtime/library").Decimal;
+            sgst: import("@prisma/client/runtime/library").Decimal;
+            igst: import("@prisma/client/runtime/library").Decimal;
             boardType: string | null;
             boardThickness: string | null;
             boardColor: string | null;
@@ -833,9 +836,6 @@ export declare const piService: {
             serialNumber: number;
             rate: import("@prisma/client/runtime/library").Decimal;
             amount: import("@prisma/client/runtime/library").Decimal;
-            cgst: import("@prisma/client/runtime/library").Decimal;
-            sgst: import("@prisma/client/runtime/library").Decimal;
-            igst: import("@prisma/client/runtime/library").Decimal;
             piId: string;
         }[];
         terms: {
@@ -874,11 +874,11 @@ export declare const piService: {
         taxSummary: {
             id: string;
             gstRate: import("@prisma/client/runtime/library").Decimal;
-            taxableAmount: import("@prisma/client/runtime/library").Decimal;
             cgst: import("@prisma/client/runtime/library").Decimal;
             sgst: import("@prisma/client/runtime/library").Decimal;
             igst: import("@prisma/client/runtime/library").Decimal;
             totalTax: import("@prisma/client/runtime/library").Decimal;
+            taxableAmount: import("@prisma/client/runtime/library").Decimal;
             piId: string;
         }[];
     } & {
@@ -940,6 +940,9 @@ export declare const piService: {
             totalAmount: import("@prisma/client/runtime/library").Decimal;
             productId: string | null;
             quantity: import("@prisma/client/runtime/library").Decimal;
+            cgst: import("@prisma/client/runtime/library").Decimal;
+            sgst: import("@prisma/client/runtime/library").Decimal;
+            igst: import("@prisma/client/runtime/library").Decimal;
             boardType: string | null;
             boardThickness: string | null;
             boardColor: string | null;
@@ -951,9 +954,6 @@ export declare const piService: {
             serialNumber: number;
             rate: import("@prisma/client/runtime/library").Decimal;
             amount: import("@prisma/client/runtime/library").Decimal;
-            cgst: import("@prisma/client/runtime/library").Decimal;
-            sgst: import("@prisma/client/runtime/library").Decimal;
-            igst: import("@prisma/client/runtime/library").Decimal;
             piId: string;
         }[];
         terms: {
@@ -977,11 +977,11 @@ export declare const piService: {
         taxSummary: {
             id: string;
             gstRate: import("@prisma/client/runtime/library").Decimal;
-            taxableAmount: import("@prisma/client/runtime/library").Decimal;
             cgst: import("@prisma/client/runtime/library").Decimal;
             sgst: import("@prisma/client/runtime/library").Decimal;
             igst: import("@prisma/client/runtime/library").Decimal;
             totalTax: import("@prisma/client/runtime/library").Decimal;
+            taxableAmount: import("@prisma/client/runtime/library").Decimal;
             piId: string;
         }[];
     } & {
@@ -1046,6 +1046,9 @@ export declare const piService: {
             totalAmount: import("@prisma/client/runtime/library").Decimal;
             productId: string | null;
             quantity: import("@prisma/client/runtime/library").Decimal;
+            cgst: import("@prisma/client/runtime/library").Decimal;
+            sgst: import("@prisma/client/runtime/library").Decimal;
+            igst: import("@prisma/client/runtime/library").Decimal;
             boardType: string | null;
             boardThickness: string | null;
             boardColor: string | null;
@@ -1057,9 +1060,6 @@ export declare const piService: {
             serialNumber: number;
             rate: import("@prisma/client/runtime/library").Decimal;
             amount: import("@prisma/client/runtime/library").Decimal;
-            cgst: import("@prisma/client/runtime/library").Decimal;
-            sgst: import("@prisma/client/runtime/library").Decimal;
-            igst: import("@prisma/client/runtime/library").Decimal;
             piId: string;
         }[];
         customer: {

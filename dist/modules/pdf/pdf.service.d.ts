@@ -66,6 +66,7 @@ export interface QuotationPdfData {
     recipientName: string;
     recipientCompany?: string;
     recipientAddress?: string;
+    recipientGstin?: string;
     issuingStaffName?: string;
     issuingStaffDesignation?: string;
     issuingStaffPhone?: string;

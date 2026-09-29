@@ -516,6 +516,7 @@ export const quotationsService = {
       recipientName: quote.recipientName,
       recipientCompany: quote.recipientCompany || undefined,
       recipientAddress: quote.recipientAddress || undefined,
+      recipientGstin: (quote.customer?.gstin || (quote as any).recipientGstin || (quote as any).customerGstin || undefined)?.trim().toUpperCase(),
       issuingStaffName,
       issuingStaffDesignation,
       issuingStaffPhone,

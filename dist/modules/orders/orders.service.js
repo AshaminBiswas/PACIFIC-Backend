@@ -7,6 +7,7 @@ const audit_service_1 = require("../audit/audit.service");
 const email_service_1 = require("../../utils/email.service");
 const pdf_service_1 = require("../pdf/pdf.service");
 const qr_service_1 = require("../qr/qr.service");
+const tax_engine_1 = require("../tax/tax.engine");
 function parseItemSpecs(desc) {
     const match = desc.match(/\((Board:.*?)\)/i) || desc.match(/\((.*?Hardware:.*?)\)/i);
     if (!match)
@@ -181,9 +182,11 @@ exports.ordersService = {
                 hardwarePackage,
             };
         });
-        const isDelhi = Boolean((quotation.customer?.gstin && quotation.customer.gstin.startsWith('07')) ||
-            /delhi\b/i.test(quotation.recipientAddress || '') ||
-            /07\b/i.test(quotation.recipientAddress || ''));
+        const activeGstin = (quotation.customerGstin || quotation.customer?.gstin || '').trim().toUpperCase();
+        const rawPos = quotation.recipientAddress?.split(',').pop()?.trim() || '';
+        const isDelhi = (0, tax_engine_1.isDelhiGst)(activeGstin, undefined, rawPos || quotation.recipientAddress);
+        const posStateCode = isDelhi ? '07' : (activeGstin.length >= 2 ? activeGstin.slice(0, 2) : '07');
+        const posStateName = isDelhi ? 'Delhi' : (tax_engine_1.GST_STATE_CODE_MAP[posStateCode] || rawPos || 'Interstate');
         const totalTaxAmount = Number(quotation.gstAmount) || 0;
         const cgstAmount = isDelhi ? totalTaxAmount / 2 : 0;
         const sgstAmount = isDelhi ? totalTaxAmount / 2 : 0;
@@ -206,8 +209,8 @@ exports.ordersService = {
                 igstAmount,
                 taxAmount: totalTaxAmount,
                 grandTotal: Number(quotation.grandTotal) || 0,
-                placeOfSupply: isDelhi ? 'Delhi' : (quotation.recipientAddress?.split(',').pop()?.trim() || 'Delhi'),
-                placeOfSupplyStateCode: isDelhi ? '07' : '07',
+                placeOfSupply: posStateName,
+                placeOfSupplyStateCode: posStateCode,
                 accessoriesText: quotation.accessoriesText || null,
                 termsJson: termsList,
                 status: 'PENDING_APPROVAL',
@@ -217,20 +220,20 @@ exports.ordersService = {
                 billingAddressSnapshot: {
                     partyName: quotation.recipientCompany || quotation.recipientName || quotation.customer?.legalName,
                     address: quotation.recipientAddress || quotation.customer?.addresses?.[0]?.addressLine1 || 'Registered Billing Address',
-                    gstin: quotation.customer?.gstin || undefined,
+                    gstin: activeGstin || undefined,
                     pan: quotation.customer?.pan || undefined,
                     phone: quotation.recipientPhone || quotation.customer?.phone || undefined,
                     email: quotation.recipientEmail || quotation.customer?.email || undefined,
-                    state: isDelhi ? 'Delhi' : undefined,
-                    stateCode: isDelhi ? '07' : undefined,
+                    state: posStateName,
+                    stateCode: posStateCode,
                 },
                 shippingAddressSnapshot: {
                     partyName: quotation.recipientName || quotation.recipientCompany || quotation.customer?.legalName,
                     recipient: quotation.recipientName || quotation.recipientCompany || quotation.customer?.legalName,
                     address: quotation.recipientAddress || quotation.customer?.addresses?.[0]?.addressLine1 || 'Delivery Address',
                     phone: quotation.recipientPhone || quotation.customer?.phone || undefined,
-                    state: isDelhi ? 'Delhi' : undefined,
-                    stateCode: isDelhi ? '07' : undefined,
+                    state: posStateName,
+                    stateCode: posStateCode,
                 },
                 items: {
                     create: itemsData,
@@ -460,12 +463,16 @@ exports.ordersService = {
         const taxRate = Number(data.taxRate) || 18;
         const totalTaxAmount = Math.round((taxableTotal * (taxRate / 100)) * 100) / 100;
         const grandTotal = Math.round(taxableTotal + totalTaxAmount);
-        const isDelhi = Boolean((data.billingAddress?.gstin && data.billingAddress.gstin.startsWith('07')) ||
-            (data.billingAddressSnapshot?.gstin && data.billingAddressSnapshot.gstin.startsWith('07')) ||
-            /delhi\b/i.test(data.placeOfSupply || '') ||
-            /07\b/i.test(data.placeOfSupplyStateCode || '') ||
-            /delhi\b/i.test(data.billingAddress?.address || '') ||
-            !(data.placeOfSupply || '').trim());
+        const activeGstin = (data.billingAddress?.gstin ||
+            data.billingAddressSnapshot?.gstin ||
+            '').trim().toUpperCase();
+        const isDelhi = (0, tax_engine_1.isDelhiGst)(activeGstin, data.placeOfSupplyStateCode, data.placeOfSupply || data.billingAddress?.address);
+        const posStateCode = isDelhi
+            ? '07'
+            : (activeGstin.length >= 2 ? activeGstin.slice(0, 2) : (data.placeOfSupplyStateCode || '07'));
+        const posStateName = isDelhi
+            ? 'Delhi'
+            : (data.placeOfSupply || tax_engine_1.GST_STATE_CODE_MAP[posStateCode] || 'Interstate');
         const cgstAmount = isDelhi ? totalTaxAmount / 2 : 0;
         const sgstAmount = isDelhi ? totalTaxAmount / 2 : 0;
         const igstAmount = isDelhi ? 0 : totalTaxAmount;
@@ -493,8 +500,8 @@ exports.ordersService = {
                 igstAmount,
                 taxAmount: totalTaxAmount,
                 grandTotal,
-                placeOfSupply: data.placeOfSupply || (isDelhi ? 'Delhi' : 'Interstate'),
-                placeOfSupplyStateCode: data.placeOfSupplyStateCode || (isDelhi ? '07' : '00'),
+                placeOfSupply: posStateName,
+                placeOfSupplyStateCode: posStateCode,
                 accessoriesText: data.accessoriesText || null,
                 termsJson: Array.isArray(data.terms) ? data.terms : (data.termsJson || []),
                 status: data.requiresApproval ? 'PENDING_APPROVAL' : 'APPROVED',
@@ -876,8 +883,14 @@ exports.ordersService = {
         const customer = order.customer;
         const shippingSnapshot = order.shippingAddressSnapshot || {};
         const billingSnapshot = order.billingAddressSnapshot || {};
-        const placeOfSupply = order.placeOfSupply || billingSnapshot?.state || customer?.addresses?.[0]?.state || 'Delhi';
-        const placeOfSupplyStateCode = order.placeOfSupplyStateCode || billingSnapshot?.stateCode || (placeOfSupply.toLowerCase().includes('delhi') ? '07' : '07');
+        const activeOrderGstin = (billingSnapshot?.gstin || customer?.gstin || '').trim().toUpperCase();
+        const isDelhiOrder = (0, tax_engine_1.isDelhiGst)(activeOrderGstin, order.placeOfSupplyStateCode || billingSnapshot?.stateCode, order.placeOfSupply || billingSnapshot?.state);
+        const placeOfSupplyStateCode = isDelhiOrder
+            ? '07'
+            : (activeOrderGstin.length >= 2 ? activeOrderGstin.slice(0, 2) : (order.placeOfSupplyStateCode || billingSnapshot?.stateCode || '07'));
+        const placeOfSupply = isDelhiOrder
+            ? 'Delhi'
+            : (order.placeOfSupply || billingSnapshot?.state || tax_engine_1.GST_STATE_CODE_MAP[placeOfSupplyStateCode] || 'Interstate');
         const customerPan = billingSnapshot?.pan ||
             customer?.pan ||
             (billingSnapshot?.gstin && billingSnapshot.gstin.length === 15 ? billingSnapshot.gstin.substring(2, 12) : undefined) ||
@@ -1215,13 +1228,14 @@ exports.ordersService = {
                 siteAddress: data.siteAddress,
             }
             : existing.shippingAddressSnapshot);
-        const placeOfSupply = data.placeOfSupply ?? existing.placeOfSupply ?? 'Delhi';
-        const placeOfSupplyStateCode = data.placeOfSupplyStateCode ?? existing.placeOfSupplyStateCode ?? '07';
-        const isDelhi = Boolean((billingAddress?.gstin && billingAddress.gstin.startsWith('07')) ||
-            /delhi\b/i.test(placeOfSupply || '') ||
-            /07\b/i.test(placeOfSupplyStateCode || '') ||
-            /delhi\b/i.test(billingAddress?.address || '') ||
-            !placeOfSupply?.trim());
+        const activeGstin = (billingAddress?.gstin || '').trim().toUpperCase();
+        const isDelhi = (0, tax_engine_1.isDelhiGst)(activeGstin, data.placeOfSupplyStateCode ?? existing.placeOfSupplyStateCode, data.placeOfSupply ?? existing.placeOfSupply ?? billingAddress?.address);
+        const placeOfSupplyStateCode = isDelhi
+            ? '07'
+            : (activeGstin.length >= 2 ? activeGstin.slice(0, 2) : (data.placeOfSupplyStateCode ?? existing.placeOfSupplyStateCode ?? '07'));
+        const placeOfSupply = isDelhi
+            ? 'Delhi'
+            : (data.placeOfSupply ?? existing.placeOfSupply ?? tax_engine_1.GST_STATE_CODE_MAP[placeOfSupplyStateCode] ?? 'Interstate');
         const cgstAmount = isDelhi ? totalTaxAmount / 2 : 0;
         const sgstAmount = isDelhi ? totalTaxAmount / 2 : 0;
         const igstAmount = isDelhi ? 0 : totalTaxAmount;
