@@ -1,7 +1,13 @@
+require('dotenv').config();
 const { Client } = require('pg');
 
+const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('Missing DIRECT_URL or DATABASE_URL in environment variables (.env)');
+}
+
 const client = new Client({
-  connectionString: 'postgresql://postgres.kgalsrokdmsrqysyoffm:Pacific_API_2026@aws-0-ap-south-1.pooler.supabase.com:5432/postgres',
+  connectionString,
   ssl: { rejectUnauthorized: false }
 });
 

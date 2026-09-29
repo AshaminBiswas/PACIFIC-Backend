@@ -4,10 +4,10 @@ dotenv.config();
 import { Pool } from 'pg';
 
 async function upgrade() {
-  const connectionString =
-    process.env.DIRECT_URL ||
-    process.env.DATABASE_URL ||
-    'postgresql://postgres.kgalsrokdmsrqysyoffm:Pacific_API_2026@aws-0-ap-south-1.pooler.supabase.com:5432/postgres';
+  const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DIRECT_URL or DATABASE_URL environment variable is missing in .env');
+  }
 
   console.log('Connecting to PostgreSQL for Multi-Warehouse & Inventory Upgrade...');
   const pool = new Pool({
