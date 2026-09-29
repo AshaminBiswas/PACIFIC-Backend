@@ -651,7 +651,7 @@ export declare const crmService: {
         canonicalId: string;
         mergedId: string;
     }>;
-    createCustomer(data: any, userId?: string): Promise<({
+    createCustomer(data: any, userId?: string): Promise<{
         customerProfile: {
             status: string;
             id: string;
@@ -703,7 +703,7 @@ export declare const crmService: {
         tradeName: string | null;
         gstin: string | null;
         pan: string | null;
-    }) | null>;
+    }>;
     updateCustomer(id: string, data: any, userId?: string): Promise<({
         customerProfile: {
             status: string;

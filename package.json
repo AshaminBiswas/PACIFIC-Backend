@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "description": "Pacific Restroom Cubicle REST API — Products, Configurator, Quotes, Projects, CMS",
   "main": "dist/server.js",
+  "allowScripts": {
+    "@prisma/client": true,
+    "@prisma/engines": true,
+    "prisma": true,
+    "esbuild": true
+  },
   "scripts": {
     "postinstall": "prisma generate && tsc",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",

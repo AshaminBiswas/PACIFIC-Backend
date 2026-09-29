@@ -399,164 +399,213 @@ exports.crmService = {
         });
     },
     async createCustomer(data, userId) {
-        return database_1.prisma.$transaction(async (tx) => {
-            const party = await tx.businessParty.create({
-                data: {
-                    companyProfileId: data.companyProfileId,
-                    partyType: data.partyType || 'CUSTOMER',
-                    legalName: data.legalName,
-                    tradeName: data.tradeName,
-                    gstin: data.gstin ? data.gstin.toUpperCase().trim() : undefined,
-                    pan: data.pan ? data.pan.toUpperCase().trim() : undefined,
-                    email: data.email,
-                    phone: data.phone,
-                    status: data.status || 'ACTIVE',
-                    notes: data.notes,
-                },
-            });
-            // Create linked customer profile
-            const profile = await tx.customerProfile.create({
-                data: {
-                    partyId: party.id,
-                    customerType: data.customerType || 'CONTRACTOR',
-                    creditLimit: data.creditLimit,
-                    paymentTermsDays: Number(data.paymentTermsDays) || 30,
-                    status: 'ACTIVE',
-                },
-            });
-            // Add contacts if provided
-            if (Array.isArray(data.contacts)) {
-                for (const c of data.contacts) {
-                    await tx.partyContact.create({
-                        data: { ...c, partyId: party.id },
-                    });
-                }
-            }
-            // Add addresses if provided
-            if (Array.isArray(data.addresses)) {
-                for (const a of data.addresses) {
-                    await tx.partyAddress.create({
-                        data: { ...a, partyId: party.id },
-                    });
-                }
-            }
-            if (userId) {
-                await audit_service_1.auditService.logMutation({
-                    userId,
-                    action: 'CREATE',
-                    module: 'CRM',
-                    entityType: 'Customer',
-                    entityId: party.id,
-                    newData: { party, profile },
+        if (!data.legalName || !data.legalName.trim()) {
+            throw Object.assign(new Error('Company Legal Name is required'), { status: 400 });
+        }
+        // 1. Resolve default companyProfileId if not provided
+        let companyProfileId = data.companyProfileId;
+        if (!companyProfileId) {
+            const defaultCompany = await database_1.prisma.companyProfile.findFirst({ select: { id: true } });
+            if (defaultCompany)
+                companyProfileId = defaultCompany.id;
+        }
+        // 2. Auto-derive PAN from GSTIN if missing
+        const gstin = data.gstin ? data.gstin.toUpperCase().trim() : null;
+        let pan = data.pan ? data.pan.toUpperCase().trim() : null;
+        if (!pan && gstin && gstin.length === 15) {
+            pan = gstin.substring(2, 12);
+        }
+        // 3. Sanitize creditLimit & paymentTermsDays
+        const creditLimit = data.creditLimit !== undefined && data.creditLimit !== null && !isNaN(Number(data.creditLimit))
+            ? Number(data.creditLimit)
+            : null;
+        const paymentTermsDays = data.paymentTermsDays !== undefined && !isNaN(Number(data.paymentTermsDays))
+            ? Math.round(Number(data.paymentTermsDays))
+            : 30;
+        // 4. Sanitize contacts
+        const contactsData = [];
+        if (Array.isArray(data.contacts)) {
+            for (const c of data.contacts) {
+                if (!c.name || !c.name.trim())
+                    continue;
+                contactsData.push({
+                    name: c.name.trim(),
+                    designation: c.designation || null,
+                    department: c.department || null,
+                    phone: c.phone || null,
+                    email: c.email || null,
+                    isPrimary: Boolean(c.isPrimary),
                 });
             }
-            return tx.businessParty.findUnique({
-                where: { id: party.id },
-                include: { customerProfile: true, contacts: true, addresses: true },
-            });
-        });
-    },
-    async updateCustomer(id, data, userId) {
-        return database_1.prisma.$transaction(async (tx) => {
-            const old = await tx.businessParty.findUnique({
-                where: { id },
-                include: { customerProfile: true, contacts: true, addresses: true },
-            });
-            if (!old) {
-                throw Object.assign(new Error('Customer not found'), { status: 404 });
+        }
+        // 5. Sanitize addresses
+        const addressesData = [];
+        if (Array.isArray(data.addresses)) {
+            for (const a of data.addresses) {
+                if (!a.addressLine1 || !a.addressLine1.trim())
+                    continue;
+                addressesData.push({
+                    addressType: a.addressType || 'BILLING',
+                    addressLine1: a.addressLine1.trim(),
+                    addressLine2: a.addressLine2 || null,
+                    city: (a.city && a.city.trim()) || 'Delhi',
+                    state: (a.state && a.state.trim()) || 'Delhi',
+                    stateCode: a.stateCode || '07',
+                    country: a.country || 'India',
+                    postalCode: a.postalCode || a.pincode || null,
+                    gstin: a.gstin ? a.gstin.toUpperCase().trim() : null,
+                    isDefaultBilling: Boolean(a.isDefaultBilling),
+                    isDefaultShipping: Boolean(a.isDefaultShipping),
+                });
             }
-            const party = await tx.businessParty.update({
-                where: { id },
-                data: {
-                    legalName: data.legalName !== undefined ? data.legalName : old.legalName,
-                    tradeName: data.tradeName !== undefined ? data.tradeName : old.tradeName,
-                    gstin: data.gstin !== undefined ? (data.gstin ? data.gstin.toUpperCase().trim() : null) : old.gstin,
-                    pan: data.pan !== undefined ? (data.pan ? data.pan.toUpperCase().trim() : null) : old.pan,
-                    email: data.email !== undefined ? data.email : old.email,
-                    phone: data.phone !== undefined ? data.phone : old.phone,
-                    status: data.status !== undefined ? data.status : old.status,
-                    notes: data.notes !== undefined ? data.notes : old.notes,
-                },
-            });
-            // Update customer profile
-            const profileData = {};
-            if (data.customerType !== undefined)
-                profileData.customerType = data.customerType;
-            if (data.creditLimit !== undefined)
-                profileData.creditLimit = data.creditLimit ? Number(data.creditLimit) : null;
-            if (data.paymentTermsDays !== undefined)
-                profileData.paymentTermsDays = Number(data.paymentTermsDays) || 30;
-            if (data.customerProfile)
-                Object.assign(profileData, data.customerProfile);
-            if (Object.keys(profileData).length > 0) {
-                await tx.customerProfile.upsert({
-                    where: { partyId: id },
+        }
+        // 6. Execute atomic single-statement nested write (works with Supabase pgBouncer)
+        const party = await database_1.prisma.businessParty.create({
+            data: {
+                companyProfileId: companyProfileId || null,
+                partyType: data.partyType || 'CUSTOMER',
+                legalName: data.legalName.trim(),
+                tradeName: data.tradeName ? data.tradeName.trim() : data.legalName.trim(),
+                gstin: gstin || null,
+                pan: pan || null,
+                email: data.email ? data.email.trim() : null,
+                phone: data.phone ? data.phone.trim() : null,
+                status: data.status || 'ACTIVE',
+                notes: data.notes || null,
+                customerProfile: {
                     create: {
-                        partyId: id,
-                        customerType: profileData.customerType || 'CONTRACTOR',
-                        creditLimit: profileData.creditLimit,
-                        paymentTermsDays: profileData.paymentTermsDays || 30,
+                        customerType: data.customerType || 'CONTRACTOR',
+                        creditLimit,
+                        paymentTermsDays,
                         status: 'ACTIVE',
                     },
-                    update: profileData,
-                });
-            }
-            // Update contacts if provided
-            if (Array.isArray(data.contacts)) {
-                await tx.partyContact.deleteMany({ where: { partyId: id } });
-                for (const c of data.contacts) {
-                    if (c.name) {
-                        await tx.partyContact.create({
-                            data: {
-                                partyId: id,
-                                name: c.name,
-                                designation: c.designation || null,
-                                phone: c.phone || null,
-                                email: c.email || null,
-                                isPrimary: Boolean(c.isPrimary),
-                            },
-                        });
-                    }
-                }
-            }
-            // Update addresses if provided
-            if (Array.isArray(data.addresses)) {
-                await tx.partyAddress.deleteMany({ where: { partyId: id } });
-                for (const a of data.addresses) {
-                    if (a.addressLine1) {
-                        await tx.partyAddress.create({
-                            data: {
-                                partyId: id,
-                                addressType: a.addressType || 'BILLING',
-                                addressLine1: a.addressLine1,
-                                addressLine2: a.addressLine2 || null,
-                                city: a.city || 'Delhi',
-                                state: a.state || 'Delhi',
-                                stateCode: a.stateCode || '07',
-                                postalCode: a.postalCode || a.pincode || null,
-                                gstin: a.gstin ? a.gstin.toUpperCase().trim() : null,
-                                isDefaultBilling: Boolean(a.isDefaultBilling),
-                                isDefaultShipping: Boolean(a.isDefaultShipping),
-                            },
-                        });
-                    }
-                }
-            }
-            if (userId) {
-                await audit_service_1.auditService.logMutation({
-                    userId,
-                    action: 'UPDATE',
-                    module: 'CRM',
-                    entityType: 'Customer',
-                    entityId: id,
-                    oldData: old,
-                    newData: party,
-                });
-            }
-            return tx.businessParty.findUnique({
-                where: { id },
-                include: { customerProfile: true, contacts: true, addresses: true },
+                },
+                contacts: contactsData.length > 0 ? { create: contactsData } : undefined,
+                addresses: addressesData.length > 0 ? { create: addressesData } : undefined,
+            },
+            include: {
+                customerProfile: true,
+                contacts: true,
+                addresses: true,
+            },
+        });
+        // 7. Non-blocking audit log
+        if (userId) {
+            audit_service_1.auditService.logMutation({
+                userId,
+                action: 'CREATE',
+                module: 'CRM',
+                entityType: 'Customer',
+                entityId: party.id,
+                newData: { party },
+            }).catch((e) => console.warn('[CRM] Audit log error ignored:', e?.message));
+        }
+        return party;
+    },
+    async updateCustomer(id, data, userId) {
+        const old = await database_1.prisma.businessParty.findUnique({
+            where: { id },
+            include: { customerProfile: true, contacts: true, addresses: true },
+        });
+        if (!old) {
+            throw Object.assign(new Error('Customer not found'), { status: 404 });
+        }
+        const gstin = data.gstin !== undefined ? (data.gstin ? data.gstin.toUpperCase().trim() : null) : old.gstin;
+        let pan = data.pan !== undefined ? (data.pan ? data.pan.toUpperCase().trim() : null) : old.pan;
+        if (!pan && gstin && gstin.length === 15) {
+            pan = gstin.substring(2, 12);
+        }
+        const party = await database_1.prisma.businessParty.update({
+            where: { id },
+            data: {
+                legalName: data.legalName !== undefined ? data.legalName.trim() : old.legalName,
+                tradeName: data.tradeName !== undefined ? data.tradeName.trim() : old.tradeName,
+                gstin,
+                pan,
+                email: data.email !== undefined ? (data.email ? data.email.trim() : null) : old.email,
+                phone: data.phone !== undefined ? (data.phone ? data.phone.trim() : null) : old.phone,
+                status: data.status !== undefined ? data.status : old.status,
+                notes: data.notes !== undefined ? data.notes : old.notes,
+            },
+        });
+        // Update customer profile
+        const profileData = {};
+        if (data.customerType !== undefined)
+            profileData.customerType = data.customerType;
+        if (data.creditLimit !== undefined) {
+            profileData.creditLimit =
+                data.creditLimit !== null && !isNaN(Number(data.creditLimit)) ? Number(data.creditLimit) : null;
+        }
+        if (data.paymentTermsDays !== undefined) {
+            profileData.paymentTermsDays = !isNaN(Number(data.paymentTermsDays)) ? Math.round(Number(data.paymentTermsDays)) : 30;
+        }
+        if (Object.keys(profileData).length > 0) {
+            await database_1.prisma.customerProfile.upsert({
+                where: { partyId: id },
+                create: {
+                    partyId: id,
+                    customerType: profileData.customerType || 'CONTRACTOR',
+                    creditLimit: profileData.creditLimit,
+                    paymentTermsDays: profileData.paymentTermsDays || 30,
+                    status: 'ACTIVE',
+                },
+                update: profileData,
             });
+        }
+        // Update contacts if provided
+        if (Array.isArray(data.contacts)) {
+            await database_1.prisma.partyContact.deleteMany({ where: { partyId: id } });
+            const contactsToCreate = data.contacts
+                .filter((c) => c.name && c.name.trim())
+                .map((c) => ({
+                partyId: id,
+                name: c.name.trim(),
+                designation: c.designation || null,
+                phone: c.phone || null,
+                email: c.email || null,
+                isPrimary: Boolean(c.isPrimary),
+            }));
+            if (contactsToCreate.length > 0) {
+                await database_1.prisma.partyContact.createMany({ data: contactsToCreate });
+            }
+        }
+        // Update addresses if provided
+        if (Array.isArray(data.addresses)) {
+            await database_1.prisma.partyAddress.deleteMany({ where: { partyId: id } });
+            const addressesToCreate = data.addresses
+                .filter((a) => a.addressLine1 && a.addressLine1.trim())
+                .map((a) => ({
+                partyId: id,
+                addressType: a.addressType || 'BILLING',
+                addressLine1: a.addressLine1.trim(),
+                addressLine2: a.addressLine2 || null,
+                city: (a.city && a.city.trim()) || 'Delhi',
+                state: (a.state && a.state.trim()) || 'Delhi',
+                stateCode: a.stateCode || '07',
+                country: a.country || 'India',
+                postalCode: a.postalCode || a.pincode || null,
+                gstin: a.gstin ? a.gstin.toUpperCase().trim() : null,
+                isDefaultBilling: Boolean(a.isDefaultBilling),
+                isDefaultShipping: Boolean(a.isDefaultShipping),
+            }));
+            if (addressesToCreate.length > 0) {
+                await database_1.prisma.partyAddress.createMany({ data: addressesToCreate });
+            }
+        }
+        if (userId) {
+            audit_service_1.auditService.logMutation({
+                userId,
+                action: 'UPDATE',
+                module: 'CRM',
+                entityType: 'Customer',
+                entityId: id,
+                oldData: old,
+                newData: party,
+            }).catch((e) => console.warn('[CRM] Audit log error ignored:', e?.message));
+        }
+        return database_1.prisma.businessParty.findUnique({
+            where: { id },
+            include: { customerProfile: true, contacts: true, addresses: true },
         });
     },
     async deleteCustomer(id, userId) {

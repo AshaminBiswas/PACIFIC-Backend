@@ -5,9 +5,23 @@ const database_1 = require("../../config/database");
 exports.auditService = {
     async log(params) {
         try {
+            let safeUserId = null;
+            if (params.userId) {
+                try {
+                    const userExists = await database_1.prisma.user.findUnique({
+                        where: { id: params.userId },
+                        select: { id: true },
+                    });
+                    if (userExists)
+                        safeUserId = userExists.id;
+                }
+                catch {
+                    safeUserId = null;
+                }
+            }
             return await database_1.prisma.auditLog.create({
                 data: {
-                    userId: params.userId,
+                    userId: safeUserId,
                     action: params.action,
                     module: params.module,
                     entityType: params.entityType,
