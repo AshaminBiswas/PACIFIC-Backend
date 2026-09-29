@@ -449,7 +449,7 @@ export const crmService = {
         canonicalId: canonicalCustomerId,
         mergedId: mergedCustomerId,
       };
-    });
+    }, { timeout: 30000, maxWait: 15000 });
   },
 
   async createCustomer(data: any, userId?: string) {
@@ -761,42 +761,27 @@ export const crmService = {
       return { success: true, message: 'Customer archived and removed from active list' };
     }
 
-    // Clean delete all child records then parent
-    return prisma.$transaction(async (tx) => {
-      await tx.customerMergeLog.deleteMany({
-        where: { OR: [{ canonicalCustomerId: id }, { mergedCustomerId: id }] },
-      });
-      await tx.exportCustomerBankAccount.deleteMany({
-        where: { partyId: id },
-      });
-      await tx.exportCustomerProfile.deleteMany({
-        where: { partyId: id },
-      });
-      await tx.partyContact.deleteMany({
-        where: { partyId: id },
-      });
-      await tx.partyAddress.deleteMany({
-        where: { partyId: id },
-      });
-      await tx.customerProfile.deleteMany({
-        where: { partyId: id },
-      });
-
-      const deleted = await tx.businessParty.delete({ where: { id } });
-
-      if (userId) {
-        await auditService.logMutation({
-          userId,
-          action: 'DELETE',
-          module: 'CRM',
-          entityType: 'Customer',
-          entityId: id,
-          oldData: customer,
-        });
-      }
-
-      return deleted;
+    // Clean delete: First remove any non-cascading merge logs, then delete BusinessParty.
+    // PostgreSQL database foreign keys have onDelete: Cascade for customerProfile, vendorProfile,
+    // partyContact, partyAddress, exportCustomerProfile, and exportCustomerBankAccount.
+    await prisma.customerMergeLog.deleteMany({
+      where: { OR: [{ canonicalCustomerId: id }, { mergedCustomerId: id }] },
     });
+
+    const deleted = await prisma.businessParty.delete({ where: { id } });
+
+    if (userId) {
+      auditService.logMutation({
+        userId,
+        action: 'DELETE',
+        module: 'CRM',
+        entityType: 'Customer',
+        entityId: id,
+        oldData: customer,
+      }).catch((e) => console.warn('[CRM] Audit log error ignored:', e?.message));
+    }
+
+    return deleted;
   },
 
   async addContact(partyId: string, contactData: any) {

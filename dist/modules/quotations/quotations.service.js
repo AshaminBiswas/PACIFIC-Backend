@@ -453,7 +453,10 @@ exports.quotationsService = {
         const rawSignatureUrl = authSignatory?.signatureUrl || quote.companyProfile?.signatureUrl || undefined;
         const issuingStaffName = authSignatory?.name || (quote.issuingStaff ? `${quote.issuingStaff.firstName} ${quote.issuingStaff.lastName}` : undefined);
         const issuingStaffDesignation = authSignatory?.designation || undefined;
-        const issuingStaffPhone = authSignatory?.phone || quote.issuingStaff?.phone || '+91 8010834316';
+        const rawStaffPhone = authSignatory?.phone || quote.issuingStaff?.phone;
+        const issuingStaffPhone = rawStaffPhone && !rawStaffPhone.includes('8010834316')
+            ? rawStaffPhone
+            : undefined;
         // Convert QR external URL → inline base64 so it renders in downloaded HTML files
         const qrDataUrl = qr.qrDataUrl
             ? await fetchImageAsDataUri(qr.qrDataUrl)

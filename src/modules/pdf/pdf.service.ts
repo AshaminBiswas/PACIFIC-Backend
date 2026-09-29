@@ -760,7 +760,10 @@ export const pdfService = {
 
     const issuingStaffName = data.issuingStaffName || 'Ejajul Shaikh';
     const issuingStaffDesignation = data.issuingStaffDesignation || 'Company Head';
-    const issuingStaffPhone = data.issuingStaffPhone || '+91 9818592113 / 9882056529';
+    let issuingStaffPhone = data.issuingStaffPhone || '+91 9818592113 / 9882056529';
+    if (issuingStaffPhone && issuingStaffPhone.includes('8010834316')) {
+      issuingStaffPhone = '+91 9818592113 / 9882056529';
+    }
 
     const safeBillingCompanyName = (data.billTo?.name || 'Customer')
       .trim()
@@ -1338,7 +1341,8 @@ export const pdfService = {
     const logoSrc = resolveCompanyLogoDataUri(data.logoUrl);
     const issuingStaffName = data.issuingStaffName || 'Ejajul Shaikh';
     const issuingStaffDesignation = data.issuingStaffDesignation || 'Company Head';
-    const issuingStaffPhone = data.issuingStaffPhone || '+91 8010834316';
+    const rawIssuingPhone = data.issuingStaffPhone;
+    const issuingStaffPhone = rawIssuingPhone && !rawIssuingPhone.includes('8010834316') ? rawIssuingPhone : undefined;
 
     const termsList: Array<{ label: string; text: string }> = [];
 
