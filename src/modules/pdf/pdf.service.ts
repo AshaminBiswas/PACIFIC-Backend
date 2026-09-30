@@ -684,7 +684,13 @@ export const pdfService = {
         const cubicleSize = it.cubicleSize || fallbackSpecs.cubicleSize;
         const doorSize = it.doorSize || fallbackSpecs.doorSize;
         const overallHeight = it.overallHeight || fallbackSpecs.overallHeight;
-        const hardwarePackage = it.hardwarePackage || fallbackSpecs.hardwarePackage;
+        const rawHardware = it.hardwarePackage || fallbackSpecs.hardwarePackage;
+        const showHardware = Boolean(
+          rawHardware &&
+          !rawHardware.includes('Golden, Black, SS') &&
+          !rawHardware.includes('SS Hardware (Golden, Black, SS)')
+        );
+        const hardwarePackage = showHardware ? rawHardware : undefined;
         const displayDesc = cleanDescription(it.description);
 
         const hasSpecs = Boolean(
@@ -1664,13 +1670,18 @@ export const pdfService = {
             const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : 'Cubicle / Depth Size';
             const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
             const showDoor = item.doorSize && !item.doorSize.toLowerCase().includes('n/a') && (!isUrinal || item.doorSize.trim() !== 'N/A');
+            const showHardware = Boolean(
+              item.hardwarePackage &&
+              !item.hardwarePackage.includes('Golden, Black, SS') &&
+              !item.hardwarePackage.includes('SS Hardware (Golden, Black, SS)')
+            );
 
             return `
             <tr>
               <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
               <td>
                 <div style="font-weight: bold; font-size: 11px;">${item.description}</div>
-                ${item.boardType || item.cubicleSize || item.boardColor || item.boardThickness || item.doorSize || item.overallHeight || item.hardwarePackage ? `
+                ${item.boardType || item.cubicleSize || item.boardColor || item.boardThickness || item.doorSize || item.overallHeight || showHardware ? `
                   <div class="spec-box">
                     ${item.boardType ? `<div>• <strong>Board Type:</strong> ${item.boardType}</div>` : ''}
                     ${item.boardThickness ? `<div>• <strong>Board Thickness:</strong> ${item.boardThickness}</div>` : ''}
@@ -1678,7 +1689,7 @@ export const pdfService = {
                     ${item.cubicleSize ? `<div>• <strong>${sizeLabel}:</strong> ${item.cubicleSize}</div>` : ''}
                     ${showDoor ? `<div>• <strong>${doorLabel}:</strong> ${item.doorSize}</div>` : ''}
                     ${item.overallHeight ? `<div>• <strong>Overall Height:</strong> ${item.overallHeight}</div>` : ''}
-                    ${item.hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${item.hardwarePackage}</div>` : ''}
+                    ${showHardware ? `<div>• <strong>Hardware Package:</strong> ${item.hardwarePackage}</div>` : ''}
                   </div>
                 ` : ''}
               </td>
@@ -2358,7 +2369,13 @@ export const pdfService = {
         const cubicleSize = it.cubicleSize || fallbackSpecs.cubicleSize;
         const doorSize = it.doorSize || fallbackSpecs.doorSize;
         const overallHeight = it.overallHeight || fallbackSpecs.overallHeight;
-        const hardwarePackage = it.hardwarePackage || fallbackSpecs.hardwarePackage;
+        const rawHardware = it.hardwarePackage || fallbackSpecs.hardwarePackage;
+        const showHardware = Boolean(
+          rawHardware &&
+          !rawHardware.includes('Golden, Black, SS') &&
+          !rawHardware.includes('SS Hardware (Golden, Black, SS)')
+        );
+        const hardwarePackage = showHardware ? rawHardware : undefined;
         const displayDesc = cleanDescription(it.description);
 
         const hasSpecs = Boolean(
