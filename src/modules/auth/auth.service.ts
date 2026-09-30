@@ -504,6 +504,37 @@ export const authService = {
   },
 
   /**
+   * Logged-in admin user changes their own password
+   */
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      throw Object.assign(new Error('Current password does not match records'), { status: 400 });
+    }
+
+    if (newPassword.length < 8) {
+      throw Object.assign(new Error('New password must be at least 8 characters long'), { status: 400 });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword, mustChangePassword: false },
+    });
+
+    // Revoke all other active sessions for safety
+    await sessionService.revokeAllOtherSessions(userId, '');
+
+    return {
+      success: true,
+      message: 'Password changed successfully. All other device sessions have been revoked.',
+    };
+  },
+
+  /**
    * Legacy / Super Admin direct provisioning
    */
   async provisionSuperAdmin(data: {

@@ -17,6 +17,7 @@ router.get('/me', requireAuth, authController.getMe);
 // First-time login onboarding wizard (Dummy password -> New password -> 2FA setup)
 router.post('/first-time/change-password', authController.firstTimeChangePassword);
 router.post('/first-time/verify-2fa', authController.firstTimeVerify2fa);
+router.post('/change-password', requireAuth, authController.changePassword);
 
 // Two-Factor Authentication (2FA) verification & management
 router.post('/2fa/verify', authController.verify2fa);
