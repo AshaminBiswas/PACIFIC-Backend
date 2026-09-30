@@ -14,6 +14,7 @@ router.get('/:id', requireRole('SUPER_ADMIN', 'ADMIN'), usersController.getById)
 router.post('/', requireRole('SUPER_ADMIN'), usersController.create);
 router.patch('/:id', requireRole('SUPER_ADMIN'), usersController.update);
 router.post('/:id/reset-password', requireRole('SUPER_ADMIN'), usersController.resetPassword);
+router.post('/:id/reset-2fa', requireRole('SUPER_ADMIN'), usersController.reset2fa);
 router.delete('/:id', requireRole('SUPER_ADMIN'), usersController.delete);
 
 export default router;

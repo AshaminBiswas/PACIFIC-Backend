@@ -1,6 +1,7 @@
 import { prisma } from '../../config/database';
 import bcrypt from 'bcryptjs';
 import type { UserRole } from '@prisma/client';
+import { sessionService } from '../auth/session.service';
 
 export interface ListUsersParams {
   page?: number;
@@ -12,7 +13,7 @@ export interface ListUsersParams {
 
 export const usersService = {
   /**
-   * List users with pagination, search, role filter, and custom role assignments
+   * List users with pagination, search, role filter, custom role assignments, and 2FA status
    */
   async listUsers(params: ListUsersParams) {
     const page = Math.max(1, Number(params.page) || 1);
@@ -52,6 +53,11 @@ export const usersService = {
           lastName: true,
           role: true,
           isActive: true,
+          mustChangePassword: true,
+          twoFactorEnabled: true,
+          isTwoFactorPending: true,
+          lastLoginAt: true,
+          lastLoginIp: true,
           createdAt: true,
           updatedAt: true,
           userRoles: {
@@ -77,6 +83,11 @@ export const usersService = {
       lastName: u.lastName,
       role: u.role,
       isActive: u.isActive,
+      mustChangePassword: u.mustChangePassword,
+      twoFactorEnabled: u.twoFactorEnabled,
+      isTwoFactorPending: u.isTwoFactorPending,
+      lastLoginAt: u.lastLoginAt,
+      lastLoginIp: u.lastLoginIp,
       customRoles: u.userRoles.map((ur) => ur.role),
       createdAt: u.createdAt,
       updatedAt: u.updatedAt,
@@ -92,7 +103,7 @@ export const usersService = {
   },
 
   /**
-   * Get single user with assigned roles
+   * Get single user with assigned roles and security attributes
    */
   async getUserById(id: string) {
     const user = await prisma.user.findUnique({
@@ -104,6 +115,11 @@ export const usersService = {
         lastName: true,
         role: true,
         isActive: true,
+        mustChangePassword: true,
+        twoFactorEnabled: true,
+        isTwoFactorPending: true,
+        lastLoginAt: true,
+        lastLoginIp: true,
         createdAt: true,
         updatedAt: true,
         userRoles: {
@@ -131,6 +147,11 @@ export const usersService = {
       lastName: user.lastName,
       role: user.role,
       isActive: user.isActive,
+      mustChangePassword: user.mustChangePassword,
+      twoFactorEnabled: user.twoFactorEnabled,
+      isTwoFactorPending: user.isTwoFactorPending,
+      lastLoginAt: user.lastLoginAt,
+      lastLoginIp: user.lastLoginIp,
       customRoles: user.userRoles.map((ur) => ({
         id: ur.role.id,
         name: ur.role.name,
@@ -144,7 +165,7 @@ export const usersService = {
   },
 
   /**
-   * Create an admin / staff user with secure password hash and optional custom roles
+   * Create an admin / staff user with secure password hash, mustChangePassword flag, and 2FA onboarding
    */
   async createUser(data: {
     email: string;
@@ -154,6 +175,7 @@ export const usersService = {
     role?: string;
     roleIds?: string[];
     isActive?: boolean;
+    mustChangePassword?: boolean;
   }) {
     const email = data.email.trim().toLowerCase();
     if (!email) throw Object.assign(new Error('Email is required'), { status: 400 });
@@ -168,6 +190,10 @@ export const usersService = {
     const hashedPassword = await bcrypt.hash(passwordRaw, 12);
     const role = (data.role?.toUpperCase() as UserRole) || 'EDITOR';
 
+    // When created with temporary/dummy password, enforce password change on first login
+    const mustChangePassword = data.mustChangePassword !== false;
+    const isTwoFactorPending = true;
+
     const user = await prisma.user.create({
       data: {
         email,
@@ -176,6 +202,8 @@ export const usersService = {
         lastName: data.lastName.trim() || '',
         role,
         isActive: data.isActive !== false,
+        mustChangePassword,
+        isTwoFactorPending,
       },
     });
 
@@ -208,6 +236,7 @@ export const usersService = {
       role?: string;
       isActive?: boolean;
       roleIds?: string[];
+      mustChangePassword?: boolean;
     },
     requesterId?: string
   ) {
@@ -220,7 +249,7 @@ export const usersService = {
     }
 
     // Protect last active SUPER_ADMIN from role demotion or deactivation
-    if (existing.role === 'SUPER_ADMIN' && (data.role && data.role !== 'SUPER_ADMIN' || data.isActive === false)) {
+    if (existing.role === 'SUPER_ADMIN' && ((data.role && data.role !== 'SUPER_ADMIN') || data.isActive === false)) {
       const superAdminsCount = await prisma.user.count({
         where: { role: 'SUPER_ADMIN', isActive: true, id: { not: id } },
       });
@@ -234,11 +263,17 @@ export const usersService = {
     if (data.lastName !== undefined) updateData.lastName = data.lastName.trim();
     if (data.role !== undefined) updateData.role = data.role.toUpperCase() as UserRole;
     if (data.isActive !== undefined) updateData.isActive = Boolean(data.isActive);
+    if (data.mustChangePassword !== undefined) updateData.mustChangePassword = Boolean(data.mustChangePassword);
 
     await prisma.user.update({
       where: { id },
       data: updateData,
     });
+
+    // If deactivated, revoke all active sessions
+    if (data.isActive === false) {
+      await sessionService.revokeAllSessions(id, 'DEACTIVATED');
+    }
 
     // Synchronize role assignments if provided
     if (Array.isArray(data.roleIds)) {
@@ -262,9 +297,9 @@ export const usersService = {
   },
 
   /**
-   * Reset user password and invalidate active refresh tokens
+   * Reset user password, invalidate all active sessions, and optionally force change on next login
    */
-  async resetPassword(id: string, newPasswordRaw: string) {
+  async resetPassword(id: string, newPasswordRaw: string, forceChangeOnLogin = true) {
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
 
@@ -274,15 +309,42 @@ export const usersService = {
 
     const hashedPassword = await bcrypt.hash(newPasswordRaw.trim(), 12);
 
+    // Invalidate all active sessions for this user across all devices
+    await sessionService.revokeAllSessions(id, 'SUPER_ADMIN_PASSWORD_RESET');
+
     await prisma.user.update({
       where: { id },
       data: {
         password: hashedPassword,
-        refreshToken: null, // Forces re-authentication
+        refreshToken: null,
+        mustChangePassword: forceChangeOnLogin,
       },
     });
 
-    return { success: true, message: `Password reset successfully for ${user.email}` };
+    return {
+      success: true,
+      message: `Password reset successfully for ${user.email}. All previous device sessions revoked.`,
+    };
+  },
+
+  /**
+   * Reset 2FA for a locked out user (Super Admin action)
+   */
+  async reset2fa(id: string) {
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+
+    await prisma.user.update({
+      where: { id },
+      data: {
+        twoFactorEnabled: false,
+        twoFactorSecret: null,
+        twoFactorRecoveryCodes: [],
+        isTwoFactorPending: true, // Forces re-setup on next login
+      },
+    });
+
+    return { success: true, message: `Two-factor authentication reset for ${user.email}. User will be prompted to re-enroll on next login.` };
   },
 
   /**
@@ -305,6 +367,7 @@ export const usersService = {
       }
     }
 
+    await sessionService.revokeAllSessions(id, 'USER_DELETED');
     await prisma.userRoleAssignment.deleteMany({ where: { userId: id } });
     await prisma.user.delete({ where: { id } });
 

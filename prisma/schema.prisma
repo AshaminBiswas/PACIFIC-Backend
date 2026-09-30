@@ -59,14 +59,52 @@ model User {
   exportTasksAssigned      ExportTask[]            @relation("ExportTaskAssignedTo")
   exportEmailsSent         ExportEmailLog[]        @relation("ExportEmailSentBy")
 
+  // Security, 2FA & Session Additions
+  mustChangePassword      Boolean          @default(false)
+  twoFactorEnabled        Boolean          @default(false)
+  twoFactorSecret         String?
+  twoFactorRecoveryCodes  String[]         @default([])
+  isTwoFactorPending      Boolean          @default(false)
+  lastLoginAt             DateTime?
+  lastLoginIp             String?
+  sessions                AdminSession[]
+
   @@map("users")
 }
 
 enum UserRole {
   SUPER_ADMIN
   ADMIN
+  SALES_MANAGER
+  WAREHOUSE_MANAGER
+  FINANCE_OFFICER
+  PROCUREMENT_MANAGER
+  EXPORT_MANAGER
   EDITOR
   VIEWER
+}
+
+model AdminSession {
+  id           String    @id @default(uuid())
+  userId       String
+  sessionToken String    @unique @default(uuid())
+  refreshToken String?   @unique
+  ipAddress    String?
+  userAgent    String?
+  browser      String?
+  os           String?
+  deviceType   String?   // "desktop", "mobile", "tablet"
+  isActive     Boolean   @default(true)
+  lastActiveAt DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  revokedBy    String?   // "USER", "SUPER_ADMIN", "PASSWORD_CHANGE"
+  createdAt    DateTime  @default(now())
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@map("admin_sessions")
 }
 
 model Role {
