@@ -169,6 +169,7 @@ export declare const poService: {
         qrCodes: {
             status: string;
             id: string;
+            expiresAt: Date | null;
             createdAt: Date;
             token: string;
             productId: string | null;
@@ -176,7 +177,6 @@ export declare const poService: {
             entityId: string;
             qrData: string;
             qrImageUrl: string | null;
-            expiresAt: Date | null;
             proformaInvoiceId: string | null;
             purchaseOrderId: string | null;
         }[];
@@ -185,10 +185,10 @@ export declare const poService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
-                description: string | null;
+                updatedAt: Date;
                 slug: string;
+                description: string | null;
                 shortDesc: string | null;
                 sku: string | null;
                 barcode: string | null;

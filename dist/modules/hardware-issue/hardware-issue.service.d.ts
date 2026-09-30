@@ -10,8 +10,8 @@ export declare const hardwareIssueService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         category: string;
         sortOrder: number;
         defaultSize: string | null;
@@ -28,8 +28,8 @@ export declare const hardwareIssueService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         category: string;
         sortOrder: number;
         defaultSize: string | null;
@@ -49,11 +49,11 @@ export declare const hardwareIssueService: {
                 piNumber: string;
             } | null;
             items: {
+                color: string | null;
                 id: string;
                 description: string;
                 category: string;
                 quantity: import("@prisma/client/runtime/library").Decimal;
-                color: string | null;
                 size: string | null;
                 serialNumber: number;
                 issueListId: string;
@@ -158,19 +158,19 @@ export declare const hardwareIssueService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 category: string;
                 sortOrder: number;
                 defaultSize: string | null;
                 defaultColor: string | null;
             } | null;
         } & {
+            color: string | null;
             id: string;
             description: string;
             category: string;
             quantity: import("@prisma/client/runtime/library").Decimal;
-            color: string | null;
             size: string | null;
             serialNumber: number;
             issueListId: string;
@@ -279,11 +279,11 @@ export declare const hardwareIssueService: {
     }>;
     createIssue(data: any, userId?: string): Promise<{
         items: {
+            color: string | null;
             id: string;
             description: string;
             category: string;
             quantity: import("@prisma/client/runtime/library").Decimal;
-            color: string | null;
             size: string | null;
             serialNumber: number;
             issueListId: string;
@@ -394,11 +394,11 @@ export declare const hardwareIssueService: {
     }>;
     updateIssue(id: string, data: any, userId?: string): Promise<{
         items: {
+            color: string | null;
             id: string;
             description: string;
             category: string;
             quantity: import("@prisma/client/runtime/library").Decimal;
-            color: string | null;
             size: string | null;
             serialNumber: number;
             issueListId: string;

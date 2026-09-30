@@ -94,9 +94,10 @@ export const totpService = {
    * Builds the standard otpauth URI for mobile authenticator apps
    */
   getOtpAuthUri(email: string, secret: string, issuer = 'Pacific Admin'): string {
-    const encodedIssuer = encodeURIComponent(issuer);
-    const encodedEmail = encodeURIComponent(email);
-    return `otpauth://totp/${encodedIssuer}:${encodedEmail}?secret=${secret}&issuer=${encodedIssuer}&algorithm=SHA1&digits=6&period=30`;
+    const cleanIssuer = issuer.replace(/:/g, '').trim();
+    const cleanEmail = email.trim();
+    const label = encodeURIComponent(`${cleanIssuer}:${cleanEmail}`);
+    return `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(cleanIssuer)}&algorithm=SHA1&digits=6&period=30`;
   },
 
   /**
@@ -115,9 +116,9 @@ export const totpService = {
   },
 
   /**
-   * Verifies a 6-digit TOTP code against the secret with ±1 time step tolerance (30 seconds drift)
+   * Verifies a 6-digit TOTP code against the secret with ±2 time steps tolerance (±60 seconds drift)
    */
-  verifyCode(secret: string, userCode: string, window = 1): boolean {
+  verifyCode(secret: string, userCode: string, window = 2): boolean {
     if (!secret || !userCode) return false;
     const cleanCode = userCode.trim().replace(/\s+/g, '');
     if (cleanCode.length !== 6 || !/^\d{6}$/.test(cleanCode)) return false;
@@ -169,4 +170,8 @@ export const totpService = {
 
     return { match: false, matchedIndex: -1 };
   },
+
+  generateTotp,
+  base32Encode,
+  base32Decode,
 };

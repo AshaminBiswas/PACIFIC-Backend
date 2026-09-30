@@ -74,6 +74,15 @@ exports.usersController = {
             next(err);
         }
     },
+    async reset2fa(req, res, next) {
+        try {
+            const result = await users_service_1.usersService.reset2fa(req.params.id);
+            res.json(result);
+        }
+        catch (err) {
+            next(err);
+        }
+    },
     async delete(req, res, next) {
         try {
             const requesterId = req.user?.id;

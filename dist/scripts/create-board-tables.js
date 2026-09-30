@@ -7,9 +7,10 @@ const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 const pg_1 = require("pg");
 async function migrate() {
-    const connectionString = process.env.DIRECT_URL ||
-        process.env.DATABASE_URL ||
-        'postgresql://postgres.kgalsrokdmsrqysyoffm:Pacific_API_2026@aws-0-ap-south-1.pooler.supabase.com:5432/postgres';
+    const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
+    if (!connectionString) {
+        throw new Error('DIRECT_URL or DATABASE_URL environment variable is missing in .env');
+    }
     console.log('Connecting to PostgreSQL for Board Inventory migration...');
     const pool = new pg_1.Pool({
         connectionString,

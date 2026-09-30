@@ -71,8 +71,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         countryCode: string;
         region: string | null;
         currencyCode: string | null;
@@ -98,8 +98,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             countryId: string | null;
             portCode: string;
             portType: string;
@@ -110,8 +110,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         countryCode: string;
         region: string | null;
         currencyCode: string | null;
@@ -124,8 +124,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         countryCode: string;
         region: string | null;
         currencyCode: string | null;
@@ -139,8 +139,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             countryCode: string;
             region: string | null;
             currencyCode: string | null;
@@ -181,8 +181,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             countryCode: string;
             region: string | null;
             currencyCode: string | null;
@@ -195,8 +195,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         countryId: string | null;
         portCode: string;
         portType: string;
@@ -207,8 +207,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         countryId: string | null;
         portCode: string;
         portType: string;
@@ -219,8 +219,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         countryId: string | null;
         portCode: string;
         portType: string;
@@ -232,8 +232,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         description: string | null;
         freightResponsibility: string | null;
         insuranceResponsibility: string | null;
@@ -246,8 +246,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         description: string | null;
         freightResponsibility: string | null;
         insuranceResponsibility: string | null;
@@ -270,8 +270,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         currencyCode: string;
         isBase: boolean;
     })[]>;
@@ -281,8 +281,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             currencyCode: string;
             isBase: boolean;
         };
@@ -352,8 +352,8 @@ export declare const exportService: {
                     id: string;
                     isActive: boolean;
                     createdAt: Date;
-                    updatedAt: Date;
                     name: string;
+                    updatedAt: Date;
                     countryCode: string;
                     region: string | null;
                     currencyCode: string | null;
@@ -367,8 +367,8 @@ export declare const exportService: {
                     id: string;
                     isActive: boolean;
                     createdAt: Date;
-                    updatedAt: Date;
                     name: string;
+                    updatedAt: Date;
                     description: string | null;
                     freightResponsibility: string | null;
                     insuranceResponsibility: string | null;
@@ -380,8 +380,8 @@ export declare const exportService: {
                     id: string;
                     isActive: boolean;
                     createdAt: Date;
-                    updatedAt: Date;
                     name: string;
+                    updatedAt: Date;
                     countryId: string | null;
                     portCode: string;
                     portType: string;
@@ -474,8 +474,8 @@ export declare const exportService: {
                     id: string;
                     isActive: boolean;
                     createdAt: Date;
-                    updatedAt: Date;
                     name: string;
+                    updatedAt: Date;
                     countryCode: string;
                     region: string | null;
                     currencyCode: string | null;
@@ -489,8 +489,8 @@ export declare const exportService: {
                     id: string;
                     isActive: boolean;
                     createdAt: Date;
-                    updatedAt: Date;
                     name: string;
+                    updatedAt: Date;
                     description: string | null;
                     freightResponsibility: string | null;
                     insuranceResponsibility: string | null;
@@ -502,8 +502,8 @@ export declare const exportService: {
                     id: string;
                     isActive: boolean;
                     createdAt: Date;
-                    updatedAt: Date;
                     name: string;
+                    updatedAt: Date;
                     countryId: string | null;
                     portCode: string;
                     portType: string;
@@ -615,8 +615,8 @@ export declare const exportService: {
                     id: string;
                     isActive: boolean;
                     createdAt: Date;
-                    updatedAt: Date;
                     name: string;
+                    updatedAt: Date;
                     countryCode: string;
                     region: string | null;
                     currencyCode: string | null;
@@ -630,8 +630,8 @@ export declare const exportService: {
                     id: string;
                     isActive: boolean;
                     createdAt: Date;
-                    updatedAt: Date;
                     name: string;
+                    updatedAt: Date;
                     description: string | null;
                     freightResponsibility: string | null;
                     insuranceResponsibility: string | null;
@@ -786,8 +786,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryCode: string;
                 region: string | null;
                 currencyCode: string | null;
@@ -801,8 +801,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 description: string | null;
                 freightResponsibility: string | null;
                 insuranceResponsibility: string | null;
@@ -814,8 +814,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryId: string | null;
                 portCode: string;
                 portType: string;
@@ -896,8 +896,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryCode: string;
                 region: string | null;
                 currencyCode: string | null;
@@ -917,8 +917,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 description: string | null;
                 freightResponsibility: string | null;
                 insuranceResponsibility: string | null;
@@ -930,8 +930,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryId: string | null;
                 portCode: string;
                 portType: string;
@@ -987,10 +987,10 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
-                description: string | null;
+                updatedAt: Date;
                 slug: string;
+                description: string | null;
                 shortDesc: string | null;
                 sku: string | null;
                 barcode: string | null;
@@ -1027,8 +1027,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             countryCode: string;
             region: string | null;
             currencyCode: string | null;
@@ -1057,8 +1057,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             description: string | null;
             freightResponsibility: string | null;
             insuranceResponsibility: string | null;
@@ -1070,8 +1070,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             countryId: string | null;
             portCode: string;
             portType: string;
@@ -1207,8 +1207,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryCode: string;
                 region: string | null;
                 currencyCode: string | null;
@@ -1228,8 +1228,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 description: string | null;
                 freightResponsibility: string | null;
                 insuranceResponsibility: string | null;
@@ -1241,8 +1241,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryId: string | null;
                 portCode: string;
                 portType: string;
@@ -1311,10 +1311,10 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
-                description: string | null;
+                updatedAt: Date;
                 slug: string;
+                description: string | null;
                 shortDesc: string | null;
                 sku: string | null;
                 barcode: string | null;
@@ -1369,8 +1369,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             countryCode: string;
             region: string | null;
             currencyCode: string | null;
@@ -1399,8 +1399,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             description: string | null;
             freightResponsibility: string | null;
             insuranceResponsibility: string | null;
@@ -1412,8 +1412,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             countryId: string | null;
             portCode: string;
             portType: string;
@@ -1424,8 +1424,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             countryId: string | null;
             portCode: string;
             portType: string;
@@ -1618,8 +1618,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryCode: string;
                 region: string | null;
                 currencyCode: string | null;
@@ -1639,8 +1639,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 description: string | null;
                 freightResponsibility: string | null;
                 insuranceResponsibility: string | null;
@@ -1652,8 +1652,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryId: string | null;
                 portCode: string;
                 portType: string;
@@ -1765,10 +1765,10 @@ export declare const exportService: {
                         id: string;
                         isActive: boolean;
                         createdAt: Date;
-                        updatedAt: Date;
                         name: string;
-                        description: string | null;
+                        updatedAt: Date;
                         slug: string;
+                        description: string | null;
                         shortDesc: string | null;
                         sku: string | null;
                         barcode: string | null;
@@ -1874,8 +1874,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryCode: string;
                 region: string | null;
                 currencyCode: string | null;
@@ -1890,8 +1890,8 @@ export declare const exportService: {
                         id: string;
                         isActive: boolean;
                         createdAt: Date;
-                        updatedAt: Date;
                         name: string;
+                        updatedAt: Date;
                         countryCode: string;
                         region: string | null;
                         currencyCode: string | null;
@@ -1905,8 +1905,8 @@ export declare const exportService: {
                         id: string;
                         isActive: boolean;
                         createdAt: Date;
-                        updatedAt: Date;
                         name: string;
+                        updatedAt: Date;
                         description: string | null;
                         freightResponsibility: string | null;
                         insuranceResponsibility: string | null;
@@ -1992,8 +1992,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 description: string | null;
                 freightResponsibility: string | null;
                 insuranceResponsibility: string | null;
@@ -2005,8 +2005,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryId: string | null;
                 portCode: string;
                 portType: string;
@@ -2017,8 +2017,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryId: string | null;
                 portCode: string;
                 portType: string;
@@ -2081,6 +2081,7 @@ export declare const exportService: {
                     qrCode: {
                         status: string;
                         id: string;
+                        expiresAt: Date | null;
                         createdAt: Date;
                         token: string;
                         productId: string | null;
@@ -2088,7 +2089,6 @@ export declare const exportService: {
                         entityId: string;
                         qrData: string;
                         qrImageUrl: string | null;
-                        expiresAt: Date | null;
                         proformaInvoiceId: string | null;
                         purchaseOrderId: string | null;
                     } | null;
@@ -2216,6 +2216,13 @@ export declare const exportService: {
                     isActive: boolean;
                     createdAt: Date;
                     updatedAt: Date;
+                    mustChangePassword: boolean;
+                    twoFactorEnabled: boolean;
+                    twoFactorSecret: string | null;
+                    twoFactorRecoveryCodes: string[];
+                    isTwoFactorPending: boolean;
+                    lastLoginAt: Date | null;
+                    lastLoginIp: string | null;
                 } | null;
             } & {
                 status: string;
@@ -2585,8 +2592,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryId: string | null;
                 portCode: string;
                 portType: string;
@@ -2597,8 +2604,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryId: string | null;
                 portCode: string;
                 portType: string;
@@ -2656,8 +2663,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryCode: string;
                 region: string | null;
                 currencyCode: string | null;
@@ -2686,8 +2693,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 description: string | null;
                 freightResponsibility: string | null;
                 insuranceResponsibility: string | null;
@@ -2727,8 +2734,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             countryId: string | null;
             portCode: string;
             portType: string;
@@ -2739,8 +2746,8 @@ export declare const exportService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
+            updatedAt: Date;
             countryId: string | null;
             portCode: string;
             portType: string;
@@ -2783,6 +2790,7 @@ export declare const exportService: {
             qrCode: {
                 status: string;
                 id: string;
+                expiresAt: Date | null;
                 createdAt: Date;
                 token: string;
                 productId: string | null;
@@ -2790,7 +2798,6 @@ export declare const exportService: {
                 entityId: string;
                 qrData: string;
                 qrImageUrl: string | null;
-                expiresAt: Date | null;
                 proformaInvoiceId: string | null;
                 purchaseOrderId: string | null;
             } | null;
@@ -2898,6 +2905,7 @@ export declare const exportService: {
         qrCode: {
             status: string;
             id: string;
+            expiresAt: Date | null;
             createdAt: Date;
             token: string;
             productId: string | null;
@@ -2905,7 +2913,6 @@ export declare const exportService: {
             entityId: string;
             qrData: string;
             qrImageUrl: string | null;
-            expiresAt: Date | null;
             proformaInvoiceId: string | null;
             purchaseOrderId: string | null;
         } | null;
@@ -3363,8 +3370,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         isDefault: boolean;
         templateCode: string;
         subjectTemplate: string;
@@ -3375,8 +3382,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         isDefault: boolean;
         templateCode: string;
         subjectTemplate: string;
@@ -3387,8 +3394,8 @@ export declare const exportService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
+        updatedAt: Date;
         isDefault: boolean;
         templateCode: string;
         subjectTemplate: string;
@@ -3529,8 +3536,8 @@ export declare const exportService: {
                     id: string;
                     isActive: boolean;
                     createdAt: Date;
-                    updatedAt: Date;
                     name: string;
+                    updatedAt: Date;
                     countryCode: string;
                     region: string | null;
                     currencyCode: string | null;
@@ -3576,8 +3583,8 @@ export declare const exportService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
+                updatedAt: Date;
                 countryCode: string;
                 region: string | null;
                 currencyCode: string | null;

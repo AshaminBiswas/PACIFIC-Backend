@@ -19,10 +19,10 @@ export declare const productsMasterService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
-                description: string | null;
+                updatedAt: Date;
                 slug: string;
+                description: string | null;
                 imageUrl: string | null;
                 sortOrder: number;
             } | null;
@@ -61,6 +61,7 @@ export declare const productsMasterService: {
             qrCodes: {
                 status: string;
                 id: string;
+                expiresAt: Date | null;
                 createdAt: Date;
                 token: string;
                 productId: string | null;
@@ -68,7 +69,6 @@ export declare const productsMasterService: {
                 entityId: string;
                 qrData: string;
                 qrImageUrl: string | null;
-                expiresAt: Date | null;
                 proformaInvoiceId: string | null;
                 purchaseOrderId: string | null;
             }[];
@@ -76,10 +76,10 @@ export declare const productsMasterService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
-            description: string | null;
+            updatedAt: Date;
             slug: string;
+            description: string | null;
             shortDesc: string | null;
             sku: string | null;
             barcode: string | null;
@@ -118,10 +118,10 @@ export declare const productsMasterService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
-            description: string | null;
+            updatedAt: Date;
             slug: string;
+            description: string | null;
             imageUrl: string | null;
             sortOrder: number;
         } | null;
@@ -168,6 +168,7 @@ export declare const productsMasterService: {
         qrCodes: {
             status: string;
             id: string;
+            expiresAt: Date | null;
             createdAt: Date;
             token: string;
             productId: string | null;
@@ -175,7 +176,6 @@ export declare const productsMasterService: {
             entityId: string;
             qrData: string;
             qrImageUrl: string | null;
-            expiresAt: Date | null;
             proformaInvoiceId: string | null;
             purchaseOrderId: string | null;
         }[];
@@ -183,10 +183,10 @@ export declare const productsMasterService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
-        description: string | null;
+        updatedAt: Date;
         slug: string;
+        description: string | null;
         shortDesc: string | null;
         sku: string | null;
         barcode: string | null;
@@ -220,10 +220,10 @@ export declare const productsMasterService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
-            description: string | null;
+            updatedAt: Date;
             slug: string;
+            description: string | null;
             imageUrl: string | null;
             sortOrder: number;
         } | null;
@@ -243,10 +243,10 @@ export declare const productsMasterService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
-        description: string | null;
+        updatedAt: Date;
         slug: string;
+        description: string | null;
         shortDesc: string | null;
         sku: string | null;
         barcode: string | null;
@@ -280,10 +280,10 @@ export declare const productsMasterService: {
             id: string;
             isActive: boolean;
             createdAt: Date;
-            updatedAt: Date;
             name: string;
-            description: string | null;
+            updatedAt: Date;
             slug: string;
+            description: string | null;
             imageUrl: string | null;
             sortOrder: number;
         } | null;
@@ -303,10 +303,10 @@ export declare const productsMasterService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
-        description: string | null;
+        updatedAt: Date;
         slug: string;
+        description: string | null;
         shortDesc: string | null;
         sku: string | null;
         barcode: string | null;
@@ -333,10 +333,10 @@ export declare const productsMasterService: {
         id: string;
         isActive: boolean;
         createdAt: Date;
-        updatedAt: Date;
         name: string;
-        description: string | null;
+        updatedAt: Date;
         slug: string;
+        description: string | null;
         shortDesc: string | null;
         sku: string | null;
         barcode: string | null;

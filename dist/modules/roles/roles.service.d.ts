@@ -142,7 +142,7 @@ export declare const rolesService: {
         updatedAt: Date;
     }>;
     /**
-     * Delete a custom role
+     * Delete a role (system or custom), protecting only SUPER_ADMIN
      */
     deleteRole(id: string): Promise<{
         success: boolean;

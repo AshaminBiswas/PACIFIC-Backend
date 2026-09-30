@@ -7,7 +7,7 @@ export interface ListUsersParams {
 }
 export declare const usersService: {
     /**
-     * List users with pagination, search, role filter, and custom role assignments
+     * List users with pagination, search, role filter, custom role assignments, and 2FA status
      */
     listUsers(params: ListUsersParams): Promise<{
         items: {
@@ -17,6 +17,11 @@ export declare const usersService: {
             lastName: string;
             role: import(".prisma/client").$Enums.UserRole;
             isActive: boolean;
+            mustChangePassword: boolean;
+            twoFactorEnabled: boolean;
+            isTwoFactorPending: boolean;
+            lastLoginAt: Date | null;
+            lastLoginIp: string | null;
             customRoles: {
                 code: string;
                 id: string;
@@ -32,7 +37,7 @@ export declare const usersService: {
         totalPages: number;
     }>;
     /**
-     * Get single user with assigned roles
+     * Get single user with assigned roles and security attributes
      */
     getUserById(id: string): Promise<{
         id: string;
@@ -41,6 +46,11 @@ export declare const usersService: {
         lastName: string;
         role: import(".prisma/client").$Enums.UserRole;
         isActive: boolean;
+        mustChangePassword: boolean;
+        twoFactorEnabled: boolean;
+        isTwoFactorPending: boolean;
+        lastLoginAt: Date | null;
+        lastLoginIp: string | null;
         customRoles: {
             id: string;
             name: string;
@@ -58,7 +68,7 @@ export declare const usersService: {
         updatedAt: Date;
     }>;
     /**
-     * Create an admin / staff user with secure password hash and optional custom roles
+     * Create an admin / staff user with secure password hash, mustChangePassword flag, and 2FA onboarding
      */
     createUser(data: {
         email: string;
@@ -68,6 +78,7 @@ export declare const usersService: {
         role?: string;
         roleIds?: string[];
         isActive?: boolean;
+        mustChangePassword?: boolean;
     }): Promise<{
         id: string;
         email: string;
@@ -75,6 +86,11 @@ export declare const usersService: {
         lastName: string;
         role: import(".prisma/client").$Enums.UserRole;
         isActive: boolean;
+        mustChangePassword: boolean;
+        twoFactorEnabled: boolean;
+        isTwoFactorPending: boolean;
+        lastLoginAt: Date | null;
+        lastLoginIp: string | null;
         customRoles: {
             id: string;
             name: string;
@@ -100,6 +116,7 @@ export declare const usersService: {
         role?: string;
         isActive?: boolean;
         roleIds?: string[];
+        mustChangePassword?: boolean;
     }, requesterId?: string): Promise<{
         id: string;
         email: string;
@@ -107,6 +124,11 @@ export declare const usersService: {
         lastName: string;
         role: import(".prisma/client").$Enums.UserRole;
         isActive: boolean;
+        mustChangePassword: boolean;
+        twoFactorEnabled: boolean;
+        isTwoFactorPending: boolean;
+        lastLoginAt: Date | null;
+        lastLoginIp: string | null;
         customRoles: {
             id: string;
             name: string;
@@ -124,9 +146,16 @@ export declare const usersService: {
         updatedAt: Date;
     }>;
     /**
-     * Reset user password and invalidate active refresh tokens
+     * Reset user password, invalidate all active sessions, and optionally force change on next login
      */
-    resetPassword(id: string, newPasswordRaw: string): Promise<{
+    resetPassword(id: string, newPasswordRaw: string, forceChangeOnLogin?: boolean): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    /**
+     * Reset 2FA for a locked out user (Super Admin action)
+     */
+    reset2fa(id: string): Promise<{
         success: boolean;
         message: string;
     }>;

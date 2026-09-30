@@ -13,11 +13,11 @@ export declare const auditService: {
     log(params: LogAuditParams): Promise<{
         timestamp: Date;
         id: string;
+        ipAddress: string | null;
+        userAgent: string | null;
         userId: string | null;
         entityType: string;
         entityId: string;
-        ipAddress: string | null;
-        userAgent: string | null;
         action: string;
         module: string;
         oldData: import("@prisma/client/runtime/library").JsonValue | null;
@@ -26,11 +26,11 @@ export declare const auditService: {
     logMutation(params: LogAuditParams): Promise<{
         timestamp: Date;
         id: string;
+        ipAddress: string | null;
+        userAgent: string | null;
         userId: string | null;
         entityType: string;
         entityId: string;
-        ipAddress: string | null;
-        userAgent: string | null;
         action: string;
         module: string;
         oldData: import("@prisma/client/runtime/library").JsonValue | null;
@@ -54,11 +54,11 @@ export declare const auditService: {
         } & {
             timestamp: Date;
             id: string;
+            ipAddress: string | null;
+            userAgent: string | null;
             userId: string | null;
             entityType: string;
             entityId: string;
-            ipAddress: string | null;
-            userAgent: string | null;
             action: string;
             module: string;
             oldData: import("@prisma/client/runtime/library").JsonValue | null;

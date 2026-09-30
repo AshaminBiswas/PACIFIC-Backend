@@ -19,8 +19,8 @@ export declare const createProductSchema: z.ZodObject<{
         name: string;
         categoryId: string;
         isActive?: boolean | undefined;
-        description?: string | undefined;
         slug?: string | undefined;
+        description?: string | undefined;
         shortDesc?: string | undefined;
         sku?: string | undefined;
         basePrice?: number | undefined;
@@ -34,8 +34,8 @@ export declare const createProductSchema: z.ZodObject<{
         name: string;
         categoryId: string;
         isActive?: boolean | undefined;
-        description?: string | undefined;
         slug?: string | undefined;
+        description?: string | undefined;
         shortDesc?: string | undefined;
         sku?: string | undefined;
         basePrice?: number | undefined;
@@ -51,8 +51,8 @@ export declare const createProductSchema: z.ZodObject<{
         name: string;
         categoryId: string;
         isActive?: boolean | undefined;
-        description?: string | undefined;
         slug?: string | undefined;
+        description?: string | undefined;
         shortDesc?: string | undefined;
         sku?: string | undefined;
         basePrice?: number | undefined;
@@ -68,8 +68,8 @@ export declare const createProductSchema: z.ZodObject<{
         name: string;
         categoryId: string;
         isActive?: boolean | undefined;
-        description?: string | undefined;
         slug?: string | undefined;
+        description?: string | undefined;
         shortDesc?: string | undefined;
         sku?: string | undefined;
         basePrice?: number | undefined;
@@ -100,8 +100,8 @@ export declare const updateProductSchema: z.ZodObject<{
     }, "strip", z.ZodTypeAny, {
         isActive?: boolean | undefined;
         name?: string | undefined;
-        description?: string | undefined;
         slug?: string | undefined;
+        description?: string | undefined;
         shortDesc?: string | undefined;
         sku?: string | undefined;
         categoryId?: string | undefined;
@@ -115,8 +115,8 @@ export declare const updateProductSchema: z.ZodObject<{
     }, {
         isActive?: boolean | undefined;
         name?: string | undefined;
-        description?: string | undefined;
         slug?: string | undefined;
+        description?: string | undefined;
         shortDesc?: string | undefined;
         sku?: string | undefined;
         categoryId?: string | undefined;
@@ -142,8 +142,8 @@ export declare const updateProductSchema: z.ZodObject<{
     body: {
         isActive?: boolean | undefined;
         name?: string | undefined;
-        description?: string | undefined;
         slug?: string | undefined;
+        description?: string | undefined;
         shortDesc?: string | undefined;
         sku?: string | undefined;
         categoryId?: string | undefined;
@@ -162,8 +162,8 @@ export declare const updateProductSchema: z.ZodObject<{
     body: {
         isActive?: boolean | undefined;
         name?: string | undefined;
-        description?: string | undefined;
         slug?: string | undefined;
+        description?: string | undefined;
         shortDesc?: string | undefined;
         sku?: string | undefined;
         categoryId?: string | undefined;

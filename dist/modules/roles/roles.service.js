@@ -396,7 +396,7 @@ exports.rolesService = {
         return this.getRoleById(id);
     },
     /**
-     * Delete a custom role
+     * Delete a role (system or custom), protecting only SUPER_ADMIN
      */
     async deleteRole(id) {
         const existing = await database_1.prisma.role.findUnique({
@@ -409,15 +409,14 @@ exports.rolesService = {
         });
         if (!existing)
             throw Object.assign(new Error('Role not found'), { status: 404 });
-        if (existing.isSystem) {
-            throw Object.assign(new Error('System roles cannot be deleted'), { status: 403 });
+        if (existing.code === 'SUPER_ADMIN') {
+            throw Object.assign(new Error('The Master Super Administrator role is protected and cannot be deleted'), { status: 403 });
         }
-        if (existing._count.userRoles > 0) {
-            throw Object.assign(new Error(`Cannot delete role: ${existing._count.userRoles} user(s) are actively assigned to it. Reassign them first.`), { status: 400 });
-        }
+        // Cascade unassign any users from this role before deleting
+        await database_1.prisma.userRoleAssignment.deleteMany({ where: { roleId: id } });
         await database_1.prisma.rolePermission.deleteMany({ where: { roleId: id } });
         await database_1.prisma.role.delete({ where: { id } });
-        return { success: true, message: `Role ${existing.name} deleted successfully` };
+        return { success: true, message: `Role "${existing.name}" deleted successfully` };
     },
 };
 //# sourceMappingURL=roles.service.js.map

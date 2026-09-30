@@ -72,6 +72,33 @@ const requireAuth = async (req, res, next) => {
             res.status(401).json({ success: false, message: 'Invalid or expired token' });
             return;
         }
+        // Session validation: if sessionToken is present, ensure it has not been revoked
+        const sessionToken = payload?.sessionId || req.headers['x-session-token'];
+        if (sessionToken) {
+            try {
+                const activeSession = await database_1.prisma.adminSession.findUnique({
+                    where: { sessionToken },
+                });
+                if (activeSession) {
+                    if (!activeSession.isActive || activeSession.expiresAt < new Date()) {
+                        res.status(401).json({ success: false, message: 'Session has been revoked or expired. Please sign in again.' });
+                        return;
+                    }
+                    req.sessionId = activeSession.sessionToken;
+                    // Touch lastActiveAt asynchronously if > 2 minutes
+                    const diffMs = Date.now() - new Date(activeSession.lastActiveAt).getTime();
+                    if (diffMs > 2 * 60 * 1000) {
+                        database_1.prisma.adminSession
+                            .update({
+                            where: { id: activeSession.id },
+                            data: { lastActiveAt: new Date() },
+                        })
+                            .catch(() => { });
+                    }
+                }
+            }
+            catch (_err) { }
+        }
         req.user = payload;
         // Enforce system-wide rule: Only Super Admin and Admin can delete records
         const roleUpper = req.user.role?.toUpperCase();

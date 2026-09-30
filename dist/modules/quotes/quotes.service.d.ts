@@ -101,16 +101,23 @@ export declare const quotesService: {
             isActive: boolean;
             createdAt: Date;
             updatedAt: Date;
+            mustChangePassword: boolean;
+            twoFactorEnabled: boolean;
+            twoFactorSecret: string | null;
+            twoFactorRecoveryCodes: string[];
+            isTwoFactorPending: boolean;
+            lastLoginAt: Date | null;
+            lastLoginIp: string | null;
         } | null;
         items: ({
             product: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
-                description: string | null;
+                updatedAt: Date;
                 slug: string;
+                description: string | null;
                 shortDesc: string | null;
                 sku: string | null;
                 barcode: string | null;

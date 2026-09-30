@@ -5,6 +5,7 @@ export declare const usersController: {
     create(req: Request, res: Response, next: NextFunction): Promise<void>;
     update(req: Request, res: Response, next: NextFunction): Promise<void>;
     resetPassword(req: Request, res: Response, next: NextFunction): Promise<void>;
+    reset2fa(req: Request, res: Response, next: NextFunction): Promise<void>;
     delete(req: Request, res: Response, next: NextFunction): Promise<void>;
 };
 //# sourceMappingURL=users.controller.d.ts.map

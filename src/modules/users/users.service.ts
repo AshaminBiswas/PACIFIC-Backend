@@ -2,6 +2,7 @@ import { prisma } from '../../config/database';
 import bcrypt from 'bcryptjs';
 import type { UserRole } from '@prisma/client';
 import { sessionService } from '../auth/session.service';
+import { emailService } from '../utils/email.service';
 
 export interface ListUsersParams {
   page?: number;
@@ -222,7 +223,21 @@ export const usersService = {
       }
     }
 
-    return this.getUserById(user.id);
+    const createdUser = await this.getUserById(user.id);
+
+    // Send welcome email with temporary credentials (fire-and-forget, non-blocking)
+    emailService
+      .sendWelcomeEmail({
+        to: email,
+        firstName: data.firstName.trim() || 'Admin',
+        lastName: data.lastName.trim() || '',
+        temporaryPassword: passwordRaw,
+      })
+      .catch((err) =>
+        console.warn(`[EMAIL] Failed to send welcome email to ${email}:`, err?.message || err)
+      );
+
+    return createdUser;
   },
 
   /**
@@ -320,6 +335,17 @@ export const usersService = {
         mustChangePassword: forceChangeOnLogin,
       },
     });
+
+    // Send password reset notification email (fire-and-forget)
+    emailService
+      .sendPasswordResetEmail({
+        to: user.email,
+        firstName: user.firstName || 'Admin',
+        newPassword: newPasswordRaw.trim(),
+      })
+      .catch((err) =>
+        console.warn(`[EMAIL] Failed to send reset email to ${user.email}:`, err?.message || err)
+      );
 
     return {
       success: true,

@@ -12,6 +12,7 @@ router.get('/:id', (0, auth_middleware_1.requireRole)('SUPER_ADMIN', 'ADMIN'), u
 router.post('/', (0, auth_middleware_1.requireRole)('SUPER_ADMIN'), users_controller_1.usersController.create);
 router.patch('/:id', (0, auth_middleware_1.requireRole)('SUPER_ADMIN'), users_controller_1.usersController.update);
 router.post('/:id/reset-password', (0, auth_middleware_1.requireRole)('SUPER_ADMIN'), users_controller_1.usersController.resetPassword);
+router.post('/:id/reset-2fa', (0, auth_middleware_1.requireRole)('SUPER_ADMIN'), users_controller_1.usersController.reset2fa);
 router.delete('/:id', (0, auth_middleware_1.requireRole)('SUPER_ADMIN'), users_controller_1.usersController.delete);
 exports.default = router;
 //# sourceMappingURL=users.routes.js.map

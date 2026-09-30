@@ -227,10 +227,10 @@ export declare const ordersService: {
                 id: string;
                 isActive: boolean;
                 createdAt: Date;
-                updatedAt: Date;
                 name: string;
-                description: string | null;
+                updatedAt: Date;
                 slug: string;
+                description: string | null;
                 shortDesc: string | null;
                 sku: string | null;
                 barcode: string | null;
@@ -394,11 +394,11 @@ export declare const ordersService: {
         })[];
         hardwareIssues: ({
             items: {
+                color: string | null;
                 id: string;
                 description: string;
                 category: string;
                 quantity: import("@prisma/client/runtime/library").Decimal;
-                color: string | null;
                 size: string | null;
                 serialNumber: number;
                 issueListId: string;
@@ -1155,10 +1155,10 @@ export declare const ordersService: {
                     id: string;
                     isActive: boolean;
                     createdAt: Date;
-                    updatedAt: Date;
                     name: string;
-                    description: string | null;
+                    updatedAt: Date;
                     slug: string;
+                    description: string | null;
                     shortDesc: string | null;
                     sku: string | null;
                     barcode: string | null;
@@ -1322,11 +1322,11 @@ export declare const ordersService: {
             })[];
             hardwareIssues: ({
                 items: {
+                    color: string | null;
                     id: string;
                     description: string;
                     category: string;
                     quantity: import("@prisma/client/runtime/library").Decimal;
-                    color: string | null;
                     size: string | null;
                     serialNumber: number;
                     issueListId: string;
