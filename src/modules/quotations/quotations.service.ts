@@ -59,6 +59,7 @@ function formatQuotationOutput(q: any) {
           itemDescription: it.description,
           boardType: it.boardType || (it.customSpecsJson as any)?.boardType || undefined,
           hardwarePackage: it.hardwarePackage || (it.customSpecsJson as any)?.hardwarePackage || undefined,
+          make: it.make || (it.customSpecsJson as any)?.make || undefined,
         }))
       : q.items,
     nextFollowupDate: q.nextFollowupDate || undefined,
@@ -184,10 +185,11 @@ export const quotationsService = {
         boardThickness: it.boardThickness || null,
         doorSize: it.doorSize || null,
         overallHeight: it.overallHeight || null,
-        customSpecsJson: (it.hardwarePackage || it.boardType)
+        customSpecsJson: (it.hardwarePackage || it.boardType || it.make)
           ? {
               hardwarePackage: it.hardwarePackage || null,
               boardType: it.boardType || null,
+              make: it.make || null,
               ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
             }
           : (it.customSpecsJson || null),
@@ -328,10 +330,11 @@ export const quotationsService = {
             boardThickness: it.boardThickness || null,
             doorSize: it.doorSize || null,
             overallHeight: it.overallHeight || null,
-            customSpecsJson: (it.hardwarePackage || it.boardType)
+            customSpecsJson: (it.hardwarePackage || it.boardType || it.make)
               ? {
                   hardwarePackage: it.hardwarePackage || null,
                   boardType: it.boardType || null,
+                  make: it.make || null,
                   ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
                 }
               : (it.customSpecsJson || null),
@@ -536,6 +539,7 @@ export const quotationsService = {
         overallHeight: it.overallHeight || undefined,
         boardType: it.boardType || (it.customSpecsJson as any)?.boardType || undefined,
         hardwarePackage: it.hardwarePackage || (it.customSpecsJson as any)?.hardwarePackage || undefined,
+        make: it.make || (it.customSpecsJson as any)?.make || undefined,
       })),
       basicPrice: Number(quote.basicPrice),
       installationCharge: Number(quote.installationCharge),
@@ -699,10 +703,11 @@ export const quotationsService = {
           boardThickness: it.boardThickness || null,
           doorSize: it.doorSize || null,
           overallHeight: it.overallHeight || null,
-          customSpecsJson: (it.hardwarePackage || it.boardType)
+          customSpecsJson: (it.hardwarePackage || it.boardType || it.make)
             ? {
                 hardwarePackage: it.hardwarePackage || null,
                 boardType: it.boardType || null,
+                make: it.make || null,
                 ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
               }
             : (it.customSpecsJson || null),

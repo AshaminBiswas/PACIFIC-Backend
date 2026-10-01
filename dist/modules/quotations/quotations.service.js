@@ -64,6 +64,7 @@ function formatQuotationOutput(q) {
                 itemDescription: it.description,
                 boardType: it.boardType || it.customSpecsJson?.boardType || undefined,
                 hardwarePackage: it.hardwarePackage || it.customSpecsJson?.hardwarePackage || undefined,
+                make: it.make || it.customSpecsJson?.make || undefined,
             }))
             : q.items,
         nextFollowupDate: q.nextFollowupDate || undefined,
@@ -180,10 +181,11 @@ exports.quotationsService = {
                 boardThickness: it.boardThickness || null,
                 doorSize: it.doorSize || null,
                 overallHeight: it.overallHeight || null,
-                customSpecsJson: (it.hardwarePackage || it.boardType)
+                customSpecsJson: (it.hardwarePackage || it.boardType || it.make)
                     ? {
                         hardwarePackage: it.hardwarePackage || null,
                         boardType: it.boardType || null,
+                        make: it.make || null,
                         ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
                     }
                     : (it.customSpecsJson || null),
@@ -314,10 +316,11 @@ exports.quotationsService = {
                         boardThickness: it.boardThickness || null,
                         doorSize: it.doorSize || null,
                         overallHeight: it.overallHeight || null,
-                        customSpecsJson: (it.hardwarePackage || it.boardType)
+                        customSpecsJson: (it.hardwarePackage || it.boardType || it.make)
                             ? {
                                 hardwarePackage: it.hardwarePackage || null,
                                 boardType: it.boardType || null,
+                                make: it.make || null,
                                 ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
                             }
                             : (it.customSpecsJson || null),
@@ -502,6 +505,7 @@ exports.quotationsService = {
                 overallHeight: it.overallHeight || undefined,
                 boardType: it.boardType || it.customSpecsJson?.boardType || undefined,
                 hardwarePackage: it.hardwarePackage || it.customSpecsJson?.hardwarePackage || undefined,
+                make: it.make || it.customSpecsJson?.make || undefined,
             })),
             basicPrice: Number(quote.basicPrice),
             installationCharge: Number(quote.installationCharge),
@@ -646,10 +650,11 @@ exports.quotationsService = {
                     boardThickness: it.boardThickness || null,
                     doorSize: it.doorSize || null,
                     overallHeight: it.overallHeight || null,
-                    customSpecsJson: (it.hardwarePackage || it.boardType)
+                    customSpecsJson: (it.hardwarePackage || it.boardType || it.make)
                         ? {
                             hardwarePackage: it.hardwarePackage || null,
                             boardType: it.boardType || null,
+                            make: it.make || null,
                             ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
                         }
                         : (it.customSpecsJson || null),

@@ -86,6 +86,7 @@ export interface QuotationPdfData {
         doorSize?: string;
         overallHeight?: string;
         hardwarePackage?: string;
+        make?: string;
     }>;
     basicPrice: number;
     installationCharge?: number;
@@ -266,6 +267,7 @@ export interface PiPdfData {
         doorSize?: string;
         overallHeight?: string;
         hardwarePackage?: string;
+        make?: string;
     }>;
     taxSummary: Array<{
         gstRate: number;
@@ -357,6 +359,7 @@ export interface SalesOrderPdfData {
         doorSize?: string;
         overallHeight?: string;
         hardwarePackage?: string;
+        make?: string;
     }>;
     subtotal: number;
     installationCharge?: number;

@@ -149,6 +149,7 @@ export interface QuotationPdfData {
     doorSize?: string;
     overallHeight?: string;
     hardwarePackage?: string;
+    make?: string;
   }>;
   basicPrice: number;
   installationCharge?: number;
@@ -333,6 +334,7 @@ export interface PiPdfData {
     doorSize?: string;
     overallHeight?: string;
     hardwarePackage?: string;
+    make?: string;
   }>;
   taxSummary: Array<{
     gstRate: number;
@@ -425,6 +427,7 @@ export interface SalesOrderPdfData {
     doorSize?: string;
     overallHeight?: string;
     hardwarePackage?: string;
+    make?: string;
   }>;
   subtotal: number;
   installationCharge?: number;
@@ -730,7 +733,7 @@ export const pdfService = {
         const displayDesc = cleanDescription(it.description);
 
         const hasSpecs = Boolean(
-          boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage
+          it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage
         );
 
         const descLower = (it.description || '').toLowerCase();
@@ -747,6 +750,7 @@ export const pdfService = {
               <div style="font-weight: bold; font-size: 11px;">${displayDesc}</div>
               ${hasSpecs ? `
                 <div class="spec-box">
+                  ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
                   ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
                   ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
                   ${boardColor ? `<div>• <strong>Board Color:</strong> ${boardColor}</div>` : ''}
@@ -1736,8 +1740,9 @@ export const pdfService = {
               <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
               <td>
                 <div style="font-weight: bold; font-size: 11px;">${item.description}</div>
-                ${item.boardType || item.cubicleSize || item.boardColor || item.boardThickness || item.doorSize || item.overallHeight || showHardware ? `
+                ${item.make || item.boardType || item.cubicleSize || item.boardColor || item.boardThickness || item.doorSize || item.overallHeight || showHardware ? `
                   <div class="spec-box">
+                    ${item.make ? `<div>• <strong>Make:</strong> ${item.make}</div>` : ''}
                     ${item.boardType ? `<div>• <strong>Board Type:</strong> ${item.boardType}</div>` : ''}
                     ${item.boardThickness ? `<div>• <strong>Board Thickness:</strong> ${item.boardThickness}</div>` : ''}
                     ${item.boardColor ? `<div>• <strong>Board Color:</strong> ${item.boardColor}</div>` : ''}
@@ -2445,7 +2450,7 @@ export const pdfService = {
         const displayDesc = cleanDescription(it.description);
 
         const hasSpecs = Boolean(
-          boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage
+          it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage
         );
 
         return `
@@ -2455,6 +2460,7 @@ export const pdfService = {
               <div style="font-weight: bold; font-size: 11px;">${displayDesc}</div>
               ${hasSpecs ? `
                 <div class="spec-box">
+                  ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
                   ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
                   ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
                   ${boardColor ? `<div>• <strong>Board Color:</strong> ${boardColor}</div>` : ''}

@@ -331,7 +331,7 @@ exports.pdfService = {
                 !rawHardware.includes('SS Hardware (Golden, Black, SS)'));
             const hardwarePackage = showHardware ? rawHardware : undefined;
             const displayDesc = cleanDescription(it.description);
-            const hasSpecs = Boolean(boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage);
+            const hasSpecs = Boolean(it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage);
             const descLower = (it.description || '').toLowerCase();
             const isUrinal = descLower.includes('urinal') || descLower.includes('ump') || (cubicleSize && cubicleSize.includes('450mm'));
             const isLocker = descLower.includes('locker');
@@ -345,6 +345,7 @@ exports.pdfService = {
               <div style="font-weight: bold; font-size: 11px;">${displayDesc}</div>
               ${hasSpecs ? `
                 <div class="spec-box">
+                  ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
                   ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
                   ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
                   ${boardColor ? `<div>• <strong>Board Color:</strong> ${boardColor}</div>` : ''}
@@ -1299,8 +1300,9 @@ exports.pdfService = {
               <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
               <td>
                 <div style="font-weight: bold; font-size: 11px;">${item.description}</div>
-                ${item.boardType || item.cubicleSize || item.boardColor || item.boardThickness || item.doorSize || item.overallHeight || showHardware ? `
+                ${item.make || item.boardType || item.cubicleSize || item.boardColor || item.boardThickness || item.doorSize || item.overallHeight || showHardware ? `
                   <div class="spec-box">
+                    ${item.make ? `<div>• <strong>Make:</strong> ${item.make}</div>` : ''}
                     ${item.boardType ? `<div>• <strong>Board Type:</strong> ${item.boardType}</div>` : ''}
                     ${item.boardThickness ? `<div>• <strong>Board Thickness:</strong> ${item.boardThickness}</div>` : ''}
                     ${item.boardColor ? `<div>• <strong>Board Color:</strong> ${item.boardColor}</div>` : ''}
@@ -1994,7 +1996,7 @@ exports.pdfService = {
                 !rawHardware.includes('SS Hardware (Golden, Black, SS)'));
             const hardwarePackage = showHardware ? rawHardware : undefined;
             const displayDesc = cleanDescription(it.description);
-            const hasSpecs = Boolean(boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage);
+            const hasSpecs = Boolean(it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage);
             return `
           <tr>
             <td style="text-align: center;">${it.serialNumber || idx + 1}</td>
@@ -2002,6 +2004,7 @@ exports.pdfService = {
               <div style="font-weight: bold; font-size: 11px;">${displayDesc}</div>
               ${hasSpecs ? `
                 <div class="spec-box">
+                  ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
                   ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
                   ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
                   ${boardColor ? `<div>• <strong>Board Color:</strong> ${boardColor}</div>` : ''}
