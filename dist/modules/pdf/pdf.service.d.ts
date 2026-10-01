@@ -89,6 +89,8 @@ export interface QuotationPdfData {
     }>;
     basicPrice: number;
     installationCharge?: number;
+    installationRatePerCubicle?: number;
+    installationCubicleCount?: number;
     freightTerms: string;
     freightAmount?: number;
     gstRate: number;
@@ -274,6 +276,9 @@ export interface PiPdfData {
         totalTax: number;
     }>;
     subtotal: number;
+    installationCharge?: number;
+    installationRatePerCubicle?: number;
+    installationCubicleCount?: number;
     freightAmount: number;
     cgstAmount: number;
     sgstAmount: number;
@@ -354,6 +359,9 @@ export interface SalesOrderPdfData {
         hardwarePackage?: string;
     }>;
     subtotal: number;
+    installationCharge?: number;
+    installationRatePerCubicle?: number;
+    installationCubicleCount?: number;
     freightAmount: number;
     cgstAmount: number;
     sgstAmount: number;
@@ -448,6 +456,9 @@ export declare const pdfService: {
             gstRate: number;
         }>;
         subtotal: number;
+        installationCharge?: number;
+        installationRatePerCubicle?: number;
+        installationCubicleCount?: number;
         taxAmount: number;
         grandTotal: number;
         currency: string;

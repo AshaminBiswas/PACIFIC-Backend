@@ -647,7 +647,6 @@ exports.pdfService = {
           ${data.qrDataUrl ? `
             <div style="display: inline-block; text-align: center;">
               <img src="${data.qrDataUrl}" width="75" height="75" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; image-rendering: -webkit-optimize-contrast; image-rendering: pixelated;" />
-              <div style="font-size: 8px; text-transform: uppercase; margin-top: 2px; font-weight: bold; letter-spacing: 0.3px;">Verify Document</div>
             </div>
           ` : ''}
         </td>
@@ -695,6 +694,20 @@ exports.pdfService = {
             <td colspan="6" style="text-align: right; font-weight: bold;">Basic Price / Subtotal:</td>
             <td style="text-align: right; font-weight: bold;">${data.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           </tr>
+          ${data.installationCharge && data.installationCharge > 0 ? `
+            <tr>
+              <td colspan="6" style="text-align: right;">
+                Cubicle Installation Charges${(() => {
+            const cubCount = data.installationCubicleCount || data.items
+                .filter((it) => !it.description?.toLowerCase().includes('installation') && !it.description?.toLowerCase().includes('freight'))
+                .reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+            const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 ? Math.round(Number(data.installationCharge) / cubCount) : 0);
+            return ratePerCub > 0 ? ` (@ ${currSym} ${ratePerCub.toLocaleString('en-IN')}/Cubicle${cubCount > 0 ? ` for ${cubCount} Cubicles` : ''})` : '';
+        })()}:
+              </td>
+              <td style="text-align: right;">${Number(data.installationCharge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+            </tr>
+          ` : ''}
           ${data.freightAmount > 0 ? `
             <tr>
               <td colspan="6" style="text-align: right;">Freight & Handling:</td>
@@ -931,9 +944,16 @@ exports.pdfService = {
             termsList.push({ label: 'General Terms', text: data.generalTerms });
         }
         else {
+            const cubCount = data.installationCubicleCount || data.items
+                .filter(it => !it.description.toLowerCase().includes('installation') && !it.description.toLowerCase().includes('freight'))
+                .reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+            const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 && data.installationCharge ? Math.round(Number(data.installationCharge) / cubCount) : 0);
+            const installTerm = ratePerCub > 0
+                ? `4. Installation: Cubicle installation is charged @ ${data.currency || '₹'} ${ratePerCub.toLocaleString('en-IN')}/cubicle. Site readiness (finished flooring, plumb walls, civil unloading, and electricity) required prior to installation.`
+                : `4. Site Readiness: Finished floor level and plumb walls required prior to installation.`;
             termsList.push({
                 label: 'General Terms',
-                text: '1. Price Basis: Ex-works New Delhi factory. 2. Taxes: GST as applicable at the time of invoice. 3. Unloading & Safe Storage: In buyer’s scope at site. 4. Site Readiness: Finished floor level and plumb walls required prior to installation.',
+                text: `1. Price Basis: Ex-works New Delhi factory. 2. Taxes: GST as applicable at the time of invoice. 3. Unloading & Safe Storage: In buyer’s scope at site. ${installTerm}`,
             });
         }
         if (data.paymentTerms) {
@@ -1193,7 +1213,6 @@ exports.pdfService = {
           ${data.qrDataUrl ? `
             <div style="display: inline-block; text-align: center;">
               <img src="${data.qrDataUrl}" width="72" height="72" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important;" />
-              <div style="font-size: 8px; text-transform: uppercase; margin-top: 2px; font-weight: bold;">Verify Document</div>
             </div>
           ` : ''}
         </td>
@@ -1278,7 +1297,18 @@ exports.pdfService = {
           </tr>
           ${data.installationCharge ? `
             <tr>
-              <td colspan="5" style="text-align: right;">Cubicle Installation Charge:</td>
+              <td colspan="5" style="text-align: right;">
+                Cubicle Installation Charge${(() => {
+            const cubicleCount = data.installationCubicleCount || data.items
+                .filter((it) => !it.description?.toLowerCase().includes('installation') && !it.description?.toLowerCase().includes('freight'))
+                .reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+            const ratePerCub = data.installationRatePerCubicle || (cubicleCount > 0 ? Math.round(Number(data.installationCharge) / cubicleCount) : 0);
+            if (ratePerCub > 0) {
+                return ` (@ ${data.currency || '₹'} ${ratePerCub.toLocaleString('en-IN')}/Cubicle${cubicleCount > 0 ? ` for ${cubicleCount} Cubicles` : ''})`;
+            }
+            return '';
+        })()}:
+              </td>
               <td style="text-align: right;">${data.installationCharge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
             </tr>
           ` : ''}
@@ -2156,7 +2186,6 @@ exports.pdfService = {
           ${data.qrDataUrl ? `
             <div style="display: inline-block; text-align: center;">
               <img src="${data.qrDataUrl}" width="75" height="75" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important;" />
-              <div style="font-size: 8px; text-transform: uppercase; margin-top: 2px;">Verify Document</div>
             </div>
           ` : ''}
         </td>
@@ -2209,6 +2238,20 @@ exports.pdfService = {
             <td colspan="6" style="text-align: right; font-weight: bold;">Basic Price / Subtotal:</td>
             <td style="text-align: right; font-weight: bold;">${data.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           </tr>
+          ${data.installationCharge && data.installationCharge > 0 ? `
+            <tr>
+              <td colspan="6" style="text-align: right;">
+                Cubicle Installation Charges${(() => {
+            const cubCount = data.installationCubicleCount || data.items
+                .filter((it) => !it.description?.toLowerCase().includes('installation') && !it.description?.toLowerCase().includes('freight'))
+                .reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+            const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 ? Math.round(Number(data.installationCharge) / cubCount) : 0);
+            return ratePerCub > 0 ? ` (@ ${currSym} ${ratePerCub.toLocaleString('en-IN')}/Cubicle${cubCount > 0 ? ` for ${cubCount} Cubicles` : ''})` : '';
+        })()}:
+              </td>
+              <td style="text-align: right;">${Number(data.installationCharge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+            </tr>
+          ` : ''}
           ${data.freightAmount > 0 ? `
             <tr>
               <td colspan="6" style="text-align: right;">Freight & Handling:</td>
@@ -2419,6 +2462,20 @@ exports.pdfService = {
                 <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">Taxable Value:</td>
                 <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1; font-weight: bold;">${currSym} ${Number(data.subtotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
               </tr>
+              ${data.installationCharge && data.installationCharge > 0 ? `
+                <tr>
+                  <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">
+                    Installation Charges${(() => {
+            const cubCount = data.installationCubicleCount || data.items
+                .filter((it) => !it.description?.toLowerCase().includes('installation') && !it.description?.toLowerCase().includes('freight'))
+                .reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+            const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 ? Math.round(Number(data.installationCharge) / cubCount) : 0);
+            return ratePerCub > 0 ? ` (@ ${currSym} ${ratePerCub.toLocaleString('en-IN')}/Cubicle${cubCount > 0 ? ` for ${cubCount} Cubicles` : ''})` : '';
+        })()}:
+                  </td>
+                  <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1;">${currSym} ${Number(data.installationCharge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                </tr>
+              ` : ''}
               ${(0, tax_engine_1.isDelhiGst)(data.customerGstin, undefined, data.placeOfSupply || data.customerAddress)
             ? `<tr>
                       <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">CGST (9%):</td>
