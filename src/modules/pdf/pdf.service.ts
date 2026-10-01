@@ -32,6 +32,34 @@ function resolveCompanyLogoDataUri(providedUrl?: string): string {
   return DEFAULT_PACIFIC_LOGO_DATA_URI;
 }
 
+function isCubiclePdfItem(it: any): boolean {
+  if (!it) return false;
+  const unit = (it.unit || '').toUpperCase().trim();
+  if (unit === 'CUBICLE') return true;
+  if (['SQFT', 'SQM', 'SFT', 'SHEET', 'SHEETS', 'BOARD', 'BOARDS', 'PAIR', 'PAIRS', 'MTR', 'KG', 'BOX', 'PKT', 'BAG'].includes(unit)) return false;
+
+  const desc = (it.description || '').toLowerCase();
+  if (!desc) return false;
+
+  const nonCubicle = [
+    'urinal', 'ump', 'modesty', 'screen', 'divider',
+    'locker', 'vanity',
+    'board', 'sheet', 'laminate', 'hpl board', 'raw board',
+    'hardware', 'hinge', 'gravity hinge', 'lock', 'indicator',
+    'supporting leg', 'support leg', 'coat hook', 'door pull', 'door knob',
+    'clamp', 'bracket', 'freight', 'transportation', 'installation', 'erection',
+  ];
+  if (nonCubicle.some((kw) => desc.includes(kw))) return false;
+
+  if (desc.includes('cubicle') || desc.includes('cubical') || desc.includes('toilet partition') || desc.includes('restroom partition')) {
+    return true;
+  }
+  const cubicleModelNames = ['classy', 'master', 'elite', 'privo', 'titanium', 'aerolam', 'kids', 'solid plastic', 'vibrant', 'comfort'];
+  if (cubicleModelNames.some((m) => desc.includes(m))) return true;
+
+  return false;
+}
+
 export interface PoPdfData {
   poNumber: string;
   poDate: string;
@@ -1120,10 +1148,10 @@ export const pdfService = {
               <td colspan="6" style="text-align: right;">
                 Cubicle Installation Charges${(() => {
                   const cubCount = data.installationCubicleCount || data.items
-                    .filter((it: any) => !it.description?.toLowerCase().includes('installation') && !it.description?.toLowerCase().includes('freight'))
+                    .filter(isCubiclePdfItem)
                     .reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
                   const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 ? Math.round(Number(data.installationCharge) / cubCount) : 0);
-                  return ratePerCub > 0 ? ` (@ ${currSym} ${ratePerCub.toLocaleString('en-IN')}/Cubicle${cubCount > 0 ? ` for ${cubCount} Cubicles` : ''})` : '';
+                  return ratePerCub > 0 && cubCount > 0 ? ` (@ ${currSym} ${ratePerCub.toLocaleString('en-IN')}/Cubicle for ${cubCount} Cubicle${cubCount === 1 ? '' : 's'})` : '';
                 })()}:
               </td>
               <td style="text-align: right;">${Number(data.installationCharge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -1377,11 +1405,11 @@ export const pdfService = {
       termsList.push({ label: 'General Terms', text: data.generalTerms });
     } else {
       const cubCount = data.installationCubicleCount || data.items
-        .filter(it => !it.description.toLowerCase().includes('installation') && !it.description.toLowerCase().includes('freight'))
+        .filter(isCubiclePdfItem)
         .reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
       const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 && data.installationCharge ? Math.round(Number(data.installationCharge) / cubCount) : 0);
-      const installTerm = ratePerCub > 0
-        ? `4. Installation: Cubicle installation is charged @ ${data.currency || '₹'} ${ratePerCub.toLocaleString('en-IN')}/cubicle. Site readiness (finished flooring, plumb walls, civil unloading, and electricity) required prior to installation.`
+      const installTerm = ratePerCub > 0 && cubCount > 0
+        ? `4. Installation: Cubicle installation is charged @ ${data.currency || '₹'} ${ratePerCub.toLocaleString('en-IN')}/cubicle for ${cubCount} cubicle${cubCount === 1 ? '' : 's'}. Site readiness (finished flooring, plumb walls, civil unloading, and electricity) required prior to installation.`
         : `4. Site Readiness: Finished floor level and plumb walls required prior to installation.`;
       termsList.push({
         label: 'General Terms',
@@ -1738,11 +1766,11 @@ export const pdfService = {
               <td colspan="5" style="text-align: right;">
                 Cubicle Installation Charge${(() => {
                   const cubicleCount = data.installationCubicleCount || data.items
-                    .filter((it: any) => !it.description?.toLowerCase().includes('installation') && !it.description?.toLowerCase().includes('freight'))
+                    .filter(isCubiclePdfItem)
                     .reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
                   const ratePerCub = data.installationRatePerCubicle || (cubicleCount > 0 ? Math.round(Number(data.installationCharge) / cubicleCount) : 0);
-                  if (ratePerCub > 0) {
-                    return ` (@ ${data.currency || '₹'} ${ratePerCub.toLocaleString('en-IN')}/Cubicle${cubicleCount > 0 ? ` for ${cubicleCount} Cubicles` : ''})`;
+                  if (ratePerCub > 0 && cubicleCount > 0) {
+                    return ` (@ ${data.currency || '₹'} ${ratePerCub.toLocaleString('en-IN')}/Cubicle for ${cubicleCount} Cubicle${cubicleCount === 1 ? '' : 's'})`;
                   }
                   return '';
                 })()}:
@@ -2702,10 +2730,10 @@ export const pdfService = {
               <td colspan="6" style="text-align: right;">
                 Cubicle Installation Charges${(() => {
                   const cubCount = data.installationCubicleCount || data.items
-                    .filter((it: any) => !it.description?.toLowerCase().includes('installation') && !it.description?.toLowerCase().includes('freight'))
+                    .filter(isCubiclePdfItem)
                     .reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
                   const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 ? Math.round(Number(data.installationCharge) / cubCount) : 0);
-                  return ratePerCub > 0 ? ` (@ ${currSym} ${ratePerCub.toLocaleString('en-IN')}/Cubicle${cubCount > 0 ? ` for ${cubCount} Cubicles` : ''})` : '';
+                  return ratePerCub > 0 && cubCount > 0 ? ` (@ ${currSym} ${ratePerCub.toLocaleString('en-IN')}/Cubicle for ${cubCount} Cubicle${cubCount === 1 ? '' : 's'})` : '';
                 })()}:
               </td>
               <td style="text-align: right;">${Number(data.installationCharge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -2975,10 +3003,10 @@ export const pdfService = {
                   <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">
                     Installation Charges${(() => {
                       const cubCount = data.installationCubicleCount || data.items
-                        .filter((it: any) => !it.description?.toLowerCase().includes('installation') && !it.description?.toLowerCase().includes('freight'))
+                        .filter(isCubiclePdfItem)
                         .reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
                       const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 ? Math.round(Number(data.installationCharge) / cubCount) : 0);
-                      return ratePerCub > 0 ? ` (@ ${currSym} ${ratePerCub.toLocaleString('en-IN')}/Cubicle${cubCount > 0 ? ` for ${cubCount} Cubicles` : ''})` : '';
+                      return ratePerCub > 0 && cubCount > 0 ? ` (@ ${currSym} ${ratePerCub.toLocaleString('en-IN')}/Cubicle for ${cubCount} Cubicle${cubCount === 1 ? '' : 's'})` : '';
                     })()}:
                   </td>
                   <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1;">${currSym} ${Number(data.installationCharge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
