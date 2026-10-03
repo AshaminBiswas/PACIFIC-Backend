@@ -62,6 +62,8 @@ function formatQuotationOutput(q: any) {
           make: it.make || (it.customSpecsJson as any)?.make || undefined,
           customModelName: (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.customModelName || undefined,
           modelName: (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.modelName || undefined,
+          modelImageUrl: (it.customSpecsJson as any)?.modelImageUrl || (it.customSpecsJson as any)?.imageUrl || it.modelImageUrl || undefined,
+          systemCategory: (it.customSpecsJson as any)?.systemCategory || (it.customSpecsJson as any)?.category || it.systemCategory || undefined,
         }))
       : q.items,
     drawingUrl: q.drawingUrl || undefined,
@@ -249,13 +251,15 @@ export const quotationsService = {
         boardThickness: it.boardThickness || null,
         doorSize: it.doorSize || null,
         overallHeight: it.overallHeight || null,
-        customSpecsJson: (it.hardwarePackage || it.boardType || it.make || it.customModelName || it.modelName || it.customSpecsJson)
+        customSpecsJson: (it.hardwarePackage || it.boardType || it.make || it.customModelName || it.modelName || it.modelImageUrl || it.customSpecsJson)
           ? {
               hardwarePackage: it.hardwarePackage || null,
               boardType: it.boardType || null,
               make: it.make || null,
               customModelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.customModelName : null) || null,
               modelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.modelName : null) || null,
+              modelImageUrl: it.modelImageUrl || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.modelImageUrl : null) || null,
+              systemCategory: it.systemCategory || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.systemCategory : null) || null,
               ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
             }
           : null,
@@ -399,13 +403,15 @@ export const quotationsService = {
             boardThickness: it.boardThickness || null,
             doorSize: it.doorSize || null,
             overallHeight: it.overallHeight || null,
-            customSpecsJson: (it.hardwarePackage || it.boardType || it.make || it.customModelName || it.modelName || it.customSpecsJson)
+            customSpecsJson: (it.hardwarePackage || it.boardType || it.make || it.customModelName || it.modelName || it.modelImageUrl || it.customSpecsJson)
               ? {
                   hardwarePackage: it.hardwarePackage || null,
                   boardType: it.boardType || null,
                   make: it.make || null,
                   customModelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.customModelName : null) || null,
                   modelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.modelName : null) || null,
+                  modelImageUrl: it.modelImageUrl || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.modelImageUrl : null) || null,
+                  systemCategory: it.systemCategory || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.systemCategory : null) || null,
                   ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
                 }
               : null,
@@ -577,6 +583,37 @@ export const quotationsService = {
       ? await fetchImageAsDataUri(rawSignatureUrl)
       : rawSignatureUrl;
 
+    // Collect unique model images from line items
+    const rawModelImages = (quote.items || [])
+      .map((it: any) => {
+        const imgUrl = it.modelImageUrl || (it.customSpecsJson as any)?.modelImageUrl || (it.customSpecsJson as any)?.imageUrl;
+        const modelName = (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.modelName || it.description;
+        const category = (it.customSpecsJson as any)?.systemCategory || (it.customSpecsJson as any)?.category || undefined;
+        return imgUrl ? { modelName, category, imageUrl: imgUrl } : null;
+      })
+      .filter((img: any): img is { modelName: string; category?: string; imageUrl: string } => Boolean(img && img.imageUrl));
+
+    const seenUrls = new Set<string>();
+    const uniqueModelImages: Array<{ modelName: string; category?: string; imageUrl: string }> = [];
+    for (const img of rawModelImages) {
+      if (!seenUrls.has(img.imageUrl)) {
+        seenUrls.add(img.imageUrl);
+        uniqueModelImages.push(img);
+      }
+    }
+
+    const modelImagesWithDataUri = await Promise.all(
+      uniqueModelImages.map(async (img) => {
+        const dataUri = img.imageUrl.startsWith('data:')
+          ? img.imageUrl
+          : await fetchImageAsDataUri(img.imageUrl);
+        return {
+          ...img,
+          imageUrl: dataUri || img.imageUrl,
+        };
+      })
+    );
+
     return pdfService.generateQuotationPdfHtml({
       referenceNumber: quote.referenceNumber,
       revisionNumber: quote.revisionNumber,
@@ -615,6 +652,8 @@ export const quotationsService = {
         boardType: it.boardType || (it.customSpecsJson as any)?.boardType || undefined,
         hardwarePackage: it.hardwarePackage || (it.customSpecsJson as any)?.hardwarePackage || undefined,
         make: it.make || (it.customSpecsJson as any)?.make || undefined,
+        modelImageUrl: it.modelImageUrl || (it.customSpecsJson as any)?.modelImageUrl || undefined,
+        modelName: (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.modelName || undefined,
       })),
       basicPrice: Number(quote.basicPrice),
       installationCharge: Number(quote.installationCharge),
@@ -637,6 +676,7 @@ export const quotationsService = {
       validUntil: quote.validUntil?.toISOString(),
       signatureUrl,
       qrDataUrl,
+      modelImages: modelImagesWithDataUri,
     });
   },
 

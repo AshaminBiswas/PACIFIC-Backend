@@ -174,6 +174,11 @@ export interface QuotationPdfData {
   validUntil?: string;
   signatureUrl?: string;
   qrDataUrl?: string;
+  modelImages?: Array<{
+    modelName: string;
+    category?: string;
+    imageUrl: string;
+  }>;
 }
 
 export interface ExportQuotationPdfData {
@@ -1457,6 +1462,9 @@ export const pdfService = {
       });
     }
 
+    const modelImages = (data.modelImages || []).filter((img) => img && img.imageUrl);
+    const hasModelImages = modelImages.length > 0;
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1871,10 +1879,51 @@ export const pdfService = {
     </table>
 
     <div class="body-wrapper">
-      <!-- Standard Inclusions & Hardware Accessories -->
-      <div class="section-title-p2">Standard Inclusions &amp; Hardware Accessories</div>
-      <div class="accessories-box-p2">
-        ${this.formatQuotationAccessoriesHtml(data.accessoriesText)}
+      <!-- Standard Inclusions & Hardware Accessories + Model Visuals -->
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 2px;">
+        <tr>
+          <td style="width: ${hasModelImages ? '65%' : '100%'}; vertical-align: bottom;">
+            <div class="section-title-p2" style="margin: 6px 0 2px 0;">Standard Inclusions &amp; Hardware Accessories</div>
+          </td>
+          ${hasModelImages ? `
+          <td style="width: 35%; vertical-align: bottom; text-align: right;">
+            <div class="section-title-p2" style="margin: 6px 0 2px 0; border-bottom: 1.5px solid #7FB706; text-align: right; color: #000000;">
+              System Model Visual${modelImages.length > 1 ? 's' : ''}
+            </div>
+          </td>
+          ` : ''}
+        </tr>
+      </table>
+
+      <div class="accessories-box-p2" style="padding: 0; overflow: hidden; margin-bottom: 4px;">
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <td style="width: ${hasModelImages ? '65%' : '100%'}; vertical-align: top; padding: 6px 10px; ${hasModelImages ? 'border-right: 1.5px solid #000000;' : ''}">
+              ${this.formatQuotationAccessoriesHtml(data.accessoriesText)}
+            </td>
+            ${hasModelImages ? `
+            <td style="width: 35%; vertical-align: middle; padding: 6px 8px; background: #fafbfc; text-align: center;">
+              <table style="width: 100%; border-collapse: collapse;">
+                ${modelImages.map((img) => `
+                  <tr>
+                    <td style="padding: 3px 0;">
+                      <div style="border: 1px solid #d4d4d8; border-radius: 4px; overflow: hidden; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">
+                        <div style="background: #18181b; color: #ffffff; padding: 2.5px 6px; font-size: 8px; font-weight: bold; text-transform: uppercase; text-align: left; display: flex; justify-content: space-between; align-items: center;">
+                          <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;">${img.modelName || 'Model Visual'}</span>
+                          <span style="font-size: 7px; color: #7FB706; text-transform: uppercase; font-weight: 700;">${img.category || 'System'}</span>
+                        </div>
+                        <div style="padding: 4px; background: #ffffff; display: flex; align-items: center; justify-content: center; min-height: ${modelImages.length > 1 ? '70px' : '110px'}; max-height: ${modelImages.length > 1 ? '90px' : '140px'}; overflow: hidden;">
+                          <img src="${img.imageUrl}" alt="${img.modelName || 'Model'}" style="max-width: 100%; max-height: ${modelImages.length > 1 ? '85px' : '135px'}; object-fit: contain; display: block; margin: 0 auto;" />
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')}
+              </table>
+            </td>
+            ` : ''}
+          </tr>
+        </table>
       </div>
 
       <!-- Warranty Commitment -->
