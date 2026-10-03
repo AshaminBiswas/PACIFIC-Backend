@@ -727,7 +727,11 @@ export const pdfService = {
         const showHardware = Boolean(
           rawHardware &&
           !rawHardware.includes('Golden, Black, SS') &&
-          !rawHardware.includes('SS Hardware (Golden, Black, SS)')
+          !rawHardware.includes('SS Hardware (Golden, Black, SS)') &&
+          !rawHardware.includes('SS 304 Stainless Steel (Satin/Brushed)') &&
+          !rawHardware.includes('SS 304 Stainless Steel') &&
+          !rawHardware.toLowerCase().includes('satin/brushed') &&
+          !rawHardware.toLowerCase().includes('ss 304')
         );
         const hardwarePackage = showHardware ? rawHardware : undefined;
         const displayDesc = cleanDescription(it.description);
@@ -1735,7 +1739,11 @@ export const pdfService = {
             const showHardware = Boolean(
               item.hardwarePackage &&
               !item.hardwarePackage.includes('Golden, Black, SS') &&
-              !item.hardwarePackage.includes('SS Hardware (Golden, Black, SS)')
+              !item.hardwarePackage.includes('SS Hardware (Golden, Black, SS)') &&
+              !item.hardwarePackage.includes('SS 304 Stainless Steel (Satin/Brushed)') &&
+              !item.hardwarePackage.includes('SS 304 Stainless Steel') &&
+              !item.hardwarePackage.toLowerCase().includes('satin/brushed') &&
+              !item.hardwarePackage.toLowerCase().includes('ss 304')
             );
 
             const customModel = (item as any).customModelName || (item as any).modelName || ((item as any).customSpecsJson as any)?.customModelName || ((item as any).customSpecsJson as any)?.modelName;
@@ -2450,7 +2458,11 @@ export const pdfService = {
         const showHardware = Boolean(
           rawHardware &&
           !rawHardware.includes('Golden, Black, SS') &&
-          !rawHardware.includes('SS Hardware (Golden, Black, SS)')
+          !rawHardware.includes('SS Hardware (Golden, Black, SS)') &&
+          !rawHardware.includes('SS 304 Stainless Steel (Satin/Brushed)') &&
+          !rawHardware.includes('SS 304 Stainless Steel') &&
+          !rawHardware.toLowerCase().includes('satin/brushed') &&
+          !rawHardware.toLowerCase().includes('ss 304')
         );
         const hardwarePackage = showHardware ? rawHardware : undefined;
         const displayDesc = cleanDescription(it.description);

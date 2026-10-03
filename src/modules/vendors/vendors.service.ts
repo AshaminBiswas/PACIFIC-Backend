@@ -58,15 +58,22 @@ export const vendorsService = {
       where: { id },
       include: {
         vendorProfile: true,
-        contacts: true,
-        addresses: true,
+        contacts: {
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+        },
+        addresses: {
+          orderBy: [{ isDefaultBilling: 'desc' }, { createdAt: 'asc' }],
+        },
         purchaseOrders: {
+          include: {
+            items: true,
+          },
           orderBy: { poDate: 'desc' },
-          take: 20,
+          take: 50,
         },
         payments: {
           orderBy: { paymentDate: 'desc' },
-          take: 20,
+          take: 50,
         },
       },
     });
@@ -77,170 +84,305 @@ export const vendorsService = {
     const totalPaidValue = vendor.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     const outstandingBalance = Math.max(0, totalPoValue - totalPaidValue);
 
+    // Aggregate material supplies record across all POs
+    const materialMap = new Map<string, {
+      description: string;
+      finish?: string;
+      thickness?: string;
+      cuttingSize?: string;
+      unit: string;
+      totalQuantity: number;
+      lastRate: number;
+      lastSuppliedDate: string;
+      poCount: number;
+      poNumbers: string[];
+    }>();
+
+    for (const po of vendor.purchaseOrders) {
+      for (const item of (po as any).items || []) {
+        const descKey = (item.description || '').trim();
+        const finishKey = (item.finish || '').trim();
+        const thickKey = (item.thickness || '').trim();
+        const unitKey = (item.unit || '').trim();
+        const key = `${descKey}_${finishKey}_${thickKey}_${unitKey}`.toLowerCase();
+        const qty = Number(item.quantity) || 0;
+        const rate = Number(item.rate) || 0;
+        const poDateStr = po.poDate ? (po.poDate instanceof Date ? po.poDate.toISOString() : String(po.poDate)) : '';
+
+        const existing = materialMap.get(key);
+        if (existing) {
+          existing.totalQuantity += qty;
+          if (rate > 0) existing.lastRate = rate;
+          if (!existing.poNumbers.includes(po.poNumber)) {
+            existing.poNumbers.push(po.poNumber);
+            existing.poCount++;
+          }
+          if (poDateStr && (!existing.lastSuppliedDate || poDateStr > existing.lastSuppliedDate)) {
+            existing.lastSuppliedDate = poDateStr;
+          }
+        } else {
+          materialMap.set(key, {
+            description: item.description,
+            finish: item.finish || undefined,
+            thickness: item.thickness || undefined,
+            cuttingSize: item.cuttingSize || undefined,
+            unit: item.unit || 'NOS',
+            totalQuantity: qty,
+            lastRate: rate,
+            lastSuppliedDate: poDateStr,
+            poCount: 1,
+            poNumbers: [po.poNumber],
+          });
+        }
+      }
+    }
+
+    const materialSupplies = Array.from(materialMap.values()).sort(
+      (a, b) => (b.lastSuppliedDate || '').localeCompare(a.lastSuppliedDate || '')
+    );
+
     return {
       ...vendor,
+      materialSupplies,
       summary: {
         totalPoValue,
         totalPaidValue,
         outstandingBalance,
         totalPoCount: vendor.purchaseOrders.length,
         totalPaymentsCount: vendor.payments.length,
+        totalMaterialTypesCount: materialSupplies.length,
       },
     };
   },
 
   async createVendor(data: any, userId?: string) {
-    return prisma.$transaction(async (tx) => {
-      const party = await tx.businessParty.create({
-        data: {
-          companyProfileId: data.companyProfileId,
-          partyType: data.partyType || 'VENDOR',
-          legalName: data.legalName,
-          tradeName: data.tradeName,
-          gstin: data.gstin ? data.gstin.toUpperCase().trim() : undefined,
-          pan: data.pan ? data.pan.toUpperCase().trim() : undefined,
-          email: data.email,
-          phone: data.phone,
-          status: data.status || 'ACTIVE',
-          notes: data.notes,
-        },
-      });
+    let createdPartyId: string | null = null;
+    let auditData: any = null;
 
-      const profile = await tx.vendorProfile.create({
-        data: {
-          partyId: party.id,
-          vendorType: data.vendorType || 'RAW_MATERIALS',
-          paymentTermsDays: Number(data.paymentTermsDays) || 30,
-          status: 'ACTIVE',
-        },
-      });
-
-      if (Array.isArray(data.contacts)) {
-        for (const c of data.contacts) {
-          await tx.partyContact.create({
-            data: { ...c, partyId: party.id },
-          });
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // Resolve company profile cleanly without empty string UUID errors
+        let compProfileId = data.companyProfileId;
+        if (!compProfileId || typeof compProfileId !== 'string' || compProfileId.trim() === '') {
+          const defaultComp = await tx.companyProfile.findFirst({ select: { id: true } });
+          compProfileId = defaultComp?.id || null;
         }
-      }
 
-      if (Array.isArray(data.addresses)) {
-        for (const a of data.addresses) {
-          await tx.partyAddress.create({
-            data: { ...a, partyId: party.id },
-          });
+        const notesVal =
+          data.notes !== undefined
+            ? typeof data.notes === 'object'
+              ? JSON.stringify(data.notes)
+              : String(data.notes)
+            : undefined;
+
+        const party = await tx.businessParty.create({
+          data: {
+            companyProfileId: compProfileId,
+            partyType: data.partyType || 'VENDOR',
+            legalName: (data.legalName || '').trim(),
+            tradeName: data.tradeName ? data.tradeName.trim() : undefined,
+            gstin: data.gstin ? data.gstin.toUpperCase().trim() : undefined,
+            pan: data.pan ? data.pan.toUpperCase().trim() : undefined,
+            email: data.email ? data.email.trim() : undefined,
+            phone: data.phone ? data.phone.trim() : undefined,
+            status: data.status || 'ACTIVE',
+            notes: notesVal,
+          },
+        });
+        createdPartyId = party.id;
+
+        const profile = await tx.vendorProfile.create({
+          data: {
+            partyId: party.id,
+            vendorType: data.vendorType || 'RAW_MATERIALS',
+            paymentTermsDays: Number(data.paymentTermsDays) || 30,
+            status: 'ACTIVE',
+          },
+        });
+
+        if (Array.isArray(data.contacts)) {
+          for (const c of data.contacts) {
+            if (c.name && String(c.name).trim()) {
+              await tx.partyContact.create({
+                data: {
+                  partyId: party.id,
+                  name: String(c.name).trim(),
+                  designation: c.designation ? String(c.designation).trim() : null,
+                  phone: c.phone ? String(c.phone).trim() : null,
+                  email: c.email ? String(c.email).trim() : null,
+                  isPrimary: Boolean(c.isPrimary),
+                },
+              });
+            }
+          }
         }
-      }
 
-      await auditService.log({
+        if (Array.isArray(data.addresses)) {
+          for (const a of data.addresses) {
+            if (a.addressLine1 && String(a.addressLine1).trim()) {
+              await tx.partyAddress.create({
+                data: {
+                  partyId: party.id,
+                  addressType: a.addressType || 'BILLING',
+                  addressLine1: String(a.addressLine1).trim(),
+                  addressLine2: a.addressLine2 ? String(a.addressLine2).trim() : null,
+                  city: a.city ? String(a.city).trim() : 'Delhi',
+                  state: a.state ? String(a.state).trim() : 'Delhi',
+                  stateCode: a.stateCode ? String(a.stateCode).trim() : null,
+                  postalCode: a.postalCode ? String(a.postalCode).trim() : null,
+                  gstin: a.gstin ? String(a.gstin).toUpperCase().trim() : null,
+                  country: a.country || 'India',
+                  isDefaultBilling: a.isDefaultBilling !== undefined ? Boolean(a.isDefaultBilling) : true,
+                  isDefaultShipping: Boolean(a.isDefaultShipping),
+                },
+              });
+            }
+          }
+        }
+
+        auditData = { party, profile };
+
+        return tx.businessParty.findUnique({
+          where: { id: party.id },
+          include: { vendorProfile: true, contacts: true, addresses: true },
+        });
+      },
+      { maxWait: 15000, timeout: 45000 }
+    );
+
+    // Decoupled audit logging outside the transaction to prevent connection pool exhaustion
+    if (createdPartyId && auditData) {
+      auditService.log({
         userId,
         action: 'CREATE',
         module: 'Procurement',
         entityType: 'Vendor',
-        entityId: party.id,
-        newData: { party, profile },
-      });
+        entityId: createdPartyId,
+        newData: auditData,
+      }).catch((e) => console.error('[auditService] createVendor log error:', e));
+    }
 
-      return tx.businessParty.findUnique({
-        where: { id: party.id },
-        include: { vendorProfile: true, contacts: true, addresses: true },
-      });
-    });
+    return result;
   },
 
   async updateVendor(id: string, data: any, userId?: string) {
-    return prisma.$transaction(async (tx) => {
-      const old = await tx.businessParty.findUnique({
-        where: { id },
-        include: { vendorProfile: true, contacts: true, addresses: true },
-      });
+    let auditData: any = null;
 
-      if (!old) {
-        throw Object.assign(new Error('Vendor not found'), { status: 404 });
-      }
-
-      const party = await tx.businessParty.update({
-        where: { id },
-        data: {
-          legalName: data.legalName !== undefined ? data.legalName : old.legalName,
-          tradeName: data.tradeName !== undefined ? data.tradeName : old.tradeName,
-          gstin: data.gstin !== undefined ? (data.gstin ? data.gstin.toUpperCase().trim() : null) : old.gstin,
-          pan: data.pan !== undefined ? (data.pan ? data.pan.toUpperCase().trim() : null) : old.pan,
-          email: data.email !== undefined ? data.email : old.email,
-          phone: data.phone !== undefined ? data.phone : old.phone,
-          status: data.status !== undefined ? data.status : old.status,
-          notes: data.notes !== undefined ? data.notes : old.notes,
-        },
-      });
-
-      const profileData: any = {};
-      if (data.vendorType !== undefined) profileData.vendorType = data.vendorType;
-      if (data.paymentTermsDays !== undefined) profileData.paymentTermsDays = Number(data.paymentTermsDays) || 30;
-      if (data.vendorProfile) Object.assign(profileData, data.vendorProfile);
-
-      if (Object.keys(profileData).length > 0) {
-        await tx.vendorProfile.upsert({
-          where: { partyId: id },
-          create: {
-            partyId: id,
-            vendorType: profileData.vendorType || 'RAW_MATERIALS',
-            paymentTermsDays: profileData.paymentTermsDays || 30,
-            status: 'ACTIVE',
-          },
-          update: profileData,
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const old = await tx.businessParty.findUnique({
+          where: { id },
+          include: { vendorProfile: true, contacts: true, addresses: true },
         });
-      }
 
-      if (Array.isArray(data.contacts)) {
-        await tx.partyContact.deleteMany({ where: { partyId: id } });
-        for (const c of data.contacts) {
-          await tx.partyContact.create({
-            data: {
+        if (!old) {
+          throw Object.assign(new Error('Vendor not found'), { status: 404 });
+        }
+
+        const notesVal =
+          data.notes !== undefined
+            ? typeof data.notes === 'object'
+              ? JSON.stringify(data.notes)
+              : String(data.notes)
+            : old.notes;
+
+        const party = await tx.businessParty.update({
+          where: { id },
+          data: {
+            legalName: data.legalName !== undefined ? String(data.legalName).trim() : old.legalName,
+            tradeName: data.tradeName !== undefined ? (data.tradeName ? String(data.tradeName).trim() : null) : old.tradeName,
+            gstin: data.gstin !== undefined ? (data.gstin ? String(data.gstin).toUpperCase().trim() : null) : old.gstin,
+            pan: data.pan !== undefined ? (data.pan ? String(data.pan).toUpperCase().trim() : null) : old.pan,
+            email: data.email !== undefined ? (data.email ? String(data.email).trim() : null) : old.email,
+            phone: data.phone !== undefined ? (data.phone ? String(data.phone).trim() : null) : old.phone,
+            status: data.status !== undefined ? data.status : old.status,
+            notes: notesVal,
+          },
+        });
+
+        const profileData: any = {};
+        if (data.vendorType !== undefined) profileData.vendorType = data.vendorType;
+        if (data.paymentTermsDays !== undefined) profileData.paymentTermsDays = Number(data.paymentTermsDays) || 30;
+        if (data.vendorProfile) Object.assign(profileData, data.vendorProfile);
+
+        if (Object.keys(profileData).length > 0) {
+          await tx.vendorProfile.upsert({
+            where: { partyId: id },
+            create: {
               partyId: id,
-              name: c.name,
-              designation: c.designation || null,
-              phone: c.phone || null,
-              email: c.email || null,
-              isPrimary: c.isPrimary ?? false,
+              vendorType: profileData.vendorType || 'RAW_MATERIALS',
+              paymentTermsDays: profileData.paymentTermsDays || 30,
+              status: 'ACTIVE',
             },
+            update: profileData,
           });
         }
-      }
 
-      if (Array.isArray(data.addresses)) {
-        await tx.partyAddress.deleteMany({ where: { partyId: id } });
-        for (const a of data.addresses) {
-          await tx.partyAddress.create({
-            data: {
-              partyId: id,
-              addressType: a.addressType || 'OFFICE',
-              addressLine1: a.addressLine1,
-              addressLine2: a.addressLine2 || null,
-              city: a.city,
-              state: a.state,
-              stateCode: a.stateCode || null,
-              postalCode: a.postalCode || null,
-              gstin: a.gstin || null,
-              isDefaultBilling: a.isDefaultBilling ?? true,
-            },
-          });
+        if (Array.isArray(data.contacts)) {
+          await tx.partyContact.deleteMany({ where: { partyId: id } });
+          for (const c of data.contacts) {
+            if (c.name && String(c.name).trim()) {
+              await tx.partyContact.create({
+                data: {
+                  partyId: id,
+                  name: String(c.name).trim(),
+                  designation: c.designation ? String(c.designation).trim() : null,
+                  phone: c.phone ? String(c.phone).trim() : null,
+                  email: c.email ? String(c.email).trim() : null,
+                  isPrimary: Boolean(c.isPrimary),
+                },
+              });
+            }
+          }
         }
-      }
 
-      await auditService.log({
+        if (Array.isArray(data.addresses)) {
+          await tx.partyAddress.deleteMany({ where: { partyId: id } });
+          for (const a of data.addresses) {
+            if (a.addressLine1 && String(a.addressLine1).trim()) {
+              await tx.partyAddress.create({
+                data: {
+                  partyId: id,
+                  addressType: a.addressType || 'BILLING',
+                  addressLine1: String(a.addressLine1).trim(),
+                  addressLine2: a.addressLine2 ? String(a.addressLine2).trim() : null,
+                  city: a.city ? String(a.city).trim() : 'Delhi',
+                  state: a.state ? String(a.state).trim() : 'Delhi',
+                  stateCode: a.stateCode ? String(a.stateCode).trim() : null,
+                  postalCode: a.postalCode ? String(a.postalCode).trim() : null,
+                  gstin: a.gstin ? String(a.gstin).toUpperCase().trim() : null,
+                  country: a.country || 'India',
+                  isDefaultBilling: a.isDefaultBilling !== undefined ? Boolean(a.isDefaultBilling) : true,
+                  isDefaultShipping: Boolean(a.isDefaultShipping),
+                },
+              });
+            }
+          }
+        }
+
+        auditData = { old, party };
+
+        return tx.businessParty.findUnique({
+          where: { id },
+          include: { vendorProfile: true, contacts: true, addresses: true },
+        });
+      },
+      { maxWait: 15000, timeout: 45000 }
+    );
+
+    if (auditData) {
+      auditService.log({
         userId,
         action: 'UPDATE',
         module: 'Procurement',
         entityType: 'Vendor',
         entityId: id,
-        oldData: old,
-        newData: party,
-      });
+        oldData: auditData.old,
+        newData: auditData.party,
+      }).catch((e) => console.error('[auditService] updateVendor log error:', e));
+    }
 
-      return tx.businessParty.findUnique({
-        where: { id },
-        include: { vendorProfile: true, contacts: true, addresses: true },
-      });
-    });
+    return result;
   },
 
   async deleteVendor(id: string, userId?: string) {
