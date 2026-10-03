@@ -55,8 +55,18 @@ export const invoicesService = {
   },
 
   async create(data: any) {
+    const { customerId, companyProfileId, ...rest } = data;
+    let notes = rest.notes || '';
+    if (companyProfileId) {
+      notes = `[Branch: ${companyProfileId}] ${notes}`.trim();
+    }
     return prisma.invoice.create({
-      data: { ...data, invoiceNumber: data.invoiceNumber || generateInvoiceNumber(), status: data.status || 'DRAFT' },
+      data: {
+        ...rest,
+        notes: notes || null,
+        invoiceNumber: rest.invoiceNumber || generateInvoiceNumber(),
+        status: rest.status || 'DRAFT',
+      },
     });
   },
 

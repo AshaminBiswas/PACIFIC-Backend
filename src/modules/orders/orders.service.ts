@@ -1333,22 +1333,31 @@ export const ordersService = {
     );
 
     const activeGstin = (billingAddress?.gstin || '').trim().toUpperCase();
+    let sellerCode = (existing.companyProfile?.stateCode || '07').trim();
+    if (data.companyProfileId && data.companyProfileId !== existing.companyProfileId) {
+      const newComp = await prisma.companyProfile.findUnique({ where: { id: data.companyProfileId } });
+      if (newComp?.stateCode) sellerCode = newComp.stateCode.trim();
+    }
+
+    const cleanGstin = activeGstin.replace(/[^A-Z0-9]/gi, '');
     const isDelhi = isDelhiGst(activeGstin, data.placeOfSupplyStateCode ?? existing.placeOfSupplyStateCode, data.placeOfSupply ?? existing.placeOfSupply ?? billingAddress?.address);
 
-    const placeOfSupplyStateCode = isDelhi
-      ? '07'
-      : (activeGstin.length >= 2 ? activeGstin.slice(0, 2) : (data.placeOfSupplyStateCode ?? existing.placeOfSupplyStateCode ?? '07'));
-    const placeOfSupply = isDelhi
+    const placeOfSupplyStateCode = cleanGstin.length >= 2
+      ? cleanGstin.slice(0, 2)
+      : (data.placeOfSupplyStateCode ?? existing.placeOfSupplyStateCode ?? (isDelhi ? '07' : sellerCode));
+    const placeOfSupply = (cleanGstin.startsWith('07') || isDelhi)
       ? 'Delhi'
       : (data.placeOfSupply ?? existing.placeOfSupply ?? GST_STATE_CODE_MAP[placeOfSupplyStateCode] ?? 'Interstate');
 
-    const cgstAmount = isDelhi ? totalTaxAmount / 2 : 0;
-    const sgstAmount = isDelhi ? totalTaxAmount / 2 : 0;
-    const igstAmount = isDelhi ? 0 : totalTaxAmount;
+    const isIntraState = placeOfSupplyStateCode === sellerCode || (sellerCode === '07' && isDelhi);
+    const cgstAmount = isIntraState ? totalTaxAmount / 2 : 0;
+    const sgstAmount = isIntraState ? totalTaxAmount / 2 : 0;
+    const igstAmount = isIntraState ? 0 : totalTaxAmount;
 
     const updated = await prisma.salesOrder.update({
       where: { id },
       data: {
+        companyProfileId: data.companyProfileId ?? existing.companyProfileId,
         customerPoNumber: data.customerPoNumber ?? existing.customerPoNumber,
         customerPoDate: data.customerPoDate ? new Date(data.customerPoDate) : existing.customerPoDate,
         customerPoFileUrl: data.customerPoFileUrl ?? existing.customerPoFileUrl,

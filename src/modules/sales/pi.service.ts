@@ -746,7 +746,11 @@ export const piService = {
         await tx.proformaInvoiceItem.deleteMany({ where: { piId: id } });
         await tx.proformaInvoiceTaxSummary.deleteMany({ where: { piId: id } });
 
-        const originStateCode = (existing.companyProfile?.stateCode || '07').trim();
+        let originStateCode = (existing.companyProfile?.stateCode || '07').trim();
+        if (data.companyProfileId && data.companyProfileId !== existing.companyProfileId) {
+          const newComp = await prisma.companyProfile.findUnique({ where: { id: data.companyProfileId } });
+          if (newComp?.stateCode) originStateCode = newComp.stateCode.trim();
+        }
         const buyerGstin = (data.billTo?.gstin || existing.parties?.find((p) => p.partyRole === 'BILL_TO')?.gstin || existing.customer?.gstin || '').trim().toUpperCase();
         const isDelhi = isDelhiGst(buyerGstin, data.placeOfSupplyStateCode || existing.placeOfSupplyStateCode, data.placeOfSupply || existing.placeOfSupply);
 
@@ -823,6 +827,7 @@ export const piService = {
         where: { id },
         data: {
           customerId: customerIdToSet,
+          companyProfileId: data.companyProfileId ?? existing.companyProfileId,
           placeOfSupply: data.placeOfSupply ?? existing.placeOfSupply,
           placeOfSupplyStateCode: data.placeOfSupplyStateCode ?? existing.placeOfSupplyStateCode,
           modeOfTransport: data.modeOfTransport ?? existing.modeOfTransport,

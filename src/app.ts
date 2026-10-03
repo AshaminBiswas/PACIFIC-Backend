@@ -34,6 +34,7 @@ import auditRoutes from './modules/audit/audit.routes';
 import docsRoutes from './modules/docs/docs.routes';
 import { qrController } from './modules/qr/qr.controller';
 import quotationsRoutes from './modules/quotations/quotations.routes';
+import { quotationsController } from './modules/quotations/quotations.controller';
 import ordersRoutes from './modules/orders/orders.routes';
 import packingListsRoutes from './modules/packing-lists/packing-lists.routes';
 import hardwareIssueRoutes, { hardwareCatalogRouter } from './modules/hardware-issue/hardware-issue.routes';
@@ -159,6 +160,7 @@ app.get(['/ping', `${prefix}/ping`], (_req, res) => {
 });
 
 // ─── Public Document Verification & Digital Acknowledgment Endpoints ────────
+app.get(['/q/:code', `${prefix}/q/:code`, '/q/:code/pdf', `${prefix}/q/:code/pdf`], quotationsController.getShortPdf);
 app.get(['/verify/:token', `${prefix}/verify/:token`], qrController.verifyPublicToken);
 app.get(['/acknowledge-receipt/:token', `${prefix}/acknowledge-receipt/:token`], packingListsController.getByToken);
 app.post(['/acknowledge-receipt/:token', `${prefix}/acknowledge-receipt/:token`], packingListsController.acknowledgeByToken);

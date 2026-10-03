@@ -149,6 +149,65 @@ export const quotationsService = {
     return formatQuotationOutput(quote);
   },
 
+  async getByCodeOrId(code: string) {
+    const cleanCode = (code || '').trim();
+    if (!cleanCode) throw new Error('Quotation ID or reference code is required');
+
+    const quotationInclude = {
+      customer: { include: { addresses: true, contacts: true } },
+      companyProfile: { include: { addresses: true, signatories: true } },
+      issuingStaff: { select: { id: true, firstName: true, lastName: true, email: true } },
+      items: { orderBy: { serialNumber: 'asc' } },
+      revisions: { orderBy: { revisionNumber: 'desc' } },
+      followups: { orderBy: { createdAt: 'desc' } },
+    } as const;
+
+    // 1. Try exact UUID match
+    let quote = await prisma.salesQuotation.findUnique({
+      where: { id: cleanCode },
+      include: quotationInclude,
+    });
+
+    // 2. Try prefix UUID match (e.g. 8-char short code like d074c655)
+    if (!quote && cleanCode.length >= 6) {
+      quote = await prisma.salesQuotation.findFirst({
+        where: { id: { startsWith: cleanCode, mode: 'insensitive' } },
+        include: quotationInclude,
+      });
+    }
+
+    // 3. Try exact reference number match
+    if (!quote) {
+      quote = await prisma.salesQuotation.findFirst({
+        where: { referenceNumber: { equals: cleanCode, mode: 'insensitive' } },
+        include: quotationInclude,
+      });
+    }
+
+    // 4. Try reference number with converted separators (dashes to slashes or vice versa)
+    if (!quote && (cleanCode.includes('-') || cleanCode.includes('_'))) {
+      const slashVariant = cleanCode.replace(/[-_]/g, '/');
+      quote = await prisma.salesQuotation.findFirst({
+        where: { referenceNumber: { equals: slashVariant, mode: 'insensitive' } },
+        include: quotationInclude,
+      });
+    }
+
+    // 5. Try reference number contains
+    if (!quote) {
+      quote = await prisma.salesQuotation.findFirst({
+        where: { referenceNumber: { contains: cleanCode, mode: 'insensitive' } },
+        include: quotationInclude,
+      });
+    }
+
+    if (!quote) {
+      throw new Error(`Sales Quotation not found for code: "${cleanCode}"`);
+    }
+
+    return formatQuotationOutput(quote);
+  },
+
   async create(data: any, userId?: string) {
     if (!data.customerId) throw new Error('Customer is required');
     if (!data.companyProfileId) throw new Error('Company Profile is required');
@@ -359,6 +418,7 @@ export const quotationsService = {
       where: { id },
       data: {
         revisionNumber: newRevNumber,
+        companyProfileId: updateData.companyProfileId || existing.companyProfileId,
         projectName: updateData.projectName ?? existing.projectName,
         subject: updateData.subject ?? existing.subject,
         basicPrice: updateData.basicPrice ?? existing.basicPrice,
@@ -480,8 +540,8 @@ export const quotationsService = {
     return order;
   },
 
-  async getPdfHtml(id: string): Promise<string> {
-    const quote = await this.getById(id);
+  async getPdfHtml(idOrCode: string): Promise<string> {
+    const quote = await this.getByCodeOrId(idOrCode);
 
     const qr = await qrService.getOrCreateDocumentQr({
       documentType: 'QUOTATION',

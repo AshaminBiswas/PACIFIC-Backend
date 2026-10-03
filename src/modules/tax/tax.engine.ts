@@ -75,14 +75,14 @@ function normalizeStateCode(val?: string): string {
 
 export function calculateGstTax(params: TaxCalculationParams): TaxCalculationResult {
   const cleanBuyerGstin = (params.buyerGstin || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const sellerCode = normalizeStateCode(params.sellerStateCode || '07');
   let isIntraState = false;
 
   if (cleanBuyerGstin.length >= 2) {
-    // Supreme authority: GST number starting with 07 -> CGST 9% + SGST 9%, otherwise IGST 18%
-    isIntraState = cleanBuyerGstin.startsWith('07');
+    // Supreme authority: GST number starting with seller's state code -> Intra-state (CGST + SGST), otherwise Inter-state (IGST)
+    isIntraState = cleanBuyerGstin.startsWith(sellerCode);
   } else {
     // Unregistered / B2C buyer fallback:
-    const sellerCode = normalizeStateCode(params.sellerStateCode || '07');
     const posCode = normalizeStateCode(params.placeOfSupplyStateCode || sellerCode);
     isIntraState = sellerCode !== '' && sellerCode === posCode;
   }
