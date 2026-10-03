@@ -856,6 +856,9 @@ model SalesQuotation {
   paymentTerms            String?
   deliveryTerms           String?
   statutoryComplianceTerms String?
+  drawingUrl              String?
+  drawingFileName         String?
+  drawingFileId           String?
   validityDays            Int                   @default(30)
   validUntil              DateTime?
   status                  SalesQuotationStatus  @default(DRAFT)

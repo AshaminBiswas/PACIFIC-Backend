@@ -732,8 +732,10 @@ export const pdfService = {
         const hardwarePackage = showHardware ? rawHardware : undefined;
         const displayDesc = cleanDescription(it.description);
 
+        const customModel = (it as any).customModelName || (it as any).modelName || (it as any).customSpecsJson?.customModelName || (it as any).model?.title;
+
         const hasSpecs = Boolean(
-          it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage
+          customModel || it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage
         );
 
         const descLower = (it.description || '').toLowerCase();
@@ -750,6 +752,7 @@ export const pdfService = {
               <div style="font-weight: bold; font-size: 11px;">${displayDesc}</div>
               ${hasSpecs ? `
                 <div class="spec-box">
+                  ${customModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
                   ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
                   ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
                   ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
@@ -1735,13 +1738,16 @@ export const pdfService = {
               !item.hardwarePackage.includes('SS Hardware (Golden, Black, SS)')
             );
 
+            const customModel = (item as any).customModelName || (item as any).modelName || ((item as any).customSpecsJson as any)?.customModelName || ((item as any).customSpecsJson as any)?.modelName;
+
             return `
             <tr>
               <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
               <td>
                 <div style="font-weight: bold; font-size: 11px;">${item.description}</div>
-                ${item.make || item.boardType || item.cubicleSize || item.boardColor || item.boardThickness || item.doorSize || item.overallHeight || showHardware ? `
+                ${customModel || item.make || item.boardType || item.cubicleSize || item.boardColor || item.boardThickness || item.doorSize || item.overallHeight || showHardware ? `
                   <div class="spec-box">
+                    ${customModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
                     ${item.make ? `<div>• <strong>Make:</strong> ${item.make}</div>` : ''}
                     ${item.boardType ? `<div>• <strong>Board Type:</strong> ${item.boardType}</div>` : ''}
                     ${item.boardThickness ? `<div>• <strong>Board Thickness:</strong> ${item.boardThickness}</div>` : ''}

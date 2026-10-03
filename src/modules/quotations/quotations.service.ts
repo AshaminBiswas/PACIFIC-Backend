@@ -60,8 +60,13 @@ function formatQuotationOutput(q: any) {
           boardType: it.boardType || (it.customSpecsJson as any)?.boardType || undefined,
           hardwarePackage: it.hardwarePackage || (it.customSpecsJson as any)?.hardwarePackage || undefined,
           make: it.make || (it.customSpecsJson as any)?.make || undefined,
+          customModelName: (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.customModelName || undefined,
+          modelName: (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.modelName || undefined,
         }))
       : q.items,
+    drawingUrl: q.drawingUrl || undefined,
+    drawingFileName: q.drawingFileName || undefined,
+    drawingFileId: q.drawingFileId || undefined,
     nextFollowupDate: q.nextFollowupDate || undefined,
     followupStatus: q.followupStatus || 'PENDING',
     lastFollowupDate: q.lastFollowupDate || undefined,
@@ -185,14 +190,16 @@ export const quotationsService = {
         boardThickness: it.boardThickness || null,
         doorSize: it.doorSize || null,
         overallHeight: it.overallHeight || null,
-        customSpecsJson: (it.hardwarePackage || it.boardType || it.make)
+        customSpecsJson: (it.hardwarePackage || it.boardType || it.make || it.customModelName || it.modelName || it.customSpecsJson)
           ? {
               hardwarePackage: it.hardwarePackage || null,
               boardType: it.boardType || null,
               make: it.make || null,
+              customModelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.customModelName : null) || null,
+              modelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.modelName : null) || null,
               ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
             }
-          : (it.customSpecsJson || null),
+          : null,
       };
     });
 
@@ -249,6 +256,9 @@ export const quotationsService = {
         paymentTerms: data.paymentTerms || '50% Advance along with confirmed Purchase Order. Balance 50% prior to dispatch.',
         deliveryTerms: data.deliveryTerms || '2-3 weeks from receipt of advance, approved shop drawings, and color confirmation.',
         statutoryComplianceTerms: data.statutoryComplianceTerms || null,
+        drawingUrl: data.drawingUrl || null,
+        drawingFileName: data.drawingFileName || null,
+        drawingFileId: data.drawingFileId || null,
         validityDays,
         validUntil,
         status: 'DRAFT',
@@ -330,14 +340,16 @@ export const quotationsService = {
             boardThickness: it.boardThickness || null,
             doorSize: it.doorSize || null,
             overallHeight: it.overallHeight || null,
-            customSpecsJson: (it.hardwarePackage || it.boardType || it.make)
+            customSpecsJson: (it.hardwarePackage || it.boardType || it.make || it.customModelName || it.modelName || it.customSpecsJson)
               ? {
                   hardwarePackage: it.hardwarePackage || null,
                   boardType: it.boardType || null,
                   make: it.make || null,
+                  customModelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.customModelName : null) || null,
+                  modelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.modelName : null) || null,
                   ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
                 }
-              : (it.customSpecsJson || null),
+              : null,
           };
         }),
       };
@@ -365,6 +377,9 @@ export const quotationsService = {
         otherTerms: updateData.otherTerms ?? existing.otherTerms,
         paymentTerms: updateData.paymentTerms ?? existing.paymentTerms,
         deliveryTerms: updateData.deliveryTerms ?? existing.deliveryTerms,
+        drawingUrl: updateData.drawingUrl !== undefined ? updateData.drawingUrl : existing.drawingUrl,
+        drawingFileName: updateData.drawingFileName !== undefined ? updateData.drawingFileName : existing.drawingFileName,
+        drawingFileId: updateData.drawingFileId !== undefined ? updateData.drawingFileId : existing.drawingFileId,
         items: itemsUpdate,
       },
       include: { items: true, customer: true },
@@ -972,6 +987,9 @@ export const quotationsService = {
           <p style="font-size: 13px; color: #475569;">
             Our engineering team is at your disposal to schedule a call, answer any questions, or coordinate site measurements.
           </p>
+          <p style="font-size: 12px; color: #475569; margin-top: 16px;">
+            <strong>Attached Document:</strong> Formal Commercial Quotation (PDF) is attached to this email for your reference.
+          </p>
           <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
           <p style="font-size: 11px; color: #94a3b8; margin: 0; text-align: center;">
             ${quote.companyProfile?.companyName || 'Pacific Products & Solutions'} • Restroom Cubicles & Lockers Manufacturer
@@ -980,10 +998,28 @@ export const quotationsService = {
       </div>
     `;
 
+    // Generate quotation PDF and attach
+    let attachments: any[] | undefined = undefined;
+    try {
+      const pdfHtml = await this.getPdfHtml(quotationId);
+      const pdfBuffer = await htmlToPdfBuffer(pdfHtml);
+      const cleanFilename = `Quotation_${quote.referenceNumber.replace(/[\/\\]/g, '_')}.pdf`;
+      attachments = [
+        {
+          filename: cleanFilename,
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+        },
+      ];
+    } catch (pdfErr) {
+      console.warn('Could not generate PDF attachment for follow-up email, sending HTML only:', pdfErr);
+    }
+
     const sendRes = await emailService.sendEmail({
       to,
       subject,
       html: htmlBody,
+      ...(attachments ? { attachments } : {}),
     });
 
     if (!sendRes.success) {
