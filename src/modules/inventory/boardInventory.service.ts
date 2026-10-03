@@ -289,13 +289,19 @@ export class BoardInventoryService {
   async updateBoard(
     id: string,
     data: {
+      category?: string;
+      warehouse?: string;
+      vendorId?: string;
+      vendorName?: string;
       designNo?: string;
       designName?: string;
       size?: string;
       thickness?: string;
       boardType?: string;
-      reorderLevel?: number;
-      unitCost?: number;
+      openingStock?: number | string;
+      currentStock?: number | string;
+      reorderLevel?: number | string;
+      unitCost?: number | string;
       locationRack?: string;
       notes?: string;
     }
@@ -303,27 +309,99 @@ export class BoardInventoryService {
     const existing = await prisma.boardInventoryItem.findUnique({ where: { id } });
     if (!existing) throw new Error('Board SKU not found');
 
-    const newReorder = data.reorderLevel !== undefined ? Number(data.reorderLevel) : Number(existing.reorderLevel);
-    const currStock = Number(existing.currentStock);
-    const newStatus = currStock === 0 ? 'OUT_OF_STOCK' : currStock <= newReorder ? 'LOW_STOCK' : 'ACTIVE';
+    const newReorder = data.reorderLevel !== undefined && data.reorderLevel !== '' 
+      ? Number(data.reorderLevel) 
+      : Number(existing.reorderLevel);
 
-    const updated = await prisma.boardInventoryItem.update({
-      where: { id },
-      data: {
-        designNo: data.designNo ? data.designNo.trim() : undefined,
-        designName: data.designName !== undefined ? data.designName?.trim() || null : undefined,
-        size: data.size ? data.size.trim() : undefined,
-        thickness: data.thickness ? data.thickness.trim() : undefined,
-        boardType: data.boardType ? data.boardType.trim() : undefined,
-        reorderLevel: newReorder,
-        unitCost: data.unitCost !== undefined ? Number(data.unitCost) : undefined,
-        locationRack: data.locationRack !== undefined ? data.locationRack?.trim() || null : undefined,
-        notes: data.notes !== undefined ? data.notes?.trim() || null : undefined,
-        status: newStatus,
-      },
+    let newOpening = existing.openingStock;
+    let newCurrent = existing.currentStock;
+    let newTotalInward = existing.totalInward;
+
+    if (data.openingStock !== undefined && data.openingStock !== '') {
+      const parsedOpening = Number(data.openingStock);
+      if (!isNaN(parsedOpening) && parsedOpening >= 0) {
+        const openingDiff = parsedOpening - Number(existing.openingStock);
+        newOpening = new Prisma.Decimal(parsedOpening);
+
+        // If currentStock is not explicitly provided, adjust currentStock by the difference in opening stock
+        if (data.currentStock === undefined || data.currentStock === '') {
+          const adjustedCurrent = Math.max(0, Number(existing.currentStock) + openingDiff);
+          newCurrent = new Prisma.Decimal(adjustedCurrent);
+        }
+
+        const adjustedTotalInward = Math.max(0, Number(existing.totalInward) + openingDiff);
+        newTotalInward = new Prisma.Decimal(adjustedTotalInward);
+      }
+    }
+
+    if (data.currentStock !== undefined && data.currentStock !== '') {
+      const parsedCurrent = Number(data.currentStock);
+      if (!isNaN(parsedCurrent) && parsedCurrent >= 0) {
+        newCurrent = new Prisma.Decimal(parsedCurrent);
+      }
+    }
+
+    const currStockNum = Number(newCurrent);
+    const newStatus = currStockNum === 0 ? 'OUT_OF_STOCK' : currStockNum <= newReorder ? 'LOW_STOCK' : 'ACTIVE';
+
+    // If vendor changed, resolve vendor name
+    let vendorName = data.vendorName;
+    if (data.vendorId && data.vendorId !== existing.vendorId && !vendorName) {
+      const vendorProfile = await prisma.vendorProfile.findFirst({
+        where: { OR: [{ id: data.vendorId }, { partyId: data.vendorId }] },
+        include: { party: true },
+      });
+      vendorName = vendorProfile?.party?.tradeName || vendorProfile?.party?.legalName || undefined;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const item = await tx.boardInventoryItem.update({
+        where: { id },
+        data: {
+          category: data.category ? data.category.trim() : undefined,
+          warehouse: data.warehouse ? data.warehouse.trim().toUpperCase() : undefined,
+          vendorId: data.vendorId || undefined,
+          vendorName: vendorName || undefined,
+          designNo: data.designNo ? data.designNo.trim() : undefined,
+          designName: data.designName !== undefined ? data.designName?.trim() || null : undefined,
+          size: data.size ? data.size.trim() : undefined,
+          thickness: data.thickness ? data.thickness.trim() : undefined,
+          boardType: data.boardType ? data.boardType.trim() : undefined,
+          openingStock: newOpening,
+          currentStock: newCurrent,
+          totalInward: newTotalInward,
+          reorderLevel: newReorder,
+          unitCost: data.unitCost !== undefined && data.unitCost !== '' ? Number(data.unitCost) : undefined,
+          locationRack: data.locationRack !== undefined ? data.locationRack?.trim() || null : undefined,
+          notes: data.notes !== undefined ? data.notes?.trim() || null : undefined,
+          status: newStatus,
+        },
+      });
+
+      // If openingStock changed, synchronize the initial opening stock movement record if it exists
+      if (data.openingStock !== undefined && data.openingStock !== '') {
+        const opnMovement = await tx.boardStockMovement.findFirst({
+          where: {
+            inventoryItemId: id,
+            movementType: 'INWARD',
+            movementNumber: { startsWith: 'BSM-OPN-' },
+          },
+        });
+        if (opnMovement) {
+          await tx.boardStockMovement.update({
+            where: { id: opnMovement.id },
+            data: {
+              quantity: newOpening,
+              stockAfter: newOpening,
+            },
+          });
+        }
+      }
+
+      return item;
     });
 
-    if (currStock <= newReorder) {
+    if (currStockNum <= newReorder) {
       inventoryAlertService
         .checkAndTriggerLowStockAlert(updated.id, 'SKU Reorder Level or Properties Updated')
         .catch((err) => {
