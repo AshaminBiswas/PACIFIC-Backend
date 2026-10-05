@@ -96,10 +96,25 @@ export const quotationsService = {
     if (params?.status) where.status = params.status;
     if (params?.customerId) where.customerId = params.customerId;
     if (params?.branch) {
-      if (params.branch.toUpperCase() === 'KOLKATA') {
-        where.referenceNumber = { startsWith: 'PPSK/' };
-      } else if (params.branch.toUpperCase() === 'MAIN') {
-        where.NOT = { referenceNumber: { startsWith: 'PPSK/' } };
+      const b = params.branch.toUpperCase();
+      if (b === 'KOLKATA') {
+        where.OR = [
+          { referenceNumber: { startsWith: 'PPSK/' } },
+          { referenceNumber: { contains: 'KOL', mode: 'insensitive' } },
+          { companyProfile: { companyName: { contains: 'Kolkata', mode: 'insensitive' } } },
+          { companyProfile: { entityCode: { contains: 'KOL', mode: 'insensitive' } } },
+          { companyProfile: { state: { contains: 'Bengal', mode: 'insensitive' } } },
+          { companyProfile: { stateCode: '19' } },
+        ];
+      } else if (b === 'MAIN') {
+        where.AND = [
+          { referenceNumber: { not: { startsWith: 'PPSK/' } } },
+          { referenceNumber: { not: { contains: 'KOL', mode: 'insensitive' } } },
+          { companyProfile: { companyName: { not: { contains: 'Kolkata', mode: 'insensitive' } } } },
+          { companyProfile: { entityCode: { not: { contains: 'KOL', mode: 'insensitive' } } } },
+          { companyProfile: { state: { not: { contains: 'Bengal', mode: 'insensitive' } } } },
+          { companyProfile: { stateCode: { not: '19' } } },
+        ];
       }
     }
     if (params?.startDate || params?.endDate) {
@@ -125,6 +140,7 @@ export const quotationsService = {
         orderBy: { date: 'desc' },
         include: {
           customer: true,
+          companyProfile: true,
           issuingStaff: { select: { id: true, firstName: true, lastName: true, email: true } },
           items: true,
           followups: { orderBy: { createdAt: 'desc' }, take: 5 },
@@ -594,10 +610,13 @@ export const quotationsService = {
     // Collect unique model images from line items (only clean model name, no unnecessary descriptions)
     const rawModelImages = (quote.items || [])
       .map((it: any) => {
-        const imgUrl = it.modelImageUrl || (it.customSpecsJson as any)?.modelImageUrl || (it.customSpecsJson as any)?.imageUrl;
+        let imgUrl = it.modelImageUrl || (it.customSpecsJson as any)?.modelImageUrl || (it.customSpecsJson as any)?.imageUrl;
         let cleanModelName = (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.modelName;
-        if (!cleanModelName && it.description) {
-          const desc = String(it.description).trim();
+        const desc = String(it.description || '').trim();
+        const descLower = desc.toLowerCase();
+        const isUrinal = it.systemCategory === 'ump' || descLower.includes('urinal') || descLower.includes('ump') || (it.cubicleSize && it.cubicleSize.includes('450mm'));
+
+        if (!cleanModelName && desc) {
           const match = desc.match(/(?:Model|Series|System)[:\s]+([^,\n\r]+)/i);
           if (match) {
             cleanModelName = match[1].trim();
@@ -607,10 +626,40 @@ export const quotationsService = {
             cleanModelName = desc;
           }
         }
-        cleanModelName = (cleanModelName || 'Model Visual')
-          .replace(/^(?:Model\s*Name|Model|System)\s*:\s*/i, '')
+
+        cleanModelName = (cleanModelName || (isUrinal ? 'Model A' : 'Model Visual'))
+          .replace(/^(?:Model\s*Name|System)\s*:\s*/i, '')
           .replace(/[\(\[\{].*?[\)\]\}]/g, '')
           .trim();
+
+        // Special handling for Urinal Partitions: Ensure image and format title as Model "A"
+        if (isUrinal) {
+          if (!imgUrl) {
+            if (descLower.includes('model b') || descLower.includes('mode b') || cleanModelName.toLowerCase() === 'b') {
+              imgUrl = 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80';
+            } else if (descLower.includes('model c') || descLower.includes('mode c') || cleanModelName.toLowerCase() === 'c') {
+              imgUrl = 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=800&q=80';
+            } else if (descLower.includes('model d') || descLower.includes('mode d') || cleanModelName.toLowerCase() === 'd') {
+              imgUrl = 'https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=800&q=80';
+            } else {
+              imgUrl = 'https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=800&q=80';
+            }
+          }
+
+          const upper = cleanModelName.toUpperCase();
+          if (upper === 'A' || upper === 'MODEL A' || upper === 'MODE A' || descLower.includes('model a') || descLower.includes('mode a') || (!descLower.includes('model b') && !descLower.includes('model c') && !descLower.includes('model d'))) {
+            cleanModelName = 'Model "A"';
+          } else if (upper === 'B' || upper === 'MODEL B' || upper === 'MODE B' || descLower.includes('model b')) {
+            cleanModelName = 'Model "B"';
+          } else if (upper === 'C' || upper === 'MODEL C' || upper === 'MODE C' || descLower.includes('model c')) {
+            cleanModelName = 'Model "C"';
+          } else if (upper === 'D' || upper === 'MODEL D' || upper === 'MODE D' || descLower.includes('model d')) {
+            cleanModelName = 'Model "D"';
+          } else if (!cleanModelName.toLowerCase().startsWith('model')) {
+            cleanModelName = `Model "${cleanModelName}"`;
+          }
+        }
+
         return imgUrl ? { modelName: cleanModelName, imageUrl: imgUrl } : null;
       })
       .filter((img: any): img is { modelName: string; imageUrl: string } => Boolean(img && img.imageUrl));

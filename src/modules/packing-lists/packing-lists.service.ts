@@ -27,10 +27,21 @@ export const packingListsService = {
     if (params?.customerId) where.customerId = params.customerId;
     if (params?.receiptStatus) where.receiptStatus = params.receiptStatus;
     if (params?.branch) {
-      if (params.branch.toUpperCase() === 'KOLKATA') {
-        where.packingListNumber = { startsWith: 'PPSK/' };
-      } else if (params.branch.toUpperCase() === 'MAIN') {
-        where.NOT = { packingListNumber: { startsWith: 'PPSK/' } };
+      const b = params.branch.toUpperCase();
+      if (b === 'KOLKATA') {
+        where.OR = [
+          { packingListNumber: { startsWith: 'PPSK/' } },
+          { packingListNumber: { contains: 'KOL', mode: 'insensitive' } },
+          { companyProfile: { companyName: { contains: 'Kolkata', mode: 'insensitive' } } },
+          { companyProfile: { state: { contains: 'Bengal', mode: 'insensitive' } } },
+          { order: { orderNumber: { startsWith: 'PPSK/' } } },
+        ];
+      } else if (b === 'MAIN') {
+        where.AND = [
+          { packingListNumber: { not: { startsWith: 'PPSK/' } } },
+          { packingListNumber: { not: { contains: 'KOL', mode: 'insensitive' } } },
+          { companyProfile: { companyName: { not: { contains: 'Kolkata', mode: 'insensitive' } } } },
+        ];
       }
     }
     if (params?.search) {
@@ -51,6 +62,7 @@ export const packingListsService = {
         orderBy: { date: 'desc' },
         include: {
           customer: true,
+          companyProfile: true,
           order: { select: { id: true, orderNumber: true, status: true } },
           proformaInvoice: { select: { id: true, piNumber: true } },
           items: true,

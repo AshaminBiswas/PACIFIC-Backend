@@ -55,10 +55,25 @@ export const ordersService = {
     if (params?.customerId) where.customerId = params.customerId;
     if (params?.source) where.source = params.source;
     if (params?.branch) {
-      if (params.branch.toUpperCase() === 'KOLKATA') {
-        where.orderNumber = { startsWith: 'PPSK/' };
-      } else if (params.branch.toUpperCase() === 'MAIN') {
-        where.NOT = { orderNumber: { startsWith: 'PPSK/' } };
+      const b = params.branch.toUpperCase();
+      if (b === 'KOLKATA') {
+        where.OR = [
+          { orderNumber: { startsWith: 'PPSK/' } },
+          { orderNumber: { contains: 'KOL', mode: 'insensitive' } },
+          { companyProfile: { companyName: { contains: 'Kolkata', mode: 'insensitive' } } },
+          { companyProfile: { entityCode: { contains: 'KOL', mode: 'insensitive' } } },
+          { companyProfile: { state: { contains: 'Bengal', mode: 'insensitive' } } },
+          { companyProfile: { stateCode: '19' } },
+        ];
+      } else if (b === 'MAIN') {
+        where.AND = [
+          { orderNumber: { not: { startsWith: 'PPSK/' } } },
+          { orderNumber: { not: { contains: 'KOL', mode: 'insensitive' } } },
+          { companyProfile: { companyName: { not: { contains: 'Kolkata', mode: 'insensitive' } } } },
+          { companyProfile: { entityCode: { not: { contains: 'KOL', mode: 'insensitive' } } } },
+          { companyProfile: { state: { not: { contains: 'Bengal', mode: 'insensitive' } } } },
+          { companyProfile: { stateCode: { not: '19' } } },
+        ];
       }
     }
     if (params?.startDate || params?.endDate) {
@@ -84,7 +99,7 @@ export const ordersService = {
         orderBy: { orderDate: 'desc' },
         include: {
           customer: true,
-          companyProfile: { select: { id: true, companyName: true, currency: true } },
+          companyProfile: { select: { id: true, companyName: true, currency: true, state: true, entityCode: true, stateCode: true } },
           quotation: { select: { id: true, referenceNumber: true } },
           items: true,
           proformaInvoices: { select: { id: true, piNumber: true, status: true, grandTotal: true } },

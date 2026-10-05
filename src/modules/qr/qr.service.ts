@@ -17,6 +17,12 @@ export interface PublicVerificationResult {
     status: string;
     verifiedAt: string;
   };
+  quotation?: any;
+  proformaInvoice?: any;
+  order?: any;
+  invoice?: any;
+  packingList?: any;
+  pdfDownloadUrl?: string;
 }
 
 export const qrService = {
@@ -156,14 +162,156 @@ export const qrService = {
       token = parts[parts.length - 1].split('?')[0].split('#')[0];
     }
 
+    const formatQuotation = (q: any) => ({
+      id: q.id,
+      referenceNumber: q.referenceNumber,
+      revisionNumber: q.revisionNumber,
+      date: q.date,
+      validUntil: q.validUntil,
+      projectName: q.projectName,
+      subject: q.subject,
+      title: q.title,
+      currency: q.currency || 'INR',
+      recipientSalutation: q.recipientSalutation,
+      recipientName: q.recipientName,
+      recipientCompany: q.recipientCompany,
+      recipientAddress: q.recipientAddress,
+      recipientEmail: q.recipientEmail,
+      recipientPhone: q.recipientPhone,
+      basicPrice: Number(q.basicPrice) || 0,
+      installationCharge: Number(q.installationCharge) || 0,
+      freightTerms: q.freightTerms,
+      freightAmount: Number(q.freightAmount) || 0,
+      gstRate: Number(q.gstRate) || 18,
+      gstAmount: Number(q.gstAmount) || 0,
+      grandTotal: Number(q.grandTotal) || 0,
+      amountInWords: q.amountInWords,
+      generalTerms: q.generalTerms,
+      warrantyText: q.warrantyText,
+      accessoriesText: q.accessoriesText,
+      paymentTerms: q.paymentTerms,
+      deliveryTerms: q.deliveryTerms,
+      status: q.status,
+      companyProfile: q.companyProfile
+        ? {
+            companyName: q.companyProfile.companyName,
+            legalName: q.companyProfile.legalName,
+            entityCode: q.companyProfile.entityCode,
+            gstin: q.companyProfile.gstin,
+            pan: q.companyProfile.pan,
+            state: q.companyProfile.state,
+            stateCode: q.companyProfile.stateCode,
+            phone: q.companyProfile.phone,
+            email: q.companyProfile.email,
+            website: q.companyProfile.website,
+            addresses: q.companyProfile.addresses,
+          }
+        : undefined,
+      customer: q.customer
+        ? {
+            legalName: q.customer.legalName,
+            tradeName: q.customer.tradeName,
+            billingAddress: q.customer.billingAddress,
+            gstin: q.customer.gstin,
+            phone: q.customer.phone,
+            email: q.customer.email,
+          }
+        : undefined,
+      items: (q.items || []).map((i: any) => ({
+        id: i.id,
+        serialNumber: i.serialNumber,
+        description: i.description,
+        unit: i.unit,
+        quantity: Number(i.quantity) || 0,
+        rate: Number(i.rate) || 0,
+        amount: Number(i.amount) || 0,
+        cubicleSize: i.cubicleSize,
+        boardType: i.boardType,
+        boardColor: i.boardColor,
+        boardThickness: i.boardThickness,
+        doorSize: i.doorSize,
+        overallHeight: i.overallHeight,
+        hardwarePackage: i.hardwarePackage,
+        customSpecsJson: i.customSpecsJson,
+      })),
+    });
+
     // 1. Direct lookup in documentVerificationToken
     const record = await prisma.documentVerificationToken.findUnique({
       where: { token },
     });
 
     if (record && record.isValid) {
-      const payload = record.verificationPayloadJson as any;
+      const payload = (record.verificationPayloadJson as any) || {};
       const total = Number(payload.totalAmount) || 0;
+
+      // Enrich if Quotation
+      if (record.documentType === 'QUOTATION' || record.documentType === 'SalesQuotation') {
+        const quote = await prisma.salesQuotation.findUnique({
+          where: { id: record.documentId },
+          include: {
+            items: { include: { product: true }, orderBy: { serialNumber: 'asc' } },
+            companyProfile: { include: { addresses: true, bankAccounts: true, signatories: true } },
+            customer: true,
+            issuingStaff: true,
+          },
+        });
+        if (quote) {
+          const grandTotal = Number(quote.grandTotal) || total;
+          return {
+            valid: true,
+            message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
+            document: {
+              documentType: 'QUOTATION',
+              documentNumber: quote.referenceNumber,
+              companyName: quote.companyProfile?.companyName || payload.companyName || 'Pacific Products & Solutions',
+              partyName: quote.recipientCompany || quote.recipientName || quote.customer?.legalName || payload.partyName || 'Valued Customer',
+              date: quote.date ? quote.date.toISOString() : payload.date,
+              currency: quote.currency || payload.currency || 'INR',
+              maskedAmount: `₹ ${grandTotal.toLocaleString('en-IN')}`,
+              status: quote.status,
+              verifiedAt: new Date().toISOString(),
+            },
+            quotation: formatQuotation(quote),
+            pdfDownloadUrl: `/api/v1/sales/quotations/${quote.id}/pdf?download=true`,
+          };
+        }
+      }
+
+      // Enrich if Proforma Invoice
+      if (record.documentType === 'PI' || record.proformaInvoiceId) {
+        const piId = record.proformaInvoiceId || record.documentId;
+        const pi = await prisma.proformaInvoice.findUnique({
+          where: { id: piId },
+          include: {
+            items: { orderBy: { serialNumber: 'asc' } },
+            companyProfile: { include: { addresses: true, bankAccounts: true } },
+            customer: true,
+          },
+        });
+        if (pi) {
+          const grandTotal = Number(pi.grandTotal) || total;
+          return {
+            valid: true,
+            message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
+            document: {
+              documentType: 'PI',
+              documentNumber: pi.piNumber,
+              companyName: pi.companyProfile?.companyName || payload.companyName || 'Pacific Products & Solutions',
+              partyName: pi.customer?.legalName || payload.partyName || 'Valued Customer',
+              date: pi.piDate ? pi.piDate.toISOString() : payload.date,
+              currency: pi.currency || 'INR',
+              maskedAmount: `${pi.currency === 'AED' ? 'AED' : '₹'} ${grandTotal.toLocaleString('en-IN')}`,
+              status: pi.status,
+              verifiedAt: new Date().toISOString(),
+            },
+            proformaInvoice: pi,
+            pdfDownloadUrl: `/api/v1/sales/pi/${pi.id}/pdf`,
+          };
+        }
+      }
+
+      // Fallback to recorded safe payload
       return {
         valid: true,
         message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
@@ -174,23 +322,99 @@ export const qrService = {
           partyName: payload.partyName,
           date: payload.date,
           currency: payload.currency || 'INR',
-          maskedAmount: `${payload.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString()}`,
+          maskedAmount: `${payload.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString('en-IN')}`,
           status: payload.status,
           verifiedAt: new Date().toISOString(),
         },
       };
     }
 
-    // 2. Fallback check across documents by document number or ID
-    // 2a. Sales Quotation
+    // 2. Lookup in qr_codes table by token
+    const qrRecord = await prisma.qrCode.findUnique({
+      where: { token },
+    });
+    if (qrRecord) {
+      if (qrRecord.entityType === 'QUOTATION' && qrRecord.entityId) {
+        const quote = await prisma.salesQuotation.findUnique({
+          where: { id: qrRecord.entityId },
+          include: {
+            items: { include: { product: true }, orderBy: { serialNumber: 'asc' } },
+            companyProfile: { include: { addresses: true, bankAccounts: true, signatories: true } },
+            customer: true,
+            issuingStaff: true,
+          },
+        });
+        if (quote) {
+          const grandTotal = Number(quote.grandTotal) || 0;
+          return {
+            valid: true,
+            message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
+            document: {
+              documentType: 'QUOTATION',
+              documentNumber: quote.referenceNumber,
+              companyName: quote.companyProfile?.companyName || 'Pacific Products & Solutions',
+              partyName: quote.recipientCompany || quote.recipientName || quote.customer?.legalName || 'Valued Customer',
+              date: quote.date.toISOString(),
+              currency: quote.currency || 'INR',
+              maskedAmount: `₹ ${grandTotal.toLocaleString('en-IN')}`,
+              status: quote.status,
+              verifiedAt: new Date().toISOString(),
+            },
+            quotation: formatQuotation(quote),
+            pdfDownloadUrl: `/api/v1/sales/quotations/${quote.id}/pdf?download=true`,
+          };
+        }
+      }
+
+      if (qrRecord.entityType === 'PI' && (qrRecord.proformaInvoiceId || qrRecord.entityId)) {
+        const piId = qrRecord.proformaInvoiceId || qrRecord.entityId;
+        const pi = await prisma.proformaInvoice.findUnique({
+          where: { id: piId },
+          include: {
+            items: { orderBy: { serialNumber: 'asc' } },
+            companyProfile: { include: { addresses: true, bankAccounts: true } },
+            customer: true,
+          },
+        });
+        if (pi) {
+          const grandTotal = Number(pi.grandTotal) || 0;
+          return {
+            valid: true,
+            message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
+            document: {
+              documentType: 'PI',
+              documentNumber: pi.piNumber,
+              companyName: pi.companyProfile?.companyName || 'Pacific Products & Solutions',
+              partyName: pi.customer?.legalName || 'Valued Customer',
+              date: pi.piDate.toISOString(),
+              currency: pi.currency || 'INR',
+              maskedAmount: `${pi.currency === 'AED' ? 'AED' : '₹'} ${grandTotal.toLocaleString('en-IN')}`,
+              status: pi.status,
+              verifiedAt: new Date().toISOString(),
+            },
+            proformaInvoice: pi,
+            pdfDownloadUrl: `/api/v1/sales/pi/${pi.id}/pdf`,
+          };
+        }
+      }
+    }
+
+    // 3. Fallback check across documents by document number or ID
+    // 3a. Sales Quotation
     const quote = await prisma.salesQuotation.findFirst({
       where: {
         OR: [
           { referenceNumber: token },
           { id: token },
+          { referenceNumber: { equals: token, mode: 'insensitive' } },
         ],
       },
-      include: { customer: true },
+      include: {
+        items: { include: { product: true }, orderBy: { serialNumber: 'asc' } },
+        companyProfile: { include: { addresses: true, bankAccounts: true, signatories: true } },
+        customer: true,
+        issuingStaff: true,
+      },
     });
     if (quote) {
       const total = Number(quote.grandTotal) || 0;
@@ -200,26 +424,33 @@ export const qrService = {
         document: {
           documentType: 'QUOTATION',
           documentNumber: quote.referenceNumber,
-          companyName: 'Pacific Products & Solutions',
+          companyName: quote.companyProfile?.companyName || 'Pacific Products & Solutions',
           partyName: quote.recipientCompany || quote.recipientName || quote.customer?.legalName || 'Valued Customer',
           date: quote.date.toISOString(),
-          currency: 'INR',
-          maskedAmount: `₹ ${total.toLocaleString()}`,
+          currency: quote.currency || 'INR',
+          maskedAmount: `₹ ${total.toLocaleString('en-IN')}`,
           status: quote.status,
           verifiedAt: new Date().toISOString(),
         },
+        quotation: formatQuotation(quote),
+        pdfDownloadUrl: `/api/v1/sales/quotations/${quote.id}/pdf?download=true`,
       };
     }
 
-    // 2b. Proforma Invoice
+    // 3b. Proforma Invoice
     const pi = await prisma.proformaInvoice.findFirst({
       where: {
         OR: [
           { piNumber: token },
           { id: token },
+          { piNumber: { equals: token, mode: 'insensitive' } },
         ],
       },
-      include: { customer: true, companyProfile: true },
+      include: {
+        items: { orderBy: { serialNumber: 'asc' } },
+        customer: true,
+        companyProfile: true,
+      },
     });
     if (pi) {
       const total = Number(pi.grandTotal) || 0;
@@ -233,22 +464,25 @@ export const qrService = {
           partyName: pi.customer?.legalName || 'Valued Customer',
           date: pi.piDate.toISOString(),
           currency: pi.currency || 'INR',
-          maskedAmount: `${pi.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString()}`,
+          maskedAmount: `${pi.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString('en-IN')}`,
           status: pi.status,
           verifiedAt: new Date().toISOString(),
         },
+        proformaInvoice: pi,
+        pdfDownloadUrl: `/api/v1/sales/pi/${pi.id}/pdf`,
       };
     }
 
-    // 2c. Sales Order
+    // 3c. Sales Order
     const order = await prisma.salesOrder.findFirst({
       where: {
         OR: [
           { orderNumber: token },
           { id: token },
+          { orderNumber: { equals: token, mode: 'insensitive' } },
         ],
       },
-      include: { customer: true, companyProfile: true },
+      include: { customer: true, companyProfile: true, items: true },
     });
     if (order) {
       const total = Number(order.grandTotal) || 0;
@@ -262,19 +496,22 @@ export const qrService = {
           partyName: order.customer?.legalName || 'Valued Customer',
           date: order.orderDate.toISOString(),
           currency: order.currency || 'INR',
-          maskedAmount: `${order.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString()}`,
+          maskedAmount: `${order.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString('en-IN')}`,
           status: order.status,
           verifiedAt: new Date().toISOString(),
         },
+        order,
+        pdfDownloadUrl: `/api/v1/sales/orders/${order.id}/pdf`,
       };
     }
 
-    // 2d. Tax Invoice
+    // 3d. Tax Invoice
     const invoice = await prisma.invoice.findFirst({
       where: {
         OR: [
           { invoiceNumber: token },
           { id: token },
+          { invoiceNumber: { equals: token, mode: 'insensitive' } },
         ],
       },
       include: { order: { include: { customer: true, companyProfile: true } } },
@@ -291,22 +528,25 @@ export const qrService = {
           partyName: invoice.order?.customer?.legalName || 'Valued Customer',
           date: invoice.issueDate.toISOString(),
           currency: invoice.currency || 'INR',
-          maskedAmount: `${invoice.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString()}`,
+          maskedAmount: `${invoice.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString('en-IN')}`,
           status: invoice.status,
           verifiedAt: new Date().toISOString(),
         },
+        invoice,
+        pdfDownloadUrl: `/api/v1/invoices/${invoice.id}/pdf`,
       };
     }
 
-    // 2e. Packing List
+    // 3e. Packing List
     const packingList = await prisma.packingList.findFirst({
       where: {
         OR: [
           { packingListNumber: token },
           { id: token },
+          { packingListNumber: { equals: token, mode: 'insensitive' } },
         ],
       },
-      include: { customer: true },
+      include: { customer: true, companyProfile: true, items: true },
     });
     if (packingList) {
       return {
@@ -315,7 +555,7 @@ export const qrService = {
         document: {
           documentType: 'PACKING_LIST',
           documentNumber: packingList.packingListNumber,
-          companyName: packingList.consignorName || 'Pacific Products & Solutions',
+          companyName: packingList.companyProfile?.companyName || packingList.consignorName || 'Pacific Products & Solutions',
           partyName: packingList.shipToName || packingList.customer?.legalName || 'Valued Customer',
           date: packingList.date.toISOString(),
           currency: 'INR',
@@ -323,6 +563,8 @@ export const qrService = {
           status: packingList.receiptStatus || 'DISPATCHED',
           verifiedAt: new Date().toISOString(),
         },
+        packingList,
+        pdfDownloadUrl: `/api/v1/sales/packing-lists/${packingList.id}/pdf`,
       };
     }
 

@@ -20,10 +20,23 @@ export const invoicesService = {
     if (query.orderId) where.orderId = query.orderId;
 
     if (query.branch) {
-      if (query.branch.toUpperCase() === 'KOLKATA') {
-        where.invoiceNumber = { startsWith: 'PPSK/' };
-      } else if (query.branch.toUpperCase() === 'MAIN') {
-        where.NOT = { invoiceNumber: { startsWith: 'PPSK/' } };
+      const b = query.branch.toUpperCase();
+      if (b === 'KOLKATA') {
+        where.OR = [
+          { invoiceNumber: { startsWith: 'PPSK/' } },
+          { invoiceNumber: { contains: 'KOL', mode: 'insensitive' } },
+          { order: { orderNumber: { startsWith: 'PPSK/' } } },
+          { order: { companyProfile: { companyName: { contains: 'Kolkata', mode: 'insensitive' } } } },
+          { order: { companyProfile: { state: { contains: 'Bengal', mode: 'insensitive' } } } },
+          { quotation: { referenceNumber: { startsWith: 'PPSK/' } } },
+        ];
+      } else if (b === 'MAIN') {
+        where.AND = [
+          { invoiceNumber: { not: { startsWith: 'PPSK/' } } },
+          { invoiceNumber: { not: { contains: 'KOL', mode: 'insensitive' } } },
+          { order: { orderNumber: { not: { startsWith: 'PPSK/' } } } },
+          { order: { companyProfile: { companyName: { not: { contains: 'Kolkata', mode: 'insensitive' } } } } },
+        ];
       }
     }
 
