@@ -1,22 +1,40 @@
 import { prisma } from '../../config/database';
 import { pdfService } from '../pdf/pdf.service';
 import { qrService } from '../qr/qr.service';
+import { sequenceService } from '../sequences/sequence.service';
 
-function generateInvoiceNumber(): string {
-  const date = new Date();
-  const year = date.getFullYear().toString().slice(-2);
-  const nextYear = (parseInt(year) + 1).toString();
-  const rand = Math.floor(Math.random() * 9000) + 1000;
-  return `PPS/INV/${year}-${nextYear}/${rand}`;
+async function resolveDefaultCompanyProfileId(): Promise<string> {
+  const profile = await prisma.companyProfile.findFirst({
+    select: { id: true },
+  });
+  return profile?.id || '1fc1cc60-1673-4366-a97a-4dae9ef7832c';
 }
 
 export const invoicesService = {
-  async list(query: { page: number; limit: number; status?: string; orderId?: string }) {
-    const { page, limit, status, orderId } = query;
+  async list(query: { page?: number; limit?: number; status?: string; orderId?: string; search?: string; branch?: string }) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.max(1, Number(query.limit) || 20);
     const skip = (page - 1) * limit;
     const where: any = {};
-    if (status) where.status = status;
-    if (orderId) where.orderId = orderId;
+    if (query.status && query.status !== 'ALL') where.status = query.status;
+    if (query.orderId) where.orderId = query.orderId;
+
+    if (query.branch) {
+      if (query.branch.toUpperCase() === 'KOLKATA') {
+        where.invoiceNumber = { startsWith: 'PPSK/' };
+      } else if (query.branch.toUpperCase() === 'MAIN') {
+        where.NOT = { invoiceNumber: { startsWith: 'PPSK/' } };
+      }
+    }
+
+    if (query.search) {
+      where.OR = [
+        { invoiceNumber: { contains: query.search, mode: 'insensitive' } },
+        { notes: { contains: query.search, mode: 'insensitive' } },
+        { order: { orderNumber: { contains: query.search, mode: 'insensitive' } } },
+        { order: { customer: { legalName: { contains: query.search, mode: 'insensitive' } } } },
+      ];
+    }
 
     const [items, total] = await Promise.all([
       prisma.invoice.findMany({
@@ -24,7 +42,7 @@ export const invoicesService = {
         include: {
           quotation: { include: { lead: true } },
           project: true,
-          order: { include: { customer: true } },
+          order: { include: { customer: true, companyProfile: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -55,16 +73,28 @@ export const invoicesService = {
   },
 
   async create(data: any) {
-    const { customerId, companyProfileId, ...rest } = data;
+    const { customerId, companyProfileId, isKolkata, branch, ...rest } = data;
     let notes = rest.notes || '';
     if (companyProfileId) {
       notes = `[Branch: ${companyProfileId}] ${notes}`.trim();
     }
+
+    let invoiceNumber = rest.invoiceNumber;
+    if (!invoiceNumber) {
+      const targetCompanyProfileId = companyProfileId || await resolveDefaultCompanyProfileId();
+      const kolkataFlag = Boolean(isKolkata || branch?.toUpperCase() === 'KOLKATA');
+      const seq = await sequenceService.getNextDocumentNumber(targetCompanyProfileId, 'INV', {
+        isKolkata: kolkataFlag,
+        branch,
+      });
+      invoiceNumber = seq.number;
+    }
+
     return prisma.invoice.create({
       data: {
         ...rest,
         notes: notes || null,
-        invoiceNumber: rest.invoiceNumber || generateInvoiceNumber(),
+        invoiceNumber,
         status: rest.status || 'DRAFT',
       },
     });
@@ -77,7 +107,7 @@ export const invoicesService = {
   async createFromOrder(orderId: string, userId?: string) {
     const order = await prisma.salesOrder.findUnique({
       where: { id: orderId },
-      include: { customer: true, items: true },
+      include: { customer: true, items: true, companyProfile: true },
     });
     if (!order) throw Object.assign(new Error('Sales Order not found'), { status: 404 });
 
@@ -85,7 +115,15 @@ export const invoicesService = {
     const existing = await prisma.invoice.findFirst({ where: { orderId: order.id } });
     if (existing) return existing;
 
-    const invoiceNumber = generateInvoiceNumber();
+    const isKolkata = Boolean(
+      order.orderNumber?.startsWith('PPSK/') ||
+      order.companyProfile?.entityCode === 'PPS-KOL' ||
+      order.companyProfile?.stateCode === '19' ||
+      order.companyProfile?.companyName?.toLowerCase().includes('kolkata')
+    );
+
+    const seq = await sequenceService.getNextDocumentNumber(order.companyProfileId, 'INV', { isKolkata });
+    const invoiceNumber = seq.number;
 
     // Do NOT set quotationId here — it has a @unique constraint and may already be used
     // by a legacy invoice created directly from the quotation. orderId is the correct link.

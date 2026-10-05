@@ -38,6 +38,7 @@ export const ordersService = {
     endDate?: string;
     page?: number;
     limit?: number;
+    branch?: string;
   }) {
     const page = Number(params?.page) || 1;
     const limit = Number(params?.limit) || 20;
@@ -53,6 +54,13 @@ export const ordersService = {
     }
     if (params?.customerId) where.customerId = params.customerId;
     if (params?.source) where.source = params.source;
+    if (params?.branch) {
+      if (params.branch.toUpperCase() === 'KOLKATA') {
+        where.orderNumber = { startsWith: 'PPSK/' };
+      } else if (params.branch.toUpperCase() === 'MAIN') {
+        where.NOT = { orderNumber: { startsWith: 'PPSK/' } };
+      }
+    }
     if (params?.startDate || params?.endDate) {
       where.orderDate = {};
       if (params.startDate) where.orderDate.gte = new Date(params.startDate);

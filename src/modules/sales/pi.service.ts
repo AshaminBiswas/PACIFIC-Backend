@@ -24,7 +24,7 @@ async function fetchImageAsDataUri(url: string): Promise<string> {
 }
 
 export const piService = {
-  async list(query: { page?: number; limit?: number; status?: string; customerId?: string; search?: string }) {
+  async list(query: { page?: number; limit?: number; status?: string; customerId?: string; search?: string; branch?: string }) {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
     const skip = (page - 1) * limit;
@@ -32,6 +32,13 @@ export const piService = {
     const where: any = {};
     if (query.status) where.status = query.status;
     if (query.customerId) where.customerId = query.customerId;
+    if (query.branch) {
+      if (query.branch.toUpperCase() === 'KOLKATA') {
+        where.piNumber = { startsWith: 'PPSK/' };
+      } else if (query.branch.toUpperCase() === 'MAIN') {
+        where.NOT = { piNumber: { startsWith: 'PPSK/' } };
+      }
+    }
     if (query.search) {
       where.OR = [
         { piNumber: { contains: query.search, mode: 'insensitive' } },
@@ -563,7 +570,7 @@ export const piService = {
 
     if (!qrDataUrl || !qrDataUrl.startsWith('data:')) {
       try {
-        const fallbackVerifyUrl = `${env.frontend.adminUrl || 'https://pacific-admin-one.vercel.app'}/verify/${pi.piNumber}`;
+        const fallbackVerifyUrl = `https://www.pacificproduct.in/verify/${encodeURIComponent(pi.piNumber)}`;
         qrDataUrl = await QRCode.toDataURL(fallbackVerifyUrl, {
           margin: 1,
           width: 150,

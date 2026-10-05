@@ -16,6 +16,7 @@ export const packingListsService = {
     receiptStatus?: string;
     page?: number;
     limit?: number;
+    branch?: string;
   }) {
     const page = Number(params?.page) || 1;
     const limit = Number(params?.limit) || 20;
@@ -25,6 +26,13 @@ export const packingListsService = {
     if (params?.orderId) where.orderId = params.orderId;
     if (params?.customerId) where.customerId = params.customerId;
     if (params?.receiptStatus) where.receiptStatus = params.receiptStatus;
+    if (params?.branch) {
+      if (params.branch.toUpperCase() === 'KOLKATA') {
+        where.packingListNumber = { startsWith: 'PPSK/' };
+      } else if (params.branch.toUpperCase() === 'MAIN') {
+        where.NOT = { packingListNumber: { startsWith: 'PPSK/' } };
+      }
+    }
     if (params?.search) {
       where.OR = [
         { packingListNumber: { contains: params.search, mode: 'insensitive' } },

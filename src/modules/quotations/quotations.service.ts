@@ -86,6 +86,7 @@ export const quotationsService = {
     endDate?: string;
     page?: number;
     limit?: number;
+    branch?: string;
   }) {
     const page = Number(params?.page) || 1;
     const limit = Number(params?.limit) || 20;
@@ -94,6 +95,13 @@ export const quotationsService = {
     const where: any = {};
     if (params?.status) where.status = params.status;
     if (params?.customerId) where.customerId = params.customerId;
+    if (params?.branch) {
+      if (params.branch.toUpperCase() === 'KOLKATA') {
+        where.referenceNumber = { startsWith: 'PPSK/' };
+      } else if (params.branch.toUpperCase() === 'MAIN') {
+        where.NOT = { referenceNumber: { startsWith: 'PPSK/' } };
+      }
+    }
     if (params?.startDate || params?.endDate) {
       where.date = {};
       if (params.startDate) where.date.gte = new Date(params.startDate);
@@ -583,18 +591,32 @@ export const quotationsService = {
       ? await fetchImageAsDataUri(rawSignatureUrl)
       : rawSignatureUrl;
 
-    // Collect unique model images from line items
+    // Collect unique model images from line items (only clean model name, no unnecessary descriptions)
     const rawModelImages = (quote.items || [])
       .map((it: any) => {
         const imgUrl = it.modelImageUrl || (it.customSpecsJson as any)?.modelImageUrl || (it.customSpecsJson as any)?.imageUrl;
-        const modelName = (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.modelName || it.description;
-        const category = (it.customSpecsJson as any)?.systemCategory || (it.customSpecsJson as any)?.category || undefined;
-        return imgUrl ? { modelName, category, imageUrl: imgUrl } : null;
+        let cleanModelName = (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.modelName;
+        if (!cleanModelName && it.description) {
+          const desc = String(it.description).trim();
+          const match = desc.match(/(?:Model|Series|System)[:\s]+([^,\n\r]+)/i);
+          if (match) {
+            cleanModelName = match[1].trim();
+          } else if (desc.length > 30) {
+            cleanModelName = desc.split(/[,\n\r\-]/)[0].trim().slice(0, 30);
+          } else {
+            cleanModelName = desc;
+          }
+        }
+        cleanModelName = (cleanModelName || 'Model Visual')
+          .replace(/^(?:Model\s*Name|Model|System)\s*:\s*/i, '')
+          .replace(/[\(\[\{].*?[\)\]\}]/g, '')
+          .trim();
+        return imgUrl ? { modelName: cleanModelName, imageUrl: imgUrl } : null;
       })
-      .filter((img: any): img is { modelName: string; category?: string; imageUrl: string } => Boolean(img && img.imageUrl));
+      .filter((img: any): img is { modelName: string; imageUrl: string } => Boolean(img && img.imageUrl));
 
     const seenUrls = new Set<string>();
-    const uniqueModelImages: Array<{ modelName: string; category?: string; imageUrl: string }> = [];
+    const uniqueModelImages: Array<{ modelName: string; imageUrl: string }> = [];
     for (const img of rawModelImages) {
       if (!seenUrls.has(img.imageUrl)) {
         seenUrls.add(img.imageUrl);

@@ -49,7 +49,7 @@ export const qrService = {
     status: string;
   }) {
     const token = this.generateToken(params.documentType, params.documentId);
-    const baseUrl = env.frontend.adminUrl || 'http://localhost:5176';
+    const baseUrl = 'https://www.pacificproduct.in';
     const qrData = `${baseUrl}/verify/${token}`;
 
     const safePayload = {
@@ -109,7 +109,7 @@ export const qrService = {
       where: { documentType: params.documentType, documentId: params.documentId, isValid: true },
     });
 
-    const baseUrl = env.frontend.adminUrl || 'http://localhost:5176';
+    const baseUrl = 'https://www.pacificproduct.in';
     let token = existing?.token;
     let qrData = token ? `${baseUrl}/verify/${token}` : '';
 
@@ -149,41 +149,186 @@ export const qrService = {
   /**
    * Public verification check — safe, sanitised, never reveals internal IDs or passwords.
    */
-  async verifyPublicToken(token: string): Promise<PublicVerificationResult> {
+  async verifyPublicToken(rawToken: string): Promise<PublicVerificationResult> {
+    let token = decodeURIComponent(rawToken).trim();
+    if (token.includes('/verify/')) {
+      const parts = token.split('/verify/');
+      token = parts[parts.length - 1].split('?')[0].split('#')[0];
+    }
+
+    // 1. Direct lookup in documentVerificationToken
     const record = await prisma.documentVerificationToken.findUnique({
       where: { token },
     });
 
-    if (!record || !record.isValid) {
+    if (record && record.isValid) {
+      const payload = record.verificationPayloadJson as any;
+      const total = Number(payload.totalAmount) || 0;
       return {
-        valid: false,
-        message: 'Invalid or revoked verification token. Document cannot be authenticated.',
+        valid: true,
+        message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
+        document: {
+          documentType: payload.documentType,
+          documentNumber: payload.documentNumber,
+          companyName: payload.companyName,
+          partyName: payload.partyName,
+          date: payload.date,
+          currency: payload.currency || 'INR',
+          maskedAmount: `${payload.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString()}`,
+          status: payload.status,
+          verifiedAt: new Date().toISOString(),
+        },
       };
     }
 
-    const payload = record.verificationPayloadJson as any;
+    // 2. Fallback check across documents by document number or ID
+    // 2a. Sales Quotation
+    const quote = await prisma.salesQuotation.findFirst({
+      where: {
+        OR: [
+          { referenceNumber: token },
+          { id: token },
+        ],
+      },
+      include: { customer: true },
+    });
+    if (quote) {
+      const total = Number(quote.grandTotal) || 0;
+      return {
+        valid: true,
+        message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
+        document: {
+          documentType: 'QUOTATION',
+          documentNumber: quote.referenceNumber,
+          companyName: 'Pacific Products & Solutions',
+          partyName: quote.recipientCompany || quote.recipientName || quote.customer?.legalName || 'Valued Customer',
+          date: quote.date.toISOString(),
+          currency: 'INR',
+          maskedAmount: `₹ ${total.toLocaleString()}`,
+          status: quote.status,
+          verifiedAt: new Date().toISOString(),
+        },
+      };
+    }
 
-    // Mask amount: show currency and approximate range or masked characters
-    const total = Number(payload.totalAmount) || 0;
-    const formatted = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(total);
-    const masked = formatted.length > 3
-      ? formatted.slice(0, 1) + 'X,XXX'.slice(0, formatted.length - 1)
-      : 'XXX';
+    // 2b. Proforma Invoice
+    const pi = await prisma.proformaInvoice.findFirst({
+      where: {
+        OR: [
+          { piNumber: token },
+          { id: token },
+        ],
+      },
+      include: { customer: true, companyProfile: true },
+    });
+    if (pi) {
+      const total = Number(pi.grandTotal) || 0;
+      return {
+        valid: true,
+        message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
+        document: {
+          documentType: 'PI',
+          documentNumber: pi.piNumber,
+          companyName: pi.companyProfile?.companyName || 'Pacific Products & Solutions',
+          partyName: pi.customer?.legalName || 'Valued Customer',
+          date: pi.piDate.toISOString(),
+          currency: pi.currency || 'INR',
+          maskedAmount: `${pi.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString()}`,
+          status: pi.status,
+          verifiedAt: new Date().toISOString(),
+        },
+      };
+    }
+
+    // 2c. Sales Order
+    const order = await prisma.salesOrder.findFirst({
+      where: {
+        OR: [
+          { orderNumber: token },
+          { id: token },
+        ],
+      },
+      include: { customer: true, companyProfile: true },
+    });
+    if (order) {
+      const total = Number(order.grandTotal) || 0;
+      return {
+        valid: true,
+        message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
+        document: {
+          documentType: 'ORDER',
+          documentNumber: order.orderNumber,
+          companyName: order.companyProfile?.companyName || 'Pacific Products & Solutions',
+          partyName: order.customer?.legalName || 'Valued Customer',
+          date: order.orderDate.toISOString(),
+          currency: order.currency || 'INR',
+          maskedAmount: `${order.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString()}`,
+          status: order.status,
+          verifiedAt: new Date().toISOString(),
+        },
+      };
+    }
+
+    // 2d. Tax Invoice
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        OR: [
+          { invoiceNumber: token },
+          { id: token },
+        ],
+      },
+      include: { order: { include: { customer: true, companyProfile: true } } },
+    });
+    if (invoice) {
+      const total = Number(invoice.totalAmount) || 0;
+      return {
+        valid: true,
+        message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
+        document: {
+          documentType: 'INVOICE',
+          documentNumber: invoice.invoiceNumber,
+          companyName: invoice.order?.companyProfile?.companyName || 'Pacific Products & Solutions',
+          partyName: invoice.order?.customer?.legalName || 'Valued Customer',
+          date: invoice.issueDate.toISOString(),
+          currency: invoice.currency || 'INR',
+          maskedAmount: `${invoice.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString()}`,
+          status: invoice.status,
+          verifiedAt: new Date().toISOString(),
+        },
+      };
+    }
+
+    // 2e. Packing List
+    const packingList = await prisma.packingList.findFirst({
+      where: {
+        OR: [
+          { packingListNumber: token },
+          { id: token },
+        ],
+      },
+      include: { customer: true },
+    });
+    if (packingList) {
+      return {
+        valid: true,
+        message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
+        document: {
+          documentType: 'PACKING_LIST',
+          documentNumber: packingList.packingListNumber,
+          companyName: packingList.consignorName || 'Pacific Products & Solutions',
+          partyName: packingList.shipToName || packingList.customer?.legalName || 'Valued Customer',
+          date: packingList.date.toISOString(),
+          currency: 'INR',
+          maskedAmount: 'N/A (Dispatch Voucher)',
+          status: packingList.receiptStatus || 'DISPATCHED',
+          verifiedAt: new Date().toISOString(),
+        },
+      };
+    }
 
     return {
-      valid: true,
-      message: '✓ Verified Genuine Document issued by Pacific Products & Solutions',
-      document: {
-        documentType: payload.documentType,
-        documentNumber: payload.documentNumber,
-        companyName: payload.companyName,
-        partyName: payload.partyName,
-        date: payload.date,
-        currency: payload.currency || 'INR',
-        maskedAmount: `${payload.currency === 'AED' ? 'AED' : '₹'} ${total.toLocaleString()}`,
-        status: payload.status,
-        verifiedAt: new Date().toISOString(),
-      },
+      valid: false,
+      message: 'Invalid or revoked verification token. Document cannot be authenticated.',
     };
   },
 

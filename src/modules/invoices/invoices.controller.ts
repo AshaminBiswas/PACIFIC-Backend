@@ -11,6 +11,8 @@ export const invoicesController = {
           limit: Number(req.query.limit) || 20,
           status: req.query.status as string,
           orderId: req.query.orderId as string,
+          search: req.query.search as string,
+          branch: req.query.branch as string,
         }),
       });
     } catch (err) {

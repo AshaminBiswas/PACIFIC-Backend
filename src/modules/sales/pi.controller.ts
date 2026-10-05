@@ -11,6 +11,7 @@ export const piController = {
         status: req.query.status as string,
         customerId: req.query.customerId as string,
         search: req.query.search as string,
+        branch: req.query.branch as string,
       });
       res.json({ success: true, data });
     } catch (err) {

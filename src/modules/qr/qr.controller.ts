@@ -50,7 +50,7 @@ export const qrController = {
       }
 
       const token = qrService.generateToken(entityType, entityId);
-      const qrData = `http://localhost:5176/verify/${token}`;
+      const qrData = `https://www.pacificproduct.in/verify/${token}`;
 
       const qr = await prisma.qrCode.create({
         data: {

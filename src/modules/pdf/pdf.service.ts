@@ -1907,10 +1907,9 @@ export const pdfService = {
                 ${modelImages.map((img) => `
                   <tr>
                     <td style="padding: 3px 0;">
-                      <div style="border: 1px solid #d4d4d8; border-radius: 4px; overflow: hidden; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">
-                        <div style="background: #18181b; color: #ffffff; padding: 2.5px 6px; font-size: 8px; font-weight: bold; text-transform: uppercase; text-align: left; display: flex; justify-content: space-between; align-items: center;">
-                          <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;">${img.modelName || 'Model Visual'}</span>
-                          <span style="font-size: 7px; color: #7FB706; text-transform: uppercase; font-weight: 700;">${img.category || 'System'}</span>
+                      <div style="border: 1.5px solid #7FB706; border-radius: 4px; overflow: hidden; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">
+                        <div style="background: #7FB706; color: #ffffff; padding: 3px 6px; font-size: 8.5px; font-weight: bold; letter-spacing: 0.3px; text-transform: uppercase; text-align: center;">
+                          <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">${img.modelName || 'Model Visual'}</span>
                         </div>
                         <div style="padding: 4px; background: #ffffff; display: flex; align-items: center; justify-content: center; min-height: ${modelImages.length > 1 ? '70px' : '110px'}; max-height: ${modelImages.length > 1 ? '90px' : '140px'}; overflow: hidden;">
                           <img src="${img.imageUrl}" alt="${img.modelName || 'Model'}" style="max-width: 100%; max-height: ${modelImages.length > 1 ? '85px' : '135px'}; object-fit: contain; display: block; margin: 0 auto;" />
