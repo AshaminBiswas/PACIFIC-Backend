@@ -272,7 +272,7 @@ export class BoardInventoryService {
     });
 
     // Low stock automated email alert upon creation if opening stock <= reorder level
-    if (opening <= reorder) {
+    if (opening <= reorder && !inventoryAlertService.isAlertPaused()) {
       inventoryAlertService
         .checkAndTriggerLowStockAlert(createdItem.id, 'New SKU Initialized at or below Reorder Level')
         .catch((err) => {
@@ -401,7 +401,7 @@ export class BoardInventoryService {
       return item;
     });
 
-    if (currStockNum <= newReorder) {
+    if (currStockNum <= newReorder && !inventoryAlertService.isAlertPaused()) {
       inventoryAlertService
         .checkAndTriggerLowStockAlert(updated.id, 'SKU Reorder Level or Properties Updated')
         .catch((err) => {
@@ -535,7 +535,7 @@ export class BoardInventoryService {
     });
 
     // Low stock automated email alert
-    if (Number(result.item.currentStock) <= Number(result.item.reorderLevel)) {
+    if (Number(result.item.currentStock) <= Number(result.item.reorderLevel) && !inventoryAlertService.isAlertPaused()) {
       inventoryAlertService
         .checkAndTriggerLowStockAlert(
           result.item.id,
@@ -613,7 +613,7 @@ export class BoardInventoryService {
           },
         });
 
-        if (stockAfter <= reorder) {
+        if (stockAfter <= reorder && !inventoryAlertService.isAlertPaused()) {
           inventoryAlertService
             .checkAndTriggerLowStockAlert(
               match.id,
@@ -688,7 +688,7 @@ export class BoardInventoryService {
       });
 
       // Low stock alert check
-      if (adjustedStock <= reorder) {
+      if (adjustedStock <= reorder && !inventoryAlertService.isAlertPaused()) {
         inventoryAlertService
           .checkAndTriggerLowStockAlert(
             item.id,

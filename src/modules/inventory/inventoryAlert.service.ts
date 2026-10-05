@@ -11,10 +11,32 @@ export const LOW_STOCK_ALERT_EMAILS = [
 
 export class InventoryAlertService {
   /**
+   * Temporary pause flag: Automated low-stock email alerts are paused per admin instruction.
+   * Defaults to TRUE (paused). Can be enabled if process.env.ENABLE_STOCK_EMAIL_ALERTS === 'true'.
+   */
+  public isPaused: boolean = process.env.ENABLE_STOCK_EMAIL_ALERTS === 'true' ? false : true;
+
+  setPaused(paused: boolean) {
+    this.isPaused = paused;
+  }
+
+  isAlertPaused(): boolean {
+    return this.isPaused;
+  }
+
+  /**
    * Check if an item hit its reorder level, and trigger an automated multi-recipient alert email.
    * Sends EVERY TIME the threshold is breached or touched (no artificial delay).
    */
   async checkAndTriggerLowStockAlert(itemId: string, triggerReason?: string) {
+    // Check if stock automated mailing system is temporarily paused
+    if (this.isPaused) {
+      console.log(
+        `⏸️ [InventoryAlert] Stock mailing system is temporarily PAUSED. Skipping email dispatch for item ID: ${itemId}.`
+      );
+      return { success: true, paused: true, message: 'Stock alert email system is temporarily paused.' };
+    }
+
     try {
       const item = await prisma.boardInventoryItem.findUnique({
         where: { id: itemId },

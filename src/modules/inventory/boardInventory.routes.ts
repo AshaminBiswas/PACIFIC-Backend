@@ -8,6 +8,8 @@ router.get('/', (req, res) => boardInventoryController.listBoards(req, res));
 router.get('/suppliers', (req, res) => boardInventoryController.listSuppliers(req, res));
 router.get('/analytics', (req, res) => boardInventoryController.getAnalytics(req, res));
 router.get('/movements', (req, res) => boardInventoryController.getMovements(req, res));
+router.get('/alert-status', (req, res) => boardInventoryController.getAlertStatus(req, res));
+router.post('/toggle-alerts', (req, res) => boardInventoryController.toggleAlerts(req, res));
 router.get('/:id', (req, res) => boardInventoryController.getBoardById(req, res));
 
 // Stock Creation, Mutations & Inward/Outward Operations

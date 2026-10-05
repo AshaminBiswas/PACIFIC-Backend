@@ -176,10 +176,38 @@ export class BoardInventoryController {
       const { id } = req.params;
       const { reason } = req.body || {};
       const result = await inventoryAlertService.checkAndTriggerLowStockAlert(id, reason || 'Operator Manual Re-Check');
+      if (result && (result as any).paused) {
+        res.json({ success: true, message: 'Stock alert email system is temporarily paused.', data: result });
+        return;
+      }
       res.json({ success: true, message: 'Low stock alert email triggered to all 5 recipients', data: result });
     } catch (err: any) {
       console.error('[BoardInventory] triggerLowStockAlert error:', err);
       res.status(500).json({ success: false, message: err.message || 'Failed to trigger low stock alert' });
+    }
+  }
+
+  async getAlertStatus(req: Request, res: Response) {
+    try {
+      res.json({ success: true, isPaused: inventoryAlertService.isAlertPaused() });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message || 'Failed to get alert status' });
+    }
+  }
+
+  async toggleAlerts(req: Request, res: Response) {
+    try {
+      const { paused } = req.body || {};
+      inventoryAlertService.setPaused(paused !== undefined ? Boolean(paused) : true);
+      res.json({
+        success: true,
+        message: inventoryAlertService.isAlertPaused()
+          ? 'Stock alert email system is paused.'
+          : 'Stock alert email system is active.',
+        isPaused: inventoryAlertService.isAlertPaused(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message || 'Failed to toggle alerts' });
     }
   }
 }
