@@ -10,6 +10,11 @@ router.get('/analytics', (req, res) => boardInventoryController.getAnalytics(req
 router.get('/movements', (req, res) => boardInventoryController.getMovements(req, res));
 router.get('/alert-status', (req, res) => boardInventoryController.getAlertStatus(req, res));
 router.post('/toggle-alerts', (req, res) => boardInventoryController.toggleAlerts(req, res));
+// Bulk Operations
+router.post('/inward/bulk', (req, res) => boardInventoryController.addBulkStockInward(req, res));
+router.post('/issue/bulk', (req, res) => boardInventoryController.issueBulkStock(req, res));
+router.post('/bulk', (req, res) => boardInventoryController.createBulkBoards(req, res));
+
 router.get('/:id', (req, res) => boardInventoryController.getBoardById(req, res));
 
 // Stock Creation, Mutations & Inward/Outward Operations

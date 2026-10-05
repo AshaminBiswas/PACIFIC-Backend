@@ -5,12 +5,13 @@ import { inventoryAlertService } from './inventoryAlert.service';
 export class BoardInventoryController {
   async listBoards(req: Request, res: Response) {
     try {
-      const { search, vendorId, vendorName, boardType, thickness, status, warehouse, category, page, limit } = req.query;
+      const { search, vendorId, vendorName, boardType, size, thickness, status, warehouse, category, page, limit } = req.query;
       const data = await boardInventoryService.listBoards({
         search: search as string,
         vendorId: vendorId as string,
         vendorName: vendorName as string,
         boardType: boardType as string,
+        size: size as string,
         thickness: thickness as string,
         status: status as string,
         warehouse: warehouse as string,
@@ -93,6 +94,49 @@ export class BoardInventoryController {
     } catch (err: any) {
       console.error('[BoardInventory] issueStockManual error:', err);
       res.status(400).json({ success: false, message: err.message || 'Failed to issue stock' });
+    }
+  }
+
+  async addBulkStockInward(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.id;
+      const raw = Array.isArray(req.body.items) ? req.body.items : (Array.isArray(req.body) ? req.body : [req.body]);
+      const inputs = raw.map((item: any) => ({
+        ...item,
+        createdById: userId,
+      }));
+      const data = await boardInventoryService.addBulkStockInward(inputs);
+      res.status(201).json({ success: true, data, message: `Successfully inwarded ${data.count} items into stock` });
+    } catch (err: any) {
+      console.error('[BoardInventory] addBulkStockInward error:', err);
+      res.status(400).json({ success: false, message: err.message || 'Failed to record bulk stock inward' });
+    }
+  }
+
+  async issueBulkStock(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.id;
+      const raw = Array.isArray(req.body.items) ? req.body.items : (Array.isArray(req.body) ? req.body : [req.body]);
+      const inputs = raw.map((item: any) => ({
+        ...item,
+        createdById: userId,
+      }));
+      const data = await boardInventoryService.issueBulkStock(inputs);
+      res.status(201).json({ success: true, data, message: `Successfully issued ${data.count} items from stock` });
+    } catch (err: any) {
+      console.error('[BoardInventory] issueBulkStock error:', err);
+      res.status(400).json({ success: false, message: err.message || 'Failed to issue bulk stock' });
+    }
+  }
+
+  async createBulkBoards(req: Request, res: Response) {
+    try {
+      const raw = Array.isArray(req.body.items) ? req.body.items : (Array.isArray(req.body) ? req.body : [req.body]);
+      const data = await boardInventoryService.createBulkBoards(raw);
+      res.status(201).json({ success: true, data, message: `Successfully created ${data.count} board SKUs` });
+    } catch (err: any) {
+      console.error('[BoardInventory] createBulkBoards error:', err);
+      res.status(400).json({ success: false, message: err.message || 'Failed to create bulk board SKUs' });
     }
   }
 

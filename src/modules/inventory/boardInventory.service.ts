@@ -8,6 +8,7 @@ export interface ListBoardsFilter {
   vendorId?: string;
   vendorName?: string;
   boardType?: string;
+  size?: string;
   thickness?: string;
   status?: string;
   warehouse?: string;
@@ -53,13 +54,30 @@ export interface AutoDeductInput {
   createdById?: string;
 }
 
+export interface CreateBoardInput {
+  category?: string;
+  warehouse?: string;
+  designNo: string;
+  designName?: string;
+  size: string;
+  thickness: string;
+  boardType: string;
+  vendorId: string;
+  vendorName?: string;
+  openingStock?: number;
+  reorderLevel?: number;
+  unitCost?: number;
+  locationRack?: string;
+  notes?: string;
+}
+
 export class BoardInventoryService {
   /**
    * List boards with search, filters & pagination
    */
   async listBoards(filter: ListBoardsFilter) {
     const page = Math.max(1, Number(filter.page) || 1);
-    const limit = Math.min(100, Math.max(1, Number(filter.limit) || 25));
+    const limit = Math.min(1000, Math.max(1, Number(filter.limit) || 25));
     const skip = (page - 1) * limit;
 
     const where: Prisma.BoardInventoryItemWhereInput = {};
@@ -85,6 +103,10 @@ export class BoardInventoryService {
 
     if (filter.boardType && filter.boardType !== 'ALL') {
       where.boardType = { contains: filter.boardType, mode: 'insensitive' };
+    }
+
+    if (filter.size && filter.size !== 'ALL') {
+      where.size = { contains: filter.size, mode: 'insensitive' };
     }
 
     if (filter.thickness && filter.thickness !== 'ALL') {
@@ -122,13 +144,19 @@ export class BoardInventoryService {
       }),
     ]);
 
+    const totalPages = Math.ceil(total / limit);
+
     return {
       items,
+      total,
+      page,
+      limit,
+      totalPages,
       pagination: {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages,
       },
     };
   }
@@ -547,6 +575,230 @@ export class BoardInventoryService {
     }
 
     return result;
+  }
+
+  /**
+   * Bulk Stock Inward (batch receive multiple board shipments in one transaction)
+   */
+  async addBulkStockInward(inputs: InwardStockInput[]) {
+    if (!inputs || inputs.length === 0) {
+      throw new Error('No items provided for bulk inward');
+    }
+
+    // Pre-validate all rows before entering transaction
+    for (let i = 0; i < inputs.length; i++) {
+      const item = inputs[i];
+      if (!item.inventoryItemId) {
+        throw new Error(`Row ${i + 1}: Board SKU item is required`);
+      }
+      const qty = Number(item.quantity);
+      if (!qty || qty <= 0) {
+        throw new Error(`Row ${i + 1}: Inward quantity must be greater than 0`);
+      }
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const updatedItems = [];
+      const createdMovements = [];
+      const currentSeq = await tx.boardStockMovement.count();
+
+      for (let i = 0; i < inputs.length; i++) {
+        const input = inputs[i];
+        const qty = Number(input.quantity);
+
+        const board = await tx.boardInventoryItem.findUnique({
+          where: { id: input.inventoryItemId },
+        });
+        if (!board) {
+          throw new Error(`Row ${i + 1}: Board SKU ID ${input.inventoryItemId} not found`);
+        }
+
+        const stockBefore = Number(board.currentStock);
+        const stockAfter = stockBefore + qty;
+        const reorder = Number(board.reorderLevel);
+        const updatedStatus = stockAfter <= reorder ? 'LOW_STOCK' : 'ACTIVE';
+
+        const updated = await tx.boardInventoryItem.update({
+          where: { id: board.id },
+          data: {
+            currentStock: stockAfter,
+            totalInward: Number(board.totalInward) + qty,
+            unitCost: input.unitCost !== undefined ? Number(input.unitCost) : board.unitCost,
+            status: updatedStatus,
+          },
+        });
+
+        const movementNumber = `BSM-INW-${Date.now().toString().slice(-6)}-${(currentSeq + i + 1).toString().padStart(4, '0')}`;
+
+        const movement = await tx.boardStockMovement.create({
+          data: {
+            movementNumber,
+            inventoryItemId: board.id,
+            warehouse: board.warehouse,
+            movementType: 'INWARD',
+            movementDate: input.supplierInvoiceDate ? new Date(input.supplierInvoiceDate) : new Date(),
+            quantity: qty,
+            stockBefore,
+            stockAfter,
+            supplierInvoiceNo: input.supplierInvoiceNo || null,
+            supplierInvoiceDate: input.supplierInvoiceDate ? new Date(input.supplierInvoiceDate) : null,
+            batchLotNo: input.batchLotNo || null,
+            unitCost: input.unitCost ? Number(input.unitCost) : board.unitCost,
+            totalValue: input.unitCost ? qty * Number(input.unitCost) : null,
+            notes: input.notes || null,
+            createdById: input.createdById || null,
+          },
+        });
+
+        updatedItems.push(updated);
+        createdMovements.push(movement);
+      }
+
+      return {
+        count: inputs.length,
+        items: updatedItems,
+        movements: createdMovements,
+      };
+    });
+  }
+
+  /**
+   * Bulk Manual Stock Issue (batch issue multiple board items in one transaction)
+   */
+  async issueBulkStock(inputs: ManualIssueInput[]) {
+    if (!inputs || inputs.length === 0) {
+      throw new Error('No items provided for bulk issue');
+    }
+
+    // Pre-validate all inputs
+    for (let i = 0; i < inputs.length; i++) {
+      const item = inputs[i];
+      if (!item.inventoryItemId) {
+        throw new Error(`Row ${i + 1}: Board SKU item is required`);
+      }
+      const qty = Number(item.quantity);
+      if (!qty || qty <= 0) {
+        throw new Error(`Row ${i + 1}: Issue quantity must be greater than 0`);
+      }
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. First check availability for every item to prevent partial failures
+      for (let i = 0; i < inputs.length; i++) {
+        const input = inputs[i];
+        const qty = Number(input.quantity);
+        const board = await tx.boardInventoryItem.findUnique({
+          where: { id: input.inventoryItemId },
+        });
+        if (!board) {
+          throw new Error(`Row ${i + 1}: Board SKU not found`);
+        }
+        const available = Number(board.currentStock);
+        if (qty > available) {
+          throw new Error(
+            `Row ${i + 1}: Cannot issue ${qty} sheets of ${board.designNo} (${board.vendorName}). Only ${available} sheets available in stock.`
+          );
+        }
+      }
+
+      // 2. Perform deductions and generate audit movements
+      const updatedItems = [];
+      const createdMovements = [];
+      const currentSeq = await tx.boardStockMovement.count();
+
+      for (let i = 0; i < inputs.length; i++) {
+        const input = inputs[i];
+        const qty = Number(input.quantity);
+        const board = (await tx.boardInventoryItem.findUnique({
+          where: { id: input.inventoryItemId },
+        }))!;
+
+        const stockBefore = Number(board.currentStock);
+        const stockAfter = Math.max(0, stockBefore - qty);
+        const reorder = Number(board.reorderLevel);
+        const updatedStatus = stockAfter === 0 ? 'OUT_OF_STOCK' : stockAfter <= reorder ? 'LOW_STOCK' : 'ACTIVE';
+
+        const updated = await tx.boardInventoryItem.update({
+          where: { id: board.id },
+          data: {
+            currentStock: stockAfter,
+            totalIssued: Number(board.totalIssued) + qty,
+            status: updatedStatus,
+          },
+        });
+
+        const movementNumber = `BSM-ISS-${Date.now().toString().slice(-6)}-${(currentSeq + i + 1).toString().padStart(4, '0')}`;
+
+        const movement = await tx.boardStockMovement.create({
+          data: {
+            movementNumber,
+            inventoryItemId: board.id,
+            warehouse: board.warehouse,
+            movementType: 'ISSUE_MANUAL',
+            movementDate: new Date(),
+            quantity: qty,
+            stockBefore,
+            stockAfter,
+            issueReference: input.issueReference || 'Bulk Factory Issue',
+            issuedToPerson: input.issuedToPerson || null,
+            notes: input.notes || null,
+            createdById: input.createdById || null,
+          },
+        });
+
+        updatedItems.push(updated);
+        createdMovements.push(movement);
+      }
+
+      return {
+        count: inputs.length,
+        items: updatedItems,
+        movements: createdMovements,
+      };
+    });
+
+    // Asynchronous non-blocking low-stock notification triggers
+    if (!inventoryAlertService.isAlertPaused()) {
+      for (const item of result.items) {
+        if (Number(item.currentStock) <= Number(item.reorderLevel)) {
+          inventoryAlertService
+            .checkAndTriggerLowStockAlert(item.id, `Bulk Stock Issue - Remaining Stock: ${item.currentStock}`)
+            .catch((err) => console.error('[InventoryAlert] Bulk issue alert error:', err.message));
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Bulk Create Board SKUs (batch creation of multiple catalog masters)
+   */
+  async createBulkBoards(items: CreateBoardInput[]) {
+    if (!items || items.length === 0) {
+      throw new Error('No board SKUs provided for bulk creation');
+    }
+
+    // Validate all items
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (!it.vendorId) throw new Error(`Row ${i + 1}: Supplier is required`);
+      if (!it.designNo?.trim()) throw new Error(`Row ${i + 1}: Design No is required`);
+      if (!it.size?.trim()) throw new Error(`Row ${i + 1}: Size is required`);
+      if (!it.thickness?.trim()) throw new Error(`Row ${i + 1}: Thickness is required`);
+      if (!it.boardType?.trim()) throw new Error(`Row ${i + 1}: Board type is required`);
+    }
+
+    const createdList = [];
+    for (const item of items) {
+      const created = await this.createBoard(item);
+      createdList.push(created);
+    }
+
+    return {
+      count: createdList.length,
+      items: createdList,
+    };
   }
 
   /**
