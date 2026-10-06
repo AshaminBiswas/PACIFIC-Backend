@@ -15,39 +15,49 @@ export const invoicesService = {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.max(1, Number(query.limit) || 20);
     const skip = (page - 1) * limit;
-    const where: any = {};
-    if (query.status && query.status !== 'ALL') where.status = query.status;
-    if (query.orderId) where.orderId = query.orderId;
+    const andClauses: any[] = [];
+    if (query.status && query.status !== 'ALL') andClauses.push({ status: query.status });
+    if (query.orderId) andClauses.push({ orderId: query.orderId });
 
     if (query.branch) {
       const b = query.branch.toUpperCase();
-      if (b === 'KOLKATA') {
-        where.OR = [
-          { invoiceNumber: { startsWith: 'PPSK/' } },
-          { invoiceNumber: { contains: 'KOL', mode: 'insensitive' } },
-          { order: { orderNumber: { startsWith: 'PPSK/' } } },
-          { order: { companyProfile: { companyName: { contains: 'Kolkata', mode: 'insensitive' } } } },
-          { order: { companyProfile: { state: { contains: 'Bengal', mode: 'insensitive' } } } },
-          { quotation: { referenceNumber: { startsWith: 'PPSK/' } } },
-        ];
-      } else if (b === 'MAIN') {
-        where.AND = [
-          { invoiceNumber: { not: { startsWith: 'PPSK/' } } },
-          { invoiceNumber: { not: { contains: 'KOL', mode: 'insensitive' } } },
-          { order: { orderNumber: { not: { startsWith: 'PPSK/' } } } },
-          { order: { companyProfile: { companyName: { not: { contains: 'Kolkata', mode: 'insensitive' } } } } },
-        ];
+      if (b === 'KOLKATA' || b === 'KOL') {
+        andClauses.push({
+          OR: [
+            { invoiceNumber: { startsWith: 'PPSK/' } },
+            { invoiceNumber: { contains: 'KOL' } },
+            { order: { orderNumber: { startsWith: 'PPSK/' } } },
+            { order: { companyProfileId: 'a25090ef-f6c0-407f-8b1e-1da8d506308c' } },
+            { order: { companyProfile: { companyName: { contains: 'Kolkata' } } } },
+            { order: { companyProfile: { state: { contains: 'Bengal' } } } },
+          ],
+        });
+      } else if (b === 'MAIN' || b === 'DELHI') {
+        andClauses.push({
+          NOT: [
+            { invoiceNumber: { startsWith: 'PPSK/' } },
+            { invoiceNumber: { contains: 'KOL' } },
+            { order: { orderNumber: { startsWith: 'PPSK/' } } },
+            { order: { companyProfileId: 'a25090ef-f6c0-407f-8b1e-1da8d506308c' } },
+            { order: { companyProfile: { companyName: { contains: 'Kolkata' } } } },
+            { order: { companyProfile: { state: { contains: 'Bengal' } } } },
+          ],
+        });
       }
     }
 
     if (query.search) {
-      where.OR = [
-        { invoiceNumber: { contains: query.search, mode: 'insensitive' } },
-        { notes: { contains: query.search, mode: 'insensitive' } },
-        { order: { orderNumber: { contains: query.search, mode: 'insensitive' } } },
-        { order: { customer: { legalName: { contains: query.search, mode: 'insensitive' } } } },
-      ];
+      andClauses.push({
+        OR: [
+          { invoiceNumber: { contains: query.search, mode: 'insensitive' } },
+          { notes: { contains: query.search, mode: 'insensitive' } },
+          { order: { orderNumber: { contains: query.search, mode: 'insensitive' } } },
+          { order: { customer: { legalName: { contains: query.search, mode: 'insensitive' } } } },
+        ],
+      });
     }
+
+    const where: any = andClauses.length > 0 ? { AND: andClauses } : {};
 
     const [items, total] = await Promise.all([
       prisma.invoice.findMany({

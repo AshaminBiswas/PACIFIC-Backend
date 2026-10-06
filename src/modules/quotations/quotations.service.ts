@@ -92,44 +92,55 @@ export const quotationsService = {
     const limit = Number(params?.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
-    if (params?.status) where.status = params.status;
-    if (params?.customerId) where.customerId = params.customerId;
+    const andClauses: any[] = [];
+    if (params?.status) andClauses.push({ status: params.status });
+    if (params?.customerId) andClauses.push({ customerId: params.customerId });
     if (params?.branch) {
       const b = params.branch.toUpperCase();
-      if (b === 'KOLKATA') {
-        where.OR = [
-          { referenceNumber: { startsWith: 'PPSK/' } },
-          { referenceNumber: { contains: 'KOL', mode: 'insensitive' } },
-          { companyProfile: { companyName: { contains: 'Kolkata', mode: 'insensitive' } } },
-          { companyProfile: { entityCode: { contains: 'KOL', mode: 'insensitive' } } },
-          { companyProfile: { state: { contains: 'Bengal', mode: 'insensitive' } } },
-          { companyProfile: { stateCode: '19' } },
-        ];
-      } else if (b === 'MAIN') {
-        where.AND = [
-          { referenceNumber: { not: { startsWith: 'PPSK/' } } },
-          { referenceNumber: { not: { contains: 'KOL', mode: 'insensitive' } } },
-          { companyProfile: { companyName: { not: { contains: 'Kolkata', mode: 'insensitive' } } } },
-          { companyProfile: { entityCode: { not: { contains: 'KOL', mode: 'insensitive' } } } },
-          { companyProfile: { state: { not: { contains: 'Bengal', mode: 'insensitive' } } } },
-          { companyProfile: { stateCode: { not: '19' } } },
-        ];
+      if (b === 'KOLKATA' || b === 'KOL') {
+        andClauses.push({
+          OR: [
+            { referenceNumber: { startsWith: 'PPSK/' } },
+            { referenceNumber: { contains: 'KOL' } },
+            { companyProfileId: 'a25090ef-f6c0-407f-8b1e-1da8d506308c' },
+            { companyProfile: { stateCode: '19' } },
+            { companyProfile: { entityCode: 'PPS-KOL' } },
+            { companyProfile: { companyName: { contains: 'Kolkata' } } },
+            { companyProfile: { state: { contains: 'Bengal' } } },
+          ],
+        });
+      } else if (b === 'MAIN' || b === 'DELHI') {
+        andClauses.push({
+          NOT: [
+            { referenceNumber: { startsWith: 'PPSK/' } },
+            { referenceNumber: { contains: 'KOL' } },
+            { companyProfileId: 'a25090ef-f6c0-407f-8b1e-1da8d506308c' },
+            { companyProfile: { stateCode: '19' } },
+            { companyProfile: { entityCode: 'PPS-KOL' } },
+            { companyProfile: { companyName: { contains: 'Kolkata' } } },
+            { companyProfile: { state: { contains: 'Bengal' } } },
+          ],
+        });
       }
     }
     if (params?.startDate || params?.endDate) {
-      where.date = {};
-      if (params.startDate) where.date.gte = new Date(params.startDate);
-      if (params.endDate) where.date.lte = new Date(params.endDate);
+      const dateCond: any = {};
+      if (params.startDate) dateCond.gte = new Date(params.startDate);
+      if (params.endDate) dateCond.lte = new Date(params.endDate);
+      andClauses.push({ date: dateCond });
     }
     if (params?.search) {
-      where.OR = [
-        { referenceNumber: { contains: params.search, mode: 'insensitive' } },
-        { projectName: { contains: params.search, mode: 'insensitive' } },
-        { recipientName: { contains: params.search, mode: 'insensitive' } },
-        { recipientCompany: { contains: params.search, mode: 'insensitive' } },
-      ];
+      andClauses.push({
+        OR: [
+          { referenceNumber: { contains: params.search, mode: 'insensitive' } },
+          { projectName: { contains: params.search, mode: 'insensitive' } },
+          { recipientName: { contains: params.search, mode: 'insensitive' } },
+          { recipientCompany: { contains: params.search, mode: 'insensitive' } },
+        ],
+      });
     }
+
+    const where: any = andClauses.length > 0 ? { AND: andClauses } : {};
 
     const [total, items] = await Promise.all([
       prisma.salesQuotation.count({ where }),

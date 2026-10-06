@@ -22,36 +22,52 @@ export const packingListsService = {
     const limit = Number(params?.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
-    if (params?.orderId) where.orderId = params.orderId;
-    if (params?.customerId) where.customerId = params.customerId;
-    if (params?.receiptStatus) where.receiptStatus = params.receiptStatus;
+    const andClauses: any[] = [];
+    if (params?.orderId) andClauses.push({ orderId: params.orderId });
+    if (params?.customerId) andClauses.push({ customerId: params.customerId });
+    if (params?.receiptStatus) andClauses.push({ receiptStatus: params.receiptStatus });
     if (params?.branch) {
       const b = params.branch.toUpperCase();
-      if (b === 'KOLKATA') {
-        where.OR = [
-          { packingListNumber: { startsWith: 'PPSK/' } },
-          { packingListNumber: { contains: 'KOL', mode: 'insensitive' } },
-          { companyProfile: { companyName: { contains: 'Kolkata', mode: 'insensitive' } } },
-          { companyProfile: { state: { contains: 'Bengal', mode: 'insensitive' } } },
-          { order: { orderNumber: { startsWith: 'PPSK/' } } },
-        ];
-      } else if (b === 'MAIN') {
-        where.AND = [
-          { packingListNumber: { not: { startsWith: 'PPSK/' } } },
-          { packingListNumber: { not: { contains: 'KOL', mode: 'insensitive' } } },
-          { companyProfile: { companyName: { not: { contains: 'Kolkata', mode: 'insensitive' } } } },
-        ];
+      if (b === 'KOLKATA' || b === 'KOL') {
+        andClauses.push({
+          OR: [
+            { packingListNumber: { startsWith: 'PPSK/' } },
+            { packingListNumber: { contains: 'KOL' } },
+            { companyProfileId: 'a25090ef-f6c0-407f-8b1e-1da8d506308c' },
+            { companyProfile: { stateCode: '19' } },
+            { companyProfile: { entityCode: 'PPS-KOL' } },
+            { companyProfile: { companyName: { contains: 'Kolkata' } } },
+            { companyProfile: { state: { contains: 'Bengal' } } },
+            { order: { orderNumber: { startsWith: 'PPSK/' } } },
+          ],
+        });
+      } else if (b === 'MAIN' || b === 'DELHI') {
+        andClauses.push({
+          NOT: [
+            { packingListNumber: { startsWith: 'PPSK/' } },
+            { packingListNumber: { contains: 'KOL' } },
+            { companyProfileId: 'a25090ef-f6c0-407f-8b1e-1da8d506308c' },
+            { companyProfile: { stateCode: '19' } },
+            { companyProfile: { entityCode: 'PPS-KOL' } },
+            { companyProfile: { companyName: { contains: 'Kolkata' } } },
+            { companyProfile: { state: { contains: 'Bengal' } } },
+            { order: { orderNumber: { startsWith: 'PPSK/' } } },
+          ],
+        });
       }
     }
     if (params?.search) {
-      where.OR = [
-        { packingListNumber: { contains: params.search, mode: 'insensitive' } },
-        { consignorName: { contains: params.search, mode: 'insensitive' } },
-        { shipToName: { contains: params.search, mode: 'insensitive' } },
-        { siteContactName: { contains: params.search, mode: 'insensitive' } },
-      ];
+      andClauses.push({
+        OR: [
+          { packingListNumber: { contains: params.search, mode: 'insensitive' } },
+          { consignorName: { contains: params.search, mode: 'insensitive' } },
+          { shipToName: { contains: params.search, mode: 'insensitive' } },
+          { siteContactName: { contains: params.search, mode: 'insensitive' } },
+        ],
+      });
     }
+
+    const where: any = andClauses.length > 0 ? { AND: andClauses } : {};
 
     const [total, items] = await Promise.all([
       prisma.packingList.count({ where }),
