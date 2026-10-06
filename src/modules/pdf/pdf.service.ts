@@ -569,8 +569,11 @@ export const pdfService = {
           <td class="qr-box">
             ${
               data.qrDataUrl
-                ? `<img src="${data.qrDataUrl}" width="70" height="70" alt="QR Verification" />`
-                : `<div style="width: 70px; height: 70px; border: 1px dashed #94a3b8; display: flex; align-items: center; justify-content: center; font-size: 9px; text-align: center;">Scan QR</div>`
+                ? `<div style="display: inline-block; text-align: center; background: #ffffff; padding: 3px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    <img src="${data.qrDataUrl}" width="80" height="80" alt="QR Verification" style="display: block; margin: 0 auto; border: none !important;" />
+                    <div style="font-size: 7px; font-weight: 700; color: #475569; margin-top: 1px; text-transform: uppercase;">Scan to Verify</div>
+                  </div>`
+                : `<div style="width: 80px; height: 80px; border: 1px dashed #94a3b8; display: flex; align-items: center; justify-content: center; font-size: 9px; text-align: center;">Scan QR</div>`
             }
           </td>
         </tr>
@@ -1108,10 +1111,11 @@ export const pdfService = {
           ${data.linkedPoNumber ? `<div style="margin: 2px 0; font-size: 10px;">PO Ref: <strong>${data.linkedPoNumber}</strong> ${data.linkedPoDate ? `(${new Date(data.linkedPoDate).toLocaleDateString('en-IN')})` : ''}</div>` : ''}
           ${data.modeOfTransport ? `<div style="margin: 2px 0; font-size: 9.5px;">Dispatch: ${data.modeOfTransport} ${data.vehicleNumber ? `| Veh: ${data.vehicleNumber}` : ''}</div>` : ''}
         </td>
-        <td style="width: 16%; vertical-align: top; text-align: right; padding-left: 6px;">
+        <td style="width: 18%; vertical-align: top; text-align: right; padding-left: 6px;">
           ${data.qrDataUrl ? `
-            <div style="display: inline-block; text-align: center;">
-              <img src="${data.qrDataUrl}" width="75" height="75" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; image-rendering: -webkit-optimize-contrast; image-rendering: pixelated;" />
+            <div style="display: inline-block; text-align: center; background: #ffffff; padding: 4px; border: 1px solid #cbd5e1; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
+              <img src="${data.qrDataUrl}" width="88" height="88" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; image-rendering: -webkit-optimize-contrast;" />
+              <div style="font-size: 7.5px; font-weight: 700; color: #475569; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.3px;">Scan to Verify</div>
             </div>
           ` : ''}
         </td>
@@ -1691,10 +1695,11 @@ export const pdfService = {
           <div style="margin: 2px 0; font-size: 10px;">Date: ${formattedDate}</div>
           <div style="margin: 2px 0; font-size: 10px;">Project: <strong>${data.projectName}</strong></div>
         </td>
-        <td style="width: 16%; vertical-align: top; text-align: right; padding-left: 6px;">
+        <td style="width: 18%; vertical-align: top; text-align: right; padding-left: 6px;">
           ${data.qrDataUrl ? `
-            <div style="display: inline-block; text-align: center;">
-              <img src="${data.qrDataUrl}" width="72" height="72" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important;" />
+            <div style="display: inline-block; text-align: center; background: #ffffff; padding: 4px; border: 1px solid #cbd5e1; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
+              <img src="${data.qrDataUrl}" width="88" height="88" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; image-rendering: -webkit-optimize-contrast;" />
+              <div style="font-size: 7.5px; font-weight: 700; color: #475569; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.3px;">Scan to Verify</div>
             </div>
           ` : ''}
         </td>
@@ -2049,7 +2054,12 @@ export const pdfService = {
           <p style="margin: 2px 0 0 0; font-size: 9px; color: #64748b;">Date: <strong>${formattedDate}</strong> | Valid Until: <strong>${validUntilDate}</strong></p>
         </td>
         <td style="width: 15%; text-align: right; vertical-align: middle; padding-left: 6px;">
-          ${data.qrDataUrl ? `<img src="${data.qrDataUrl}" width="65" height="65" alt="Verify QR" style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 2px; background: #fff;" />` : ''}
+          ${data.qrDataUrl ? `
+            <div style="display: inline-block; text-align: center; background: #ffffff; padding: 3px; border: 1px solid #cbd5e1; border-radius: 6px;">
+              <img src="${data.qrDataUrl}" width="80" height="80" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important;" />
+              <div style="font-size: 7px; font-weight: 700; color: #475569; margin-top: 1px; text-transform: uppercase;">Scan to Verify</div>
+            </div>
+          ` : ''}
         </td>
       </tr>
     </table>
@@ -2226,8 +2236,13 @@ export const pdfService = {
             <span>Date: <strong>${formattedDate}</strong></span>
           </div>
         </td>
-        <td style="width: 70px; text-align: right; vertical-align: middle;">
-          ${data.qrDataUrl ? `<img src="${data.qrDataUrl}" width="65" height="65" alt="Verify QR" style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px; background: #fff;" />` : ''}
+        <td style="width: 95px; text-align: right; vertical-align: middle;">
+          ${data.qrDataUrl ? `
+            <div style="display: inline-block; text-align: center; background: #ffffff; padding: 3px; border: 1px solid #cbd5e1; border-radius: 6px;">
+              <img src="${data.qrDataUrl}" width="82" height="82" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important;" />
+              <div style="font-size: 7px; font-weight: 700; color: #475569; margin-top: 1px; text-transform: uppercase;">Scan to Verify</div>
+            </div>
+          ` : ''}
         </td>
       </tr>
     </table>
@@ -2741,10 +2756,11 @@ export const pdfService = {
           ${data.quotationRef ? `<div style="margin: 2px 0; font-size: 9.5px;">Quote Ref: ${data.quotationRef}</div>` : ''}
           ${data.piNumber ? `<div style="margin: 2px 0; font-size: 9.5px;">PI Ref: ${data.piNumber}</div>` : ''}
         </td>
-        <td style="width: 16%; vertical-align: top; text-align: right; padding-left: 6px;">
+        <td style="width: 18%; vertical-align: top; text-align: right; padding-left: 6px;">
           ${data.qrDataUrl ? `
-            <div style="display: inline-block; text-align: center;">
-              <img src="${data.qrDataUrl}" width="75" height="75" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important;" />
+            <div style="display: inline-block; text-align: center; background: #ffffff; padding: 4px; border: 1px solid #cbd5e1; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
+              <img src="${data.qrDataUrl}" width="88" height="88" alt="Verify QR" style="display: block; margin: 0 auto; border: none !important; outline: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; image-rendering: -webkit-optimize-contrast;" />
+              <div style="font-size: 7.5px; font-weight: 700; color: #475569; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.3px;">Scan to Verify</div>
             </div>
           ` : ''}
         </td>

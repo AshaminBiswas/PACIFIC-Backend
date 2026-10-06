@@ -138,8 +138,8 @@ export const qrService = {
     let qrDataUrl = '';
     try {
       qrDataUrl = await QRCode.toDataURL(qrData, {
-        margin: 1,
-        width: 150,
+        margin: 4,
+        width: 360,
         errorCorrectionLevel: 'M',
         color: {
           dark: '#000000',
@@ -147,7 +147,7 @@ export const qrService = {
         },
       });
     } catch {
-      qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`;
+      qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=4&data=${encodeURIComponent(qrData)}`;
     }
     return { qrDataUrl, qrData, token: token! };
   },

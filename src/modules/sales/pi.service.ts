@@ -597,8 +597,8 @@ export const piService = {
       try {
         const fallbackVerifyUrl = `https://www.pacificproduct.in/verify/${encodeURIComponent(pi.piNumber)}`;
         qrDataUrl = await QRCode.toDataURL(fallbackVerifyUrl, {
-          margin: 1,
-          width: 150,
+          margin: 4,
+          width: 360,
           errorCorrectionLevel: 'M',
           color: { dark: '#000000', light: '#ffffff' },
         });
