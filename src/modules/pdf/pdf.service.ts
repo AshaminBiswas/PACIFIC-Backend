@@ -155,6 +155,8 @@ export interface QuotationPdfData {
   installationCharge?: number;
   installationRatePerCubicle?: number;
   installationCubicleCount?: number;
+  installationOption?: string;
+  installationCustomNote?: string;
   freightTerms: string;
   freightAmount?: number;
   gstRate: number;
@@ -1422,7 +1424,14 @@ export const pdfService = {
     const termsList: Array<{ label: string; text: string }> = [];
 
     if (data.generalTerms) {
-      termsList.push({ label: 'General Terms', text: data.generalTerms });
+      let gText = data.generalTerms;
+      if (!/installation/i.test(gText)) {
+        const installTerm = Number(data.installationCharge || 0) > 0
+          ? `4. Installation: Cubicle installation is charged @ ${data.currency || '₹'} ${(data.installationRatePerCubicle || 1000).toLocaleString('en-IN')}/cubicle.`
+          : `4. Installation: Cubicle installation is INCLUDED in the quoted basic price. Site readiness (finished floor level and plumb walls) required prior to installation.`;
+        gText = `${gText.trim()}\n${installTerm}`;
+      }
+      termsList.push({ label: 'General Terms', text: gText });
     } else {
       const cubCount = data.installationCubicleCount || data.items
         .filter(isCubiclePdfItem)
@@ -1430,10 +1439,10 @@ export const pdfService = {
       const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 && data.installationCharge ? Math.round(Number(data.installationCharge) / cubCount) : 0);
       const installTerm = ratePerCub > 0 && cubCount > 0
         ? `4. Installation: Cubicle installation is charged @ ${data.currency || '₹'} ${ratePerCub.toLocaleString('en-IN')}/cubicle for ${cubCount} cubicle${cubCount === 1 ? '' : 's'}. Site readiness (finished flooring, plumb walls, civil unloading, and electricity) required prior to installation.`
-        : `4. Site Readiness: Finished floor level and plumb walls required prior to installation.`;
+        : `4. Installation: Cubicle installation is INCLUDED in the quoted basic price. Site readiness (finished floor level and plumb walls) required prior to installation.`;
       termsList.push({
         label: 'General Terms',
-        text: `1. Price Basis: Ex-works New Delhi factory. 2. Taxes: GST as applicable at the time of invoice. 3. Unloading & Safe Storage: In buyer’s scope at site. ${installTerm}`,
+        text: `1. Price Basis: Ex-works New Delhi factory.\n2. Taxes: GST as applicable at the time of invoice.\n3. Unloading & Safe Storage: In buyer’s scope at site.\n${installTerm}`,
       });
     }
 
@@ -1793,23 +1802,66 @@ export const pdfService = {
             <td colspan="5" style="text-align: right; font-weight: 600;">Basic Price:</td>
             <td style="text-align: right; font-weight: bold;">${data.basicPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           </tr>
-          ${data.installationCharge ? `
-            <tr>
-              <td colspan="5" style="text-align: right;">
-                Cubicle Installation Charge${(() => {
-                  const cubicleCount = data.installationCubicleCount || data.items
-                    .filter(isCubiclePdfItem)
-                    .reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
-                  const ratePerCub = data.installationRatePerCubicle || (cubicleCount > 0 ? Math.round(Number(data.installationCharge) / cubicleCount) : 0);
-                  if (ratePerCub > 0 && cubicleCount > 0) {
-                    return ` (@ ${data.currency || '₹'} ${ratePerCub.toLocaleString('en-IN')}/Cubicle for ${cubicleCount} Cubicle${cubicleCount === 1 ? '' : 's'})`;
-                  }
-                  return '';
-                })()}:
-              </td>
-              <td style="text-align: right;">${data.installationCharge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            </tr>
-          ` : ''}
+          ${(() => {
+            const charge = Number(data.installationCharge || 0);
+            if (charge > 0) {
+              const cubicleCount = data.installationCubicleCount || data.items
+                .filter(isCubiclePdfItem)
+                .reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
+              const ratePerCub = data.installationRatePerCubicle || (cubicleCount > 0 ? Math.round(charge / cubicleCount) : 0);
+              const rateLabel = ratePerCub > 0 && cubicleCount > 0
+                ? ` (@ ${data.currency || '₹'} ${ratePerCub.toLocaleString('en-IN')}/Cubicle for ${cubicleCount} Cubicle${cubicleCount === 1 ? '' : 's'})`
+                : '';
+              return `
+                <tr>
+                  <td colspan="5" style="text-align: right;">
+                    Cubicle Installation Charge${rateLabel}:
+                  </td>
+                  <td style="text-align: right; font-weight: bold;">${charge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                </tr>
+              `;
+            }
+
+            const rawOpt = (data.installationOption || '').trim();
+            const lines = (data.generalTerms || '').split('\n');
+            const installLine = lines.find((l: string) => /installation/i.test(l)) || '';
+            const target = (rawOpt || installLine || data.generalTerms || '').toLowerCase();
+
+            let optLabel = 'Included in Basic Price (Free of Cost)';
+            let optBadge = 'Included';
+            let badgeColor = '#166534'; // green
+
+            if (rawOpt === 'Included' || (!rawOpt && (target.includes('included') || target.includes('f.o.c') || target.includes('free of cost')))) {
+              optLabel = 'Included in Basic Price (Free of Cost)';
+              optBadge = 'Included';
+              badgeColor = '#166534';
+            } else if (rawOpt === 'Extra to Pay' || (!rawOpt && (target.includes('extra to pay') || target.includes('payable extra') || target.includes('at actuals')))) {
+              optLabel = 'Extra to Pay (Payable at actuals by client)';
+              optBadge = 'Extra to Pay';
+              badgeColor = '#b45309';
+            } else if (rawOpt === 'Client Scope' || (!rawOpt && (target.includes("client's scope") || target.includes('client scope') || target.includes("buyer's scope") || target.includes("buyer’s scope")))) {
+              optLabel = "In Client's / Buyer's Scope (Pacific supply only)";
+              optBadge = "Client's Scope";
+              badgeColor = '#475569';
+            } else if (rawOpt === 'Not Applicable' || (!rawOpt && (target.includes('not applicable') || target.includes('supply only')))) {
+              optLabel = 'Not Applicable (Material Supply Only)';
+              optBadge = 'N/A';
+              badgeColor = '#475569';
+            } else if (rawOpt === 'Custom') {
+              optLabel = data.installationCustomNote ? data.installationCustomNote : 'Custom Terms / Scope';
+              optBadge = '-';
+              badgeColor = '#475569';
+            }
+
+            return `
+              <tr>
+                <td colspan="5" style="text-align: right;">
+                  Cubicle Installation: <strong>${optLabel}</strong>
+                </td>
+                <td style="text-align: right; color: ${badgeColor}; font-weight: bold;">${optBadge}</td>
+              </tr>
+            `;
+          })()}
           <tr>
             <td colspan="5" style="text-align: right;">
               Freight: ${data.freightTerms} ${data.freightAmount ? `(${data.currency} ${data.freightAmount.toLocaleString('en-IN')})` : ''}

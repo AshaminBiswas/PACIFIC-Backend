@@ -696,6 +696,41 @@ export const quotationsService = {
       })
     );
 
+    const installCharge = Number(quote.installationCharge || 0);
+    const cubCount = (quote.items || [])
+      .filter((it: any) => {
+        const desc = (it.description || '').toLowerCase();
+        const cat = ((it.customSpecsJson as any)?.systemCategory || '').toLowerCase();
+        return cat === 'cubicle' || desc.includes('cubicle') || desc.includes('delight') || desc.includes('classy') || desc.includes('regal');
+      })
+      .reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
+    const ratePerCub = installCharge > 0 && cubCount > 0 ? Math.round(installCharge / cubCount) : 0;
+
+    let installationOption: string = (quote as any).installationOption;
+    let installationCustomNote: string | undefined = (quote as any).installationCustomNote;
+
+    if (!installationOption) {
+      if (installCharge > 0) {
+        installationOption = 'Rate';
+      } else {
+        const lines = `${quote.generalTerms || ''}\n${quote.otherTerms || ''}`.split('\n');
+        const installLine = lines.find((l: string) => /installation/i.test(l)) || '';
+        const target = (installLine || `${quote.generalTerms || ''} ${quote.otherTerms || ''}`).toLowerCase();
+
+        if (target.includes('included') || target.includes('f.o.c') || target.includes('free of cost')) {
+          installationOption = 'Included';
+        } else if (target.includes('extra to pay') || target.includes('payable extra') || target.includes('at actuals')) {
+          installationOption = 'Extra to Pay';
+        } else if (target.includes("client's scope") || target.includes('client scope') || target.includes("buyer's scope") || target.includes("buyer’s scope")) {
+          installationOption = 'Client Scope';
+        } else if (target.includes('not applicable') || target.includes('supply only')) {
+          installationOption = 'Not Applicable';
+        } else {
+          installationOption = 'Included';
+        }
+      }
+    }
+
     return pdfService.generateQuotationPdfHtml({
       referenceNumber: quote.referenceNumber,
       revisionNumber: quote.revisionNumber,
@@ -738,7 +773,11 @@ export const quotationsService = {
         modelName: (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.modelName || undefined,
       })),
       basicPrice: Number(quote.basicPrice),
-      installationCharge: Number(quote.installationCharge),
+      installationCharge: installCharge,
+      installationRatePerCubicle: ratePerCub,
+      installationCubicleCount: cubCount,
+      installationOption,
+      installationCustomNote,
       freightTerms: quote.freightTerms,
       freightAmount: Number(quote.freightAmount),
       gstRate: Number(quote.gstRate),
