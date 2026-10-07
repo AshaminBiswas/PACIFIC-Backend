@@ -675,6 +675,8 @@ model ProformaInvoice {
   installationCharge      Decimal?          @db.Decimal(12, 2) @default(0)
   installationRatePerCubicle Decimal?       @db.Decimal(10, 2)
   installationCubicleCount Int?
+  installationOption      String?           @default("Included")
+  installationCustomNote  String?
   taxableAmount           Decimal           @db.Decimal(12, 2) @default(0)
   cgstAmount              Decimal           @db.Decimal(12, 2) @default(0)
   sgstAmount              Decimal           @db.Decimal(12, 2) @default(0)
