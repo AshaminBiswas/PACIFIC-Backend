@@ -250,6 +250,8 @@ export const piService = {
           gstRate: Number(it.gstRate ?? 18),
         })),
         freightAmount: Number(data.freightAmount) || 0,
+        installationCharge: Number(data.installationCharge) || 0,
+        installationGstRate: Number(data.installationGstRate ?? 18),
         isReverseCharge: Boolean(data.reverseCharge),
       });
 
@@ -284,6 +286,9 @@ export const piService = {
           linkedPoDate: data.linkedPoDate ? new Date(data.linkedPoDate) : undefined,
           subtotal: taxResult.subtotal,
           freightAmount: taxResult.freightAmount,
+          installationCharge: taxResult.installationCharge,
+          installationRatePerCubicle: data.installationRatePerCubicle !== undefined && data.installationRatePerCubicle !== null ? Number(data.installationRatePerCubicle) : null,
+          installationCubicleCount: data.installationCubicleCount !== undefined && data.installationCubicleCount !== null ? Number(data.installationCubicleCount) : null,
           taxableAmount: taxResult.totalTaxableAmount,
           cgstAmount: taxResult.cgstAmount,
           sgstAmount: taxResult.sgstAmount,
@@ -510,6 +515,9 @@ export const piService = {
         modeOfTransport: original.modeOfTransport,
         vehicleNumber: original.vehicleNumber,
         freightAmount: Number(original.freightAmount),
+        installationCharge: original.installationCharge != null ? Number(original.installationCharge) : 0,
+        installationRatePerCubicle: original.installationRatePerCubicle != null ? Number(original.installationRatePerCubicle) : undefined,
+        installationCubicleCount: original.installationCubicleCount != null ? Number(original.installationCubicleCount) : undefined,
         billTo: original.parties.find((p) => p.partyRole === 'BILL_TO'),
         shipTo: original.parties.find((p) => p.partyRole === 'SHIP_TO'),
         items: original.items.map((it) => ({
@@ -716,7 +724,10 @@ export const piService = {
         totalTax: Number(ts.totalTax),
       })),
       subtotal: Number(pi.subtotal),
-      freightAmount: Number(pi.freightAmount),
+      freightAmount: Number(pi.freightAmount || 0),
+      installationCharge: pi.installationCharge != null ? Number(pi.installationCharge) : 0,
+      installationRatePerCubicle: pi.installationRatePerCubicle != null ? Number(pi.installationRatePerCubicle) : undefined,
+      installationCubicleCount: pi.installationCubicleCount != null ? Number(pi.installationCubicleCount) : undefined,
       cgstAmount: Number(pi.cgstAmount),
       sgstAmount: Number(pi.sgstAmount),
       igstAmount: Number(pi.igstAmount),
@@ -766,6 +777,15 @@ export const piService = {
       let itemsUpdate: any = undefined;
       let taxSummaryUpdate: any = undefined;
       let subtotal = Number(existing.subtotal);
+      let taxableAmount = Number(existing.taxableAmount);
+      let freightAmountToSet = data.freightAmount !== undefined ? Number(data.freightAmount) : Number(existing.freightAmount || 0);
+      let installationChargeToSet = data.installationCharge !== undefined ? Number(data.installationCharge) : Number(existing.installationCharge || 0);
+      let installationRatePerCubicleToSet = data.installationRatePerCubicle !== undefined
+        ? (data.installationRatePerCubicle != null ? Number(data.installationRatePerCubicle) : null)
+        : (existing.installationRatePerCubicle != null ? Number(existing.installationRatePerCubicle) : null);
+      let installationCubicleCountToSet = data.installationCubicleCount !== undefined
+        ? (data.installationCubicleCount != null ? Number(data.installationCubicleCount) : null)
+        : existing.installationCubicleCount;
       let totalTaxAmount = Number(existing.totalTaxAmount);
       let grandTotal = Number(existing.grandTotal);
       let amountInWords = existing.amountInWords;
@@ -774,10 +794,14 @@ export const piService = {
       let igstAmount = Number(existing.igstAmount);
       let roundingAdjustment = Number(existing.roundingAdjustment);
 
-      if (data.items && Array.isArray(data.items)) {
-        await tx.proformaInvoiceItem.deleteMany({ where: { piId: id } });
-        await tx.proformaInvoiceTaxSummary.deleteMany({ where: { piId: id } });
+      const hasNewItems = Boolean(data.items && Array.isArray(data.items));
+      const shouldRecalculateTax = hasNewItems ||
+        data.freightAmount !== undefined ||
+        data.installationCharge !== undefined ||
+        data.placeOfSupplyStateCode !== undefined ||
+        data.companyProfileId !== undefined;
 
+      if (shouldRecalculateTax) {
         let originStateCode = (existing.companyProfile?.stateCode || '07').trim();
         if (data.companyProfileId && data.companyProfileId !== existing.companyProfileId) {
           const newComp = await prisma.companyProfile.findUnique({ where: { id: data.companyProfileId } });
@@ -793,47 +817,62 @@ export const piService = {
           destinationStateCode = destinationStateCode || (isDelhi ? '07' : originStateCode);
         }
 
+        const itemsToCalculate = hasNewItems
+          ? rawItems.map((it: any) => ({
+              productId: (it.productId && validProductMap.has(it.productId)) ? it.productId : null,
+              description: it.description,
+              quantity: Number(it.quantity) || 1,
+              rate: Number(it.rate) || 0,
+              gstRate: Number(it.gstRate ?? 18),
+            }))
+          : existing.items.map((it: any) => ({
+              productId: it.productId,
+              description: it.description,
+              quantity: Number(it.quantity) || 1,
+              rate: Number(it.rate) || 0,
+              gstRate: Number(it.gstRate ?? 18),
+            }));
+
         const taxCalc = calculateGstTax({
           sellerStateCode: originStateCode,
           placeOfSupplyStateCode: destinationStateCode,
           buyerGstin,
-          items: rawItems.map((it: any) => ({
-            productId: (it.productId && validProductMap.has(it.productId)) ? it.productId : null,
-            description: it.description,
-            quantity: Number(it.quantity) || 1,
-            rate: Number(it.rate) || 0,
-            gstRate: Number(it.gstRate ?? 18),
-          })),
-          freightAmount: Number(data.freightAmount ?? existing.freightAmount) || 0,
+          items: itemsToCalculate,
+          freightAmount: freightAmountToSet,
+          installationCharge: installationChargeToSet,
           isReverseCharge: Boolean(data.reverseCharge ?? existing.reverseCharge),
         });
 
-        itemsUpdate = {
-          create: taxCalc.items.map((it: any, idx: number) => ({
-            serialNumber: idx + 1,
-            productId: (rawItems[idx]?.productId && validProductMap.has(rawItems[idx]?.productId)) ? rawItems[idx]?.productId : null,
-            description: it.description,
-            hsnSac: rawItems[idx]?.hsnSac || '94032090',
-            quantity: it.quantity,
-            unit: rawItems[idx]?.unit || 'NOS',
-            rate: it.rate,
-            taxableAmount: it.taxableAmount,
-            gstRate: it.gstRate,
-            cgst: it.cgst,
-            sgst: it.sgst,
-            igst: it.igst,
-            totalAmount: it.totalAmount,
-            amount: it.amount,
-            boardType: rawItems[idx]?.boardType || null,
-            boardThickness: rawItems[idx]?.boardThickness || null,
-            boardColor: rawItems[idx]?.boardColor || null,
-            cubicleSize: rawItems[idx]?.cubicleSize || null,
-            doorSize: rawItems[idx]?.doorSize || null,
-            overallHeight: rawItems[idx]?.overallHeight || null,
-            hardwarePackage: rawItems[idx]?.hardwarePackage || null,
-          })),
-        };
+        if (hasNewItems) {
+          await tx.proformaInvoiceItem.deleteMany({ where: { piId: id } });
+          itemsUpdate = {
+            create: taxCalc.items.map((it: any, idx: number) => ({
+              serialNumber: idx + 1,
+              productId: (rawItems[idx]?.productId && validProductMap.has(rawItems[idx]?.productId)) ? rawItems[idx]?.productId : null,
+              description: it.description,
+              hsnSac: rawItems[idx]?.hsnSac || '94032090',
+              quantity: it.quantity,
+              unit: rawItems[idx]?.unit || 'NOS',
+              rate: it.rate,
+              taxableAmount: it.taxableAmount,
+              gstRate: it.gstRate,
+              cgst: it.cgst,
+              sgst: it.sgst,
+              igst: it.igst,
+              totalAmount: it.totalAmount,
+              amount: it.amount,
+              boardType: rawItems[idx]?.boardType || null,
+              boardThickness: rawItems[idx]?.boardThickness || null,
+              boardColor: rawItems[idx]?.boardColor || null,
+              cubicleSize: rawItems[idx]?.cubicleSize || null,
+              doorSize: rawItems[idx]?.doorSize || null,
+              overallHeight: rawItems[idx]?.overallHeight || null,
+              hardwarePackage: rawItems[idx]?.hardwarePackage || null,
+            })),
+          };
+        }
 
+        await tx.proformaInvoiceTaxSummary.deleteMany({ where: { piId: id } });
         taxSummaryUpdate = {
           create: taxCalc.taxSummary.map((ts: any) => ({
             gstRate: ts.gstRate,
@@ -846,6 +885,9 @@ export const piService = {
         };
 
         subtotal = taxCalc.subtotal;
+        taxableAmount = taxCalc.totalTaxableAmount;
+        freightAmountToSet = taxCalc.freightAmount;
+        installationChargeToSet = taxCalc.installationCharge;
         cgstAmount = taxCalc.cgstAmount;
         sgstAmount = taxCalc.sgstAmount;
         igstAmount = taxCalc.igstAmount;
@@ -869,6 +911,11 @@ export const piService = {
           linkedPoDate: data.linkedPoDate ? new Date(data.linkedPoDate) : existing.linkedPoDate,
           status: data.status ?? existing.status,
           subtotal,
+          freightAmount: freightAmountToSet,
+          taxableAmount,
+          installationCharge: installationChargeToSet,
+          installationRatePerCubicle: installationRatePerCubicleToSet,
+          installationCubicleCount: installationCubicleCountToSet,
           cgstAmount,
           sgstAmount,
           igstAmount,

@@ -19,6 +19,8 @@ export interface TaxCalculationParams {
   items: TaxLineItemInput[];
   freightAmount?: number;
   freightGstRate?: number;
+  installationCharge?: number;
+  installationGstRate?: number;
   isReverseCharge?: boolean;
 }
 
@@ -51,6 +53,8 @@ export interface TaxCalculationResult {
   subtotal: number;
   freightAmount: number;
   freightTax: number;
+  installationCharge: number;
+  installationTax: number;
   totalTaxableAmount: number;
   cgstAmount: number;
   sgstAmount: number;
@@ -186,7 +190,40 @@ export function calculateGstTax(params: TaxCalculationParams): TaxCalculationRes
     summaryBuckets.set(freightGstRate, fBucket);
   }
 
-  const totalTaxableAmount = round2(subtotal + freightAmount);
+  // Installation handling
+  const installationCharge = round2(Math.max(0, Number(params.installationCharge) || 0));
+  let installationTax = 0;
+  if (installationCharge > 0) {
+    const installationGstRate = Number(params.installationGstRate ?? 18);
+    let installCgst = 0;
+    let installSgst = 0;
+    let installIgst = 0;
+
+    if (!isReverseCharge && installationGstRate > 0) {
+      if (isIntraState) {
+        const halfRate = installationGstRate / 2;
+        installCgst = round2(installationCharge * (halfRate / 100));
+        installSgst = round2(installationCharge * (halfRate / 100));
+      } else {
+        installIgst = round2(installationCharge * (installationGstRate / 100));
+      }
+    }
+
+    installationTax = round2(installCgst + installSgst + installIgst);
+    totalCgst = round2(totalCgst + installCgst);
+    totalSgst = round2(totalSgst + installSgst);
+    totalIgst = round2(totalIgst + installIgst);
+
+    const iBucket = summaryBuckets.get(installationGstRate) || { taxable: 0, cgst: 0, sgst: 0, igst: 0, totalTax: 0 };
+    iBucket.taxable = round2(iBucket.taxable + installationCharge);
+    iBucket.cgst = round2(iBucket.cgst + installCgst);
+    iBucket.sgst = round2(iBucket.sgst + installSgst);
+    iBucket.igst = round2(iBucket.igst + installIgst);
+    iBucket.totalTax = round2(iBucket.totalTax + installationTax);
+    summaryBuckets.set(installationGstRate, iBucket);
+  }
+
+  const totalTaxableAmount = round2(subtotal + freightAmount + installationCharge);
   const totalTaxAmount = round2(totalCgst + totalSgst + totalIgst);
 
   // Exact unrounded grand total
@@ -214,6 +251,8 @@ export function calculateGstTax(params: TaxCalculationParams): TaxCalculationRes
     subtotal,
     freightAmount,
     freightTax,
+    installationCharge,
+    installationTax,
     totalTaxableAmount,
     cgstAmount: totalCgst,
     sgstAmount: totalSgst,

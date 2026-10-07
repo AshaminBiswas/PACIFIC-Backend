@@ -1103,6 +1103,9 @@ async function run() {
       ALTER TABLE proforma_invoices ADD COLUMN IF NOT EXISTS "advancePaymentReference" TEXT;
       ALTER TABLE proforma_invoices ADD COLUMN IF NOT EXISTS "advancePaymentMode" TEXT;
       ALTER TABLE proforma_invoices ADD COLUMN IF NOT EXISTS "convertedOrderId" TEXT;
+      ALTER TABLE proforma_invoices ADD COLUMN IF NOT EXISTS "installationCharge" NUMERIC(12, 2) DEFAULT 0;
+      ALTER TABLE proforma_invoices ADD COLUMN IF NOT EXISTS "installationRatePerCubicle" NUMERIC(10, 2);
+      ALTER TABLE proforma_invoices ADD COLUMN IF NOT EXISTS "installationCubicleCount" INT;
 
       -- Sales Orders: Proforma links
       ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS "proformaInvoiceId" TEXT;

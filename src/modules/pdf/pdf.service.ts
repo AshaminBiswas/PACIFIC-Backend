@@ -803,7 +803,22 @@ export const pdfService = {
       (data.terms.length <= 5 &&
         data.terms.some((t) => t.toLowerCase().includes('goods once sold will not be taken back')));
 
-    const termsToDisplay = isOldGenericTerms ? defaultTerms : data.terms;
+    const termsToDisplay = [...(isOldGenericTerms ? defaultTerms : data.terms)];
+
+    const installChargeNum = Number(data.installationCharge || 0);
+    if (installChargeNum > 0) {
+      const hasInstallTerm = termsToDisplay.some((t) => t.toLowerCase().includes('installation'));
+      if (!hasInstallTerm) {
+        const cubCount = data.installationCubicleCount || data.items
+          .filter(isCubiclePdfItem)
+          .reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
+        const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 ? Math.round(installChargeNum / cubCount) : 0);
+        const installTerm = ratePerCub > 0 && cubCount > 0
+          ? `Installation: Cubicle installation is charged @ ${currSym} ${ratePerCub.toLocaleString('en-IN')}/cubicle for ${cubCount} cubicle${cubCount === 1 ? '' : 's'}. Site readiness (finished flooring, plumb walls, civil unloading, and electricity) required prior to installation.`
+          : `Installation: Cubicle installation is charged at ${currSym} ${installChargeNum.toLocaleString('en-IN')}. Site readiness required prior to installation.`;
+        termsToDisplay.push(installTerm);
+      }
+    }
 
     const defaultBank = {
       bankName: 'Central Bank Of India',
@@ -1165,7 +1180,7 @@ export const pdfService = {
             <td colspan="6" style="text-align: right; font-weight: bold;">Basic Price / Subtotal:</td>
             <td style="text-align: right; font-weight: bold;">${data.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           </tr>
-          ${data.installationCharge && data.installationCharge > 0 ? `
+          ${Number(data.installationCharge || 0) > 0 ? `
             <tr>
               <td colspan="6" style="text-align: right;">
                 Cubicle Installation Charges${(() => {
@@ -1179,10 +1194,10 @@ export const pdfService = {
               <td style="text-align: right;">${Number(data.installationCharge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
             </tr>
           ` : ''}
-          ${data.freightAmount > 0 ? `
+          ${Number(data.freightAmount || 0) > 0 ? `
             <tr>
               <td colspan="6" style="text-align: right;">Freight & Handling:</td>
-              <td style="text-align: right;">${data.freightAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              <td style="text-align: right;">${Number(data.freightAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
             </tr>
           ` : ''}
           ${(() => {
