@@ -87,6 +87,8 @@ export const quotationsService = {
     page?: number;
     limit?: number;
     branch?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc' | string;
   }) {
     const page = Number(params?.page) || 1;
     const limit = Number(params?.limit) || 20;
@@ -142,13 +144,28 @@ export const quotationsService = {
 
     const where: any = andClauses.length > 0 ? { AND: andClauses } : {};
 
+    const sortOrder: 'asc' | 'desc' = (params?.sortOrder?.toLowerCase() === 'asc') ? 'asc' : 'desc';
+    const sortBy: string = params?.sortBy || 'date';
+    let orderBy: any[];
+    if (sortBy === 'date') {
+      orderBy = [{ date: sortOrder }, { createdAt: sortOrder }, { id: 'desc' }];
+    } else if (sortBy === 'createdAt') {
+      orderBy = [{ createdAt: sortOrder }, { id: 'desc' }];
+    } else if (sortBy === 'referenceNumber' || sortBy === 'quotationNumber') {
+      orderBy = [{ referenceNumber: sortOrder }, { id: 'desc' }];
+    } else if (sortBy === 'grandTotal') {
+      orderBy = [{ grandTotal: sortOrder }, { date: 'desc' }, { id: 'desc' }];
+    } else {
+      orderBy = [{ [sortBy]: sortOrder }, { id: 'desc' }];
+    }
+
     const [total, items] = await Promise.all([
       prisma.salesQuotation.count({ where }),
       prisma.salesQuotation.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { date: 'desc' },
+        orderBy,
         include: {
           customer: true,
           companyProfile: true,
