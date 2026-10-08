@@ -8,6 +8,8 @@ const router = Router();
 router.get('/payments', requireAuth, requirePermission('payment:view'), financeController.listPayments);
 router.get('/payments/:id', requireAuth, requirePermission('payment:view'), financeController.getPaymentById);
 router.post('/payments', requireAuth, requirePermission('payment:create'), financeController.recordPayment);
+router.patch('/payments/:id', requireAuth, requirePermission('payment:create'), financeController.updatePayment);
+router.delete('/payments/:id', requireAuth, requirePermission('payment:create'), financeController.deletePayment);
 router.get('/receivables', requireAuth, requirePermission('payment:view'), financeController.getReceivables);
 router.get('/payables', requireAuth, requirePermission('payment:view'), financeController.getPayables);
 router.get('/summary', requireAuth, requirePermission('payment:view'), financeController.getLedgerSummary);

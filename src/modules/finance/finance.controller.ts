@@ -36,6 +36,24 @@ export const financeController = {
     }
   },
 
+  async updatePayment(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const data = await financeService.updatePayment(req.params.id, req.body, req.user?.id);
+      res.json({ success: true, data, message: 'Payment updated successfully' });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async deletePayment(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const data = await financeService.deletePayment(req.params.id, req.user?.id);
+      res.json({ success: true, data, message: 'Payment deleted successfully' });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async getReceivables(req: Request, res: Response, next: NextFunction) {
     try {
       const data = await financeService.getReceivables({ status: req.query.status as string });

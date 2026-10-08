@@ -1035,8 +1035,86 @@ export const piService = {
       return { success: true };
     }
 
-    // 1. Clean up payment allocations & receivables
-    await prisma.paymentAllocation.deleteMany({ where: { proformaInvoiceId: id } }).catch(() => {});
+    // 1. Find and cleanly delete all payments linked to this PI (advance payments and allocated receipts)
+    const linkedAllocations = await prisma.paymentAllocation.findMany({
+      where: {
+        OR: [
+          { proformaInvoiceId: id },
+          { documentType: 'PI', documentId: id },
+        ],
+      },
+      include: {
+        payment: {
+          include: { allocations: true },
+        },
+      },
+    }).catch(() => []);
+
+    // Also find payments recorded for this customer that explicitly reference this PI by number or advance ref
+    const directNotePayments = await prisma.payment.findMany({
+      where: {
+        partyId: existing.customerId,
+        OR: [
+          { notes: { contains: existing.piNumber } },
+          ...(existing.advancePaymentReference ? [{ referenceNumber: existing.advancePaymentReference }] : []),
+        ],
+      },
+      include: { allocations: true },
+    }).catch(() => []);
+
+    // Collect distinct payment records
+    const paymentMap = new Map<string, any>();
+    linkedAllocations.forEach((a: any) => {
+      if (a.payment) paymentMap.set(a.payment.id, a.payment);
+    });
+    directNotePayments.forEach((p: any) => {
+      paymentMap.set(p.id, p);
+    });
+
+    for (const payment of paymentMap.values()) {
+      // Check if this payment is solely for this PI (or has 0 other allocations)
+      const otherAllocations = (payment.allocations || []).filter(
+        (a: any) => a.proformaInvoiceId !== id && !(a.documentType === 'PI' && a.documentId === id)
+      );
+
+      if (otherAllocations.length === 0 || payment.paymentType === 'ADVANCE') {
+        // Payment is purely for this PI -> Delete transactions, allocations, and the payment itself!
+        await prisma.financialTransaction.deleteMany({ where: { paymentId: payment.id } }).catch(() => {});
+        await prisma.paymentAllocation.deleteMany({ where: { paymentId: payment.id } }).catch(() => {});
+        await prisma.payment.delete({ where: { id: payment.id } }).catch(() => {});
+      } else {
+        // Payment has allocations to other documents -> Delete only this PI's allocation and restore unallocated balance
+        const thisPiAllocTotal = (payment.allocations || [])
+          .filter((a: any) => a.proformaInvoiceId === id || (a.documentType === 'PI' && a.documentId === id))
+          .reduce((sum: number, a: any) => sum + Number(a.allocatedAmount || 0), 0);
+
+        await prisma.paymentAllocation.deleteMany({
+          where: {
+            paymentId: payment.id,
+            OR: [
+              { proformaInvoiceId: id },
+              { documentType: 'PI', documentId: id },
+            ],
+          },
+        }).catch(() => {});
+
+        const newUnallocated = Number(payment.unallocatedAmount || 0) + thisPiAllocTotal;
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: { unallocatedAmount: newUnallocated },
+        }).catch(() => {});
+      }
+    }
+
+    // Clean up any remaining allocations & receivables for this PI
+    await prisma.paymentAllocation.deleteMany({
+      where: {
+        OR: [
+          { proformaInvoiceId: id },
+          { documentType: 'PI', documentId: id },
+        ],
+      },
+    }).catch(() => {});
     await prisma.receivableEntry.deleteMany({ where: { proformaInvoiceId: id } }).catch(() => {});
 
     // 2. Clean up payment followups & their logs

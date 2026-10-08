@@ -142,6 +142,7 @@ export const crmService = {
     // 6. Payments
     const payments = await prisma.payment.findMany({
       where: { partyId: id, paymentType: { in: ['CUSTOMER_PAYMENT', 'ADVANCE'] } },
+      include: { allocations: { include: { proformaInvoice: true } } },
       orderBy: { paymentDate: 'desc' },
     });
 
@@ -299,7 +300,7 @@ export const crmService = {
       recentOrders: orders.slice(0, 5),
       recentQuotations: quotations.slice(0, 5),
       recentPackingLists: packingLists.slice(0, 5),
-      recentPayments: payments.slice(0, 5),
+      recentPayments: payments.slice(0, 50),
       activeFollowups: followups,
       timeline,
     };
