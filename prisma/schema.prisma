@@ -672,6 +672,8 @@ model ProformaInvoice {
   linkedPoDate            DateTime?
   subtotal                Decimal           @db.Decimal(12, 2) @default(0)
   freightAmount           Decimal           @db.Decimal(12, 2) @default(0)
+  freightTerms            String?           @default("Extra as Actual / To pay")
+  freightCustomNote       String?
   installationCharge      Decimal?          @db.Decimal(12, 2) @default(0)
   installationRatePerCubicle Decimal?       @db.Decimal(10, 2)
   installationCubicleCount Int?
