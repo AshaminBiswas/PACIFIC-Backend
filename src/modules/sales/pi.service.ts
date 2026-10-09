@@ -24,7 +24,18 @@ async function fetchImageAsDataUri(url: string): Promise<string> {
 }
 
 export const piService = {
-  async list(query: { page?: number; limit?: number; status?: string; customerId?: string; search?: string; branch?: string }) {
+  async list(query: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    customerId?: string;
+    search?: string;
+    branch?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    fromDate?: string;
+    toDate?: string;
+  }) {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
     const skip = (page - 1) * limit;
@@ -32,6 +43,16 @@ export const piService = {
     const andClauses: any[] = [];
     if (query.status) andClauses.push({ status: query.status });
     if (query.customerId) andClauses.push({ customerId: query.customerId });
+    if (query.fromDate || query.toDate) {
+      const dateClause: any = {};
+      if (query.fromDate) dateClause.gte = new Date(query.fromDate);
+      if (query.toDate) {
+        const toD = new Date(query.toDate);
+        toD.setHours(23, 59, 59, 999);
+        dateClause.lte = toD;
+      }
+      andClauses.push({ piDate: dateClause });
+    }
     if (query.branch) {
       const b = query.branch.toUpperCase();
       if (b === 'KOLKATA' || b === 'KOL') {
@@ -72,6 +93,17 @@ export const piService = {
 
     const where: any = andClauses.length > 0 ? { AND: andClauses } : {};
 
+    const sortOrder: 'asc' | 'desc' = query.sortOrder === 'asc' ? 'asc' : 'desc';
+    const sortBy = query.sortBy || 'piDate';
+    let orderBy: any = [{ piDate: sortOrder }, { createdAt: sortOrder }, { id: 'desc' }];
+    if (sortBy === 'createdAt') {
+      orderBy = [{ createdAt: sortOrder }, { id: 'desc' }];
+    } else if (sortBy === 'piNumber') {
+      orderBy = [{ piNumber: sortOrder }, { id: 'desc' }];
+    } else if (sortBy === 'grandTotal') {
+      orderBy = [{ grandTotal: sortOrder }, { id: 'desc' }];
+    }
+
     const [items, total] = await Promise.all([
       prisma.proformaInvoice.findMany({
         where,
@@ -84,7 +116,7 @@ export const piService = {
           createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
           issuedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
         },
-        orderBy: { piDate: 'desc' },
+        orderBy,
         skip,
         take: limit,
       }),

@@ -212,6 +212,15 @@ export const quotationsController = {
     }
   },
 
+  async updateFollowupStatus(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const data = await quotationsService.updateFollowupStatus(req.params.id, req.body, req.user?.id);
+      res.json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async sendFollowupEmail(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const result = await quotationsService.sendFollowupEmail(req.params.id, req.body, req.user?.id);

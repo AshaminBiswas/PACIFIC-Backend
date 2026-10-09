@@ -22,6 +22,7 @@ router.post('/:id/send', requireAuth, requirePermission('quotation:send'), quota
 router.post('/:id/send-email', requireAuth, requirePermission('quotation:send'), quotationsController.sendEmail);
 router.get('/:id/follow-ups', quotationsController.getFollowups);
 router.post('/:id/follow-ups', requireAuth, requirePermission('quotation:edit'), quotationsController.createFollowup);
+router.patch('/:id/follow-up-status', requireAuth, requirePermission('quotation:edit'), quotationsController.updateFollowupStatus);
 router.post('/:id/send-followup-email', requireAuth, requirePermission('quotation:send'), quotationsController.sendFollowupEmail);
 router.post('/:id/convert-to-pi', requireAuth, requirePermission('quotation:edit'), quotationsController.convertToPI);
 router.post('/:id/convert-to-order', requireAuth, requirePermission('quotation:edit'), quotationsController.convertToOrder);

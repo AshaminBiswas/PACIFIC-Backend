@@ -12,6 +12,10 @@ export const piController = {
         customerId: req.query.customerId as string,
         search: req.query.search as string,
         branch: req.query.branch as string,
+        sortBy: req.query.sortBy as string,
+        sortOrder: req.query.sortOrder as 'asc' | 'desc',
+        fromDate: req.query.fromDate as string,
+        toDate: req.query.toDate as string,
       });
       res.json({ success: true, data });
     } catch (err) {

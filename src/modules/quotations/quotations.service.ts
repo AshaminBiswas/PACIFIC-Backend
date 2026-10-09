@@ -176,13 +176,18 @@ export const quotationsService = {
       }),
     ]);
 
+    const totalPages = Math.ceil(total / limit);
     return {
       items: items.map(formatQuotationOutput),
+      total,
+      page,
+      limit,
+      totalPages,
       pagination: {
         total,
         page,
         limit,
-        totalPages: Math.ceil(total / limit),
+        totalPages,
       },
     };
   },
@@ -1011,6 +1016,8 @@ export const quotationsService = {
         deliveryTerms: updateData.deliveryTerms ?? existing.deliveryTerms,
         statutoryComplianceTerms: updateData.statutoryComplianceTerms ?? existing.statutoryComplianceTerms,
         status: updateData.status ?? existing.status,
+        ...(updateData.followupStatus !== undefined ? { followupStatus: updateData.followupStatus } : {}),
+        ...(updateData.nextFollowupDate !== undefined ? { nextFollowupDate: updateData.nextFollowupDate ? new Date(updateData.nextFollowupDate) : null } : {}),
         ...(itemsUpdate ? { items: itemsUpdate } : {}),
       },
       include: { items: true, customer: true },
@@ -1179,6 +1186,84 @@ export const quotationsService = {
         entityId: followup.id,
         newData: { channel, status, discussionNotes: data.discussionNotes, nextFollowupDate: nextFollowup },
       });
+    }
+
+    return {
+      followup,
+      quotation: formatQuotationOutput(updatedQuote),
+    };
+  },
+
+  async updateFollowupStatus(
+    id: string,
+    data: {
+      followupStatus: string;
+      nextFollowupDate?: string | null;
+      notes?: string;
+      channel?: string;
+    },
+    userId?: string
+  ) {
+    const existing = await prisma.salesQuotation.findUnique({
+      where: { id },
+      include: { customer: true },
+    });
+    if (!existing) throw new Error('Sales Quotation not found');
+
+    const nextFollowup = data.nextFollowupDate ? new Date(data.nextFollowupDate) : null;
+    const followupStatus = data.followupStatus || 'COMPLETED';
+    const channel = (data.channel || 'CALL') as any;
+
+    const followup = await prisma.quotationFollowup.create({
+      data: {
+        id: uuidv4(),
+        quotationId: id,
+        channel,
+        status: (['PENDING', 'SCHEDULED', 'COMPLETED', 'INTERESTED', 'PRICE_NEGOTIATION', 'CALLBACK_REQUESTED', 'NO_ANSWER', 'ORDER_CONFIRMED', 'DROPPED', 'PAUSED'].includes(followupStatus)
+          ? followupStatus
+          : 'COMPLETED') as any,
+        discussionNotes: data.notes || (nextFollowup
+          ? `Follow-up status set to ${followupStatus}. Next reminder scheduled for ${nextFollowup.toLocaleString('en-IN')}.`
+          : `Follow-up timer stopped. Status marked as ${followupStatus}.`),
+        nextFollowupDate: nextFollowup,
+        contactPerson: existing.recipientName || existing.customer?.legalName || null,
+        contactPhone: existing.recipientPhone || existing.customer?.phone || null,
+        contactEmail: existing.recipientEmail || existing.customer?.email || null,
+        performedById: userId || null,
+        performedByName: userId ? 'Staff User' : 'Admin',
+      },
+    });
+
+    const isOrderConfirmed = followupStatus === 'ORDER_CONFIRMED';
+    const quoteUpdateData: any = {
+      lastFollowupDate: new Date(),
+      followupCount: { increment: 1 },
+      followupStatus,
+      nextFollowupDate: nextFollowup,
+    };
+    if (isOrderConfirmed && existing.status !== 'ACCEPTED' && existing.status !== 'CONVERTED') {
+      quoteUpdateData.status = 'ACCEPTED';
+    }
+
+    const updatedQuote = await prisma.salesQuotation.update({
+      where: { id },
+      data: quoteUpdateData,
+      include: {
+        customer: true,
+        items: true,
+        followups: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+
+    if (userId) {
+      await auditService.logMutation({
+        userId,
+        action: 'UPDATE',
+        module: 'Sales',
+        entityType: 'QuotationFollowup',
+        entityId: followup.id,
+        newData: { status: followupStatus, nextFollowupDate: nextFollowup, notes: data.notes },
+      }).catch(() => {});
     }
 
     return {
