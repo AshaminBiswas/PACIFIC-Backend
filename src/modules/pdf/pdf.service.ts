@@ -845,16 +845,16 @@ export const pdfService = {
     const hasFreightTerm = termsToDisplay.some((t) => /(freight|transportation|dispatch transit)/i.test(t));
     if (!hasFreightTerm) {
       if (freightAmountNum > 0) {
-        termsToDisplay.push(`Freight & Transportation: Freight & handling charges are fixed at ${currSym} ${freightAmountNum.toLocaleString('en-IN')}, included in the total invoice value.`);
+        termsToDisplay.push(`Freight: Freight charges are fixed at ${currSym} ${freightAmountNum.toLocaleString('en-IN')}, included in the total invoice value.`);
       } else {
         const rawFreightOpt = (data.freightTerms || 'Extra as Actual / To pay').trim();
-        let freightTermText = 'Freight & Transportation: Freight and handling charges are EXTRA AS ACTUAL / TO PAY by client/buyer at the time of site delivery.';
+        let freightTermText = 'Freight: Freight charges are EXTRA AS ACTUAL / TO PAY by client/buyer at the time of site delivery.';
         if (rawFreightOpt === 'Included' || rawFreightOpt.toLowerCase().includes('included')) {
-          freightTermText = 'Freight & Transportation: Freight & transportation charges are INCLUDED in the basic product price (FOR site delivery).';
+          freightTermText = 'Freight: Freight charges are INCLUDED in the basic product price (FOR site delivery).';
         } else if (rawFreightOpt === 'Client Scope' || rawFreightOpt.toLowerCase().includes('client')) {
-          freightTermText = "Freight & Transportation: Transportation & logistics is in Buyer's / Client's scope. Material to be picked up from our factory/warehouse.";
+          freightTermText = "Freight: Transportation & logistics is in Buyer's / Client's scope. Material to be picked up from our factory/warehouse.";
         } else if (rawFreightOpt === 'Custom' && data.freightCustomNote?.trim()) {
-          freightTermText = `Freight & Transportation: ${data.freightCustomNote.trim()}`;
+          freightTermText = `Freight: ${data.freightCustomNote.trim()}`;
         }
         termsToDisplay.push(freightTermText);
       }
@@ -1283,7 +1283,7 @@ export const pdfService = {
             if (hasFreightAmt) {
               return `
                 <tr>
-                  <td colspan="6" style="text-align: right;">Freight & Handling:</td>
+                  <td colspan="6" style="text-align: right;">Freight:</td>
                   <td style="text-align: right;">${Number(data.freightAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                 </tr>
               `;
@@ -1314,7 +1314,7 @@ export const pdfService = {
             return `
               <tr>
                 <td colspan="6" style="text-align: right;">
-                  Freight & Handling:
+                  Freight:
                   <span style="display: inline-block; margin-left: 6px; padding: 1px 6px; font-size: 8.5px; font-weight: bold; border-radius: 3px; background: ${badgeColor}; color: #ffffff;">${optBadge}</span>
                   <span style="font-size: 8.5px; color: #555; margin-left: 4px;">(${optLabel})</span>
                 </td>
@@ -3018,7 +3018,7 @@ export const pdfService = {
           ` : ''}
           ${data.freightAmount > 0 ? `
             <tr>
-              <td colspan="6" style="text-align: right;">Freight & Handling:</td>
+              <td colspan="6" style="text-align: right;">Freight:</td>
               <td style="text-align: right;">${data.freightAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
             </tr>
           ` : ''}
