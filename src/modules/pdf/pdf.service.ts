@@ -930,7 +930,7 @@ export const pdfService = {
       .replace(/^,\s*|,\s*$/g, '');
 
     const shipStatePinPart = [
-      data.shipTo.state ? `State: ${data.shipTo.state}${data.shipTo.stateCode ? ` (${data.shipTo.stateCode})` : ''}` : '',
+      data.shipTo.state ? `State: ${data.shipTo.state}` : '',
       cleanShipAddress.toLowerCase().includes('pin') ? '' : (data.shipTo as any).pincode ? `PIN: ${(data.shipTo as any).pincode}` : '',
     ].filter(Boolean).join(', ');
 
@@ -939,7 +939,6 @@ export const pdfService = {
       : [cleanShipAddress, shipStatePinPart].filter(Boolean).join(', ');
 
     const shipTaxAndContact = [
-      data.shipTo.gstin ? `<strong>GSTIN:</strong> ${data.shipTo.gstin}` : '',
       data.shipTo.phone ? `Contact: ${data.shipTo.phone}` : '',
     ].filter(Boolean);
 
