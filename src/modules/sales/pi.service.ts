@@ -894,7 +894,7 @@ export const piService = {
               serialNumber: idx + 1,
               productId: (rawItems[idx]?.productId && validProductMap.has(rawItems[idx]?.productId)) ? rawItems[idx]?.productId : null,
               description: it.description,
-              hsnSac: rawItems[idx]?.hsnSac || '94032090',
+              hsnSac: rawItems[idx]?.hsnSac || '9403',
               quantity: it.quantity,
               unit: rawItems[idx]?.unit || 'NOS',
               rate: it.rate,

@@ -786,7 +786,7 @@ export const pdfService = {
                 </div>
               ` : ''}
             </td>
-            <td style="text-align: center;">${it.hsnSac || '9403'}</td>
+            <td style="text-align: center; font-family: monospace; font-size: 9.5px; white-space: nowrap;">${it.hsnSac || '9403'}</td>
             <td style="text-align: center;">${it.unit}</td>
             <td style="text-align: right;">${it.quantity}</td>
             <td style="text-align: right;">${it.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -1204,7 +1204,7 @@ export const pdfService = {
           <tr>
             <th style="width: 32px; text-align: center;">S.No</th>
             <th>Description & Technical Specification</th>
-            <th style="width: 55px; text-align: center;">HSN/SAC</th>
+            <th style="width: 62px; text-align: center;">HSN/SAC</th>
             <th style="width: 42px; text-align: center;">Unit</th>
             <th style="width: 42px; text-align: right;">Qty</th>
             <th style="width: 75px; text-align: right;">Rate (${currSym})</th>
