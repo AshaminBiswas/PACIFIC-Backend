@@ -894,22 +894,65 @@ export const pdfService = {
       .trim();
     const pdfDocTitle = `${safeBillingCompanyName}_${safePiNumber}`;
 
-    // Clean addresses & build single-line rows for BILL TO
-    const cleanBillAddress = (data.billTo.address || '')
-      .replace(/,\s*PAN:\s*[A-Z0-9]+/gi, '')
-      .replace(/PAN:\s*[A-Z0-9]+/gi, '')
-      .replace(/,\s*,/g, ',')
-      .trim()
-      .replace(/^,\s*|,\s*$/g, '');
+    // Clean addresses & build single-line rows for BILL TO & SHIP TO with deduplication
+    const formatPdfAddress = (
+      rawAddress?: string,
+      state?: string,
+      stateCode?: string,
+      pincode?: string
+    ) => {
+      let cleaned = (rawAddress || '')
+        .replace(/,\s*PAN:\s*[A-Z0-9]+/gi, '')
+        .replace(/PAN:\s*[A-Z0-9]+/gi, '')
+        .replace(/,\s*,/g, ',')
+        .trim()
+        .replace(/^,\s*|,\s*$/g, '');
 
-    const billStatePinPart = [
-      data.billTo.state ? `State: ${data.billTo.state}${data.billTo.stateCode ? ` (${data.billTo.stateCode})` : ''}` : '',
-      cleanBillAddress.toLowerCase().includes('pin') ? '' : (data.billTo as any).pincode ? `PIN: ${(data.billTo as any).pincode}` : '',
-    ].filter(Boolean).join(', ');
+      // Tokenize by commas to detect and eliminate duplicate tokens (e.g. repeated "New Delhi")
+      const rawTokens = cleaned.split(',').map((t) => t.trim()).filter(Boolean);
+      const dedupedTokens: string[] = [];
+      const seen = new Set<string>();
 
-    const billFullAddressLine = cleanBillAddress.toLowerCase().includes((data.billTo.state || '').toLowerCase())
-      ? cleanBillAddress
-      : [cleanBillAddress, billStatePinPart].filter(Boolean).join(', ');
+      for (const t of rawTokens) {
+        const lower = t.toLowerCase();
+        if (seen.has(lower)) continue;
+        // Eliminate repetitive "New Delhi" or "Delhi"
+        if ((lower === 'new delhi' || lower === 'delhi') && (seen.has('new delhi') || seen.has('delhi'))) {
+          continue;
+        }
+        seen.add(lower);
+        dedupedTokens.push(t);
+      }
+
+      let line = dedupedTokens.join(', ');
+      const lineLower = line.toLowerCase();
+      const stateClean = (state || '').trim();
+      const stateLower = stateClean.toLowerCase();
+
+      // Only append state if line does not already mention this state or city
+      const alreadyHasState =
+        Boolean(stateClean) &&
+        (lineLower.includes(stateLower) || (stateLower === 'delhi' && lineLower.includes('delhi')));
+
+      if (stateClean && !alreadyHasState) {
+        line = `${line}${line ? ', ' : ''}State: ${stateClean}${stateCode ? ` (${stateCode})` : ''}`;
+      }
+
+      // Only append PIN if line does not already contain "pin" or the 6-digit postal code
+      const pinClean = (pincode || '').trim().replace(/[^0-9]/g, '');
+      if (pinClean && pinClean.length === 6 && !lineLower.includes('pin') && !line.includes(pinClean)) {
+        line = `${line}${line ? ', ' : ''}PIN: ${pinClean}`;
+      }
+
+      return line.replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '').trim();
+    };
+
+    const billFullAddressLine = formatPdfAddress(
+      data.billTo.address,
+      data.billTo.state,
+      data.billTo.stateCode,
+      (data.billTo as any).pincode
+    );
 
     const billTaxParts = [
       data.billTo.gstin ? `<strong>GSTIN:</strong> ${data.billTo.gstin}` : '',
@@ -921,22 +964,12 @@ export const pdfService = {
       data.billTo.email ? `Email: ${data.billTo.email}` : '',
     ].filter(Boolean);
 
-    // SHIP TO single-line rows
-    const cleanShipAddress = (data.shipTo.address || '')
-      .replace(/,\s*PAN:\s*[A-Z0-9]+/gi, '')
-      .replace(/PAN:\s*[A-Z0-9]+/gi, '')
-      .replace(/,\s*,/g, ',')
-      .trim()
-      .replace(/^,\s*|,\s*$/g, '');
-
-    const shipStatePinPart = [
-      data.shipTo.state ? `State: ${data.shipTo.state}` : '',
-      cleanShipAddress.toLowerCase().includes('pin') ? '' : (data.shipTo as any).pincode ? `PIN: ${(data.shipTo as any).pincode}` : '',
-    ].filter(Boolean).join(', ');
-
-    const shipFullAddressLine = cleanShipAddress.toLowerCase().includes((data.shipTo.state || '').toLowerCase())
-      ? cleanShipAddress
-      : [cleanShipAddress, shipStatePinPart].filter(Boolean).join(', ');
+    const shipFullAddressLine = formatPdfAddress(
+      data.shipTo.address,
+      data.shipTo.state,
+      data.shipTo.stateCode,
+      (data.shipTo as any).pincode
+    );
 
     const shipTaxAndContact = [
       data.shipTo.phone ? `Contact: ${data.shipTo.phone}` : '',
