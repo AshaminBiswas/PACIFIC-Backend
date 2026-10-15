@@ -53,7 +53,6 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
         if (
           decoded &&
           (decoded.iss?.includes('supabase') ||
-            decoded.iss?.includes('kgalsrokdmsrqysyoffm') ||
             decoded.aud === 'authenticated' ||
             decoded.role === 'authenticated' ||
             decoded.sub)

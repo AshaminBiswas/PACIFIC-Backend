@@ -59,10 +59,10 @@ export const env = {
   },
 
   supabase: {
-    url: optional('SUPABASE_URL', 'https://bcbswbzbtskvmdqmgrjm.supabase.co'),
+    url: optional('SUPABASE_URL', ''),
     publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || '',
     secretKey: process.env.SUPABASE_SECRET_KEY || '',
-    jwksUrl: optional('SUPABASE_JWKS_URL', 'https://bcbswbzbtskvmdqmgrjm.supabase.co/auth/v1/.well-known/jwks.json'),
+    jwksUrl: optional('SUPABASE_JWKS_URL', ''),
   },
 
   resend: {

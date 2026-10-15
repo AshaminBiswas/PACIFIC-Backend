@@ -4,8 +4,12 @@ const { Client } = require('pg');
 
 const BACKUP_DIR = 'D:\\PACIFIC_DATABASE_BACKUP_2026_10_15';
 const JSON_DIR = path.join(BACKUP_DIR, 'json_tables');
-
-const targetUrl = 'postgresql://postgres.bcbswbzbtskvmdqmgrjm:Info@2026_Pacific@aws-0-ap-south-1.pooler.supabase.com:5432/postgres';
+require('dotenv').config();
+const targetUrl = process.env.DIRECT_URL || process.env.DATABASE_URL;
+if (!targetUrl) {
+  console.error('Missing DIRECT_URL or DATABASE_URL in environment');
+  process.exit(1);
+}
 
 const client = new Client({
   connectionString: targetUrl,

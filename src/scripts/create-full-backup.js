@@ -411,7 +411,7 @@ async function runBackup() {
   console.log('Generating BACKUP_MANIFEST.md...');
   let md = '# Pacific Restroom Cubicle — Complete Database Backup Manifest\n\n';
   md += `**Backup Timestamp:** \`${new Date().toISOString()}\`  \n`;
-  md += `**Database Host:** \`aws-0-ap-south-1.pooler.supabase.com\`  \n`;
+  md += `**Database Host:** \`[CONFIGURED_IN_ENV]\`  \n`;
   md += `**Total Public Tables:** \`${tables.length}\`  \n`;
   md += `**Total Records Dumped:** \`${totalExportedRows}\`  \n`;
   md += `**Primary Local Backup Path:** \`${BACKUP_ROOT}\`  \n`;

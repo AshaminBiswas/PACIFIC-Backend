@@ -5,8 +5,12 @@ const { Client } = require('pg');
 const BACKUP_DIR = 'D:\\PACIFIC_DATABASE_BACKUP_2026_10_15';
 const SQL_PARTS_DIR = path.join(BACKUP_DIR, 'sql_parts');
 const MANIFEST_PATH = path.join(BACKUP_DIR, 'ALL_TABLES_DATA_CONSOLIDATED.json');
-
-const targetUrl = 'postgresql://postgres.bcbswbzbtskvmdqmgrjm:Info@2026_Pacific@aws-0-ap-south-1.pooler.supabase.com:5432/postgres';
+require('dotenv').config();
+const targetUrl = process.env.DIRECT_URL || process.env.DATABASE_URL;
+if (!targetUrl) {
+  console.error('Missing DIRECT_URL or DATABASE_URL in environment');
+  process.exit(1);
+}
 
 const client = new Client({
   connectionString: targetUrl,
@@ -15,8 +19,8 @@ const client = new Client({
 
 async function runMigration() {
   const startTime = new Date();
-  console.log(`[${startTime.toISOString()}] Starting database migration to new Supabase database...`);
-  console.log(`Target: bcbswbzbtskvmdqmgrjm (aws-0-ap-south-1)`);
+  console.log(`[${startTime.toISOString()}] Starting database migration to target database...`);
+  console.log(`Target: Configured via environment variables`);
 
   await client.connect();
   console.log('Connected to target database successfully!\n');
