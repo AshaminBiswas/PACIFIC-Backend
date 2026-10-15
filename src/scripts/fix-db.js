@@ -1180,6 +1180,144 @@ async function run() {
       $$;
     `);
 
+    // 22. Installer Payments & Advances Subsystem
+    await client.query(`
+      DO $$ BEGIN
+        CREATE TYPE "InstallerPaymentStatus" AS ENUM ('PARTIAL', 'CLEARED');
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
+
+      CREATE SEQUENCE IF NOT EXISTS ppsi_bill_seq START 1;
+
+      CREATE TABLE IF NOT EXISTS cubicle_models (
+        id TEXT PRIMARY KEY,
+        category TEXT DEFAULT 'CUBICLE',
+        model_name TEXT UNIQUE NOT NULL,
+        installation_price NUMERIC(10, 2) NOT NULL,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_cubicle_models_cat ON cubicle_models(category);
+      CREATE INDEX IF NOT EXISTS idx_cubicle_models_active ON cubicle_models(is_active);
+
+      CREATE TABLE IF NOT EXISTS cubicle_installers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        phone TEXT,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_cubicle_installers_active ON cubicle_installers(is_active);
+      CREATE INDEX IF NOT EXISTS idx_cubicle_installers_email ON cubicle_installers(email);
+
+      CREATE TABLE IF NOT EXISTS installer_bills (
+        id TEXT PRIMARY KEY,
+        bill_no TEXT UNIQUE NOT NULL,
+        installer_id TEXT REFERENCES cubicle_installers(id) ON DELETE SET NULL,
+        installer_name TEXT NOT NULL,
+        installer_email TEXT NOT NULL,
+        install_date TIMESTAMPTZ NOT NULL,
+        is_ncr BOOLEAN DEFAULT false,
+        travel_expenses NUMERIC(10, 2) DEFAULT 0,
+        site_address TEXT NOT NULL,
+        site_pin VARCHAR(6) NOT NULL,
+        cubicle_quantity INT DEFAULT 0,
+        cubicle_total NUMERIC(12, 2) DEFAULT 0,
+        ump_quantity INT DEFAULT 0,
+        ump_rate NUMERIC(10, 2) DEFAULT 0,
+        ump_total NUMERIC(12, 2) DEFAULT 0,
+        locker_quantity INT DEFAULT 0,
+        locker_total NUMERIC(12, 2) DEFAULT 0,
+        deduction_amount NUMERIC(12, 2) DEFAULT 0,
+        deduction_reason TEXT,
+        subtotal NUMERIC(12, 2) DEFAULT 0,
+        total NUMERIC(12, 2) NOT NULL,
+        amount_paid NUMERIC(12, 2) DEFAULT 0,
+        balance_due NUMERIC(12, 2) DEFAULT 0,
+        payment_status "InstallerPaymentStatus" DEFAULT 'PARTIAL',
+        payment_date TIMESTAMPTZ,
+        notes TEXT,
+        advance_paid NUMERIC(12, 2) DEFAULT 0,
+        advance_date TIMESTAMPTZ,
+        advance_note TEXT,
+        email_sent BOOLEAN DEFAULT false,
+        email_sent_at TIMESTAMPTZ,
+        email_status TEXT,
+        email_error TEXT,
+        created_by_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now(),
+        deleted_at TIMESTAMPTZ
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_installer_bills_billno ON installer_bills(bill_no);
+      CREATE INDEX IF NOT EXISTS idx_installer_bills_installerid ON installer_bills(installer_id);
+      CREATE INDEX IF NOT EXISTS idx_installer_bills_email ON installer_bills(installer_email);
+      CREATE INDEX IF NOT EXISTS idx_installer_bills_status ON installer_bills(payment_status);
+      CREATE INDEX IF NOT EXISTS idx_installer_bills_date ON installer_bills(install_date);
+      CREATE INDEX IF NOT EXISTS idx_installer_bills_created ON installer_bills(created_at);
+
+      CREATE TABLE IF NOT EXISTS installer_bill_items (
+        id TEXT PRIMARY KEY,
+        bill_id TEXT NOT NULL REFERENCES installer_bills(id) ON DELETE CASCADE,
+        category TEXT DEFAULT 'CUBICLE',
+        model_id TEXT NOT NULL REFERENCES cubicle_models(id) ON DELETE RESTRICT,
+        model_name TEXT NOT NULL,
+        quantity INT DEFAULT 1,
+        installation_price NUMERIC(10, 2) NOT NULL,
+        line_total NUMERIC(12, 2) NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_installer_bill_items_bill ON installer_bill_items(bill_id);
+      CREATE INDEX IF NOT EXISTS idx_installer_bill_items_model ON installer_bill_items(model_id);
+      CREATE INDEX IF NOT EXISTS idx_installer_bill_items_cat ON installer_bill_items(category);
+
+      CREATE TABLE IF NOT EXISTS installer_bill_payments (
+        id TEXT PRIMARY KEY,
+        bill_id TEXT NOT NULL REFERENCES installer_bills(id) ON DELETE CASCADE,
+        amount NUMERIC(12, 2) NOT NULL,
+        payment_date TIMESTAMPTZ NOT NULL,
+        payment_mode TEXT,
+        reference_note TEXT,
+        is_advance BOOLEAN DEFAULT false,
+        recorded_by_id TEXT,
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_installer_bill_pmts_bill ON installer_bill_payments(bill_id);
+      CREATE INDEX IF NOT EXISTS idx_installer_bill_pmts_date ON installer_bill_payments(payment_date);
+
+      CREATE TABLE IF NOT EXISTS installer_bill_sequences (
+        id TEXT PRIMARY KEY,
+        prefix TEXT UNIQUE DEFAULT 'PPSI',
+        last_number INT DEFAULT 0,
+        updated_at TIMESTAMPTZ DEFAULT now()
+      );
+
+      -- Keep ppsi_bill_seq synchronized
+      DO $$
+      DECLARE
+        max_bill_num INT;
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'ppsi_bill_seq' AND relkind = 'S') THEN
+          SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(bill_no, '[^0-9]', '', 'g'), '') AS INTEGER)), 0)
+          INTO max_bill_num FROM installer_bills;
+          IF max_bill_num > 0 THEN
+            PERFORM setval('ppsi_bill_seq', max_bill_num, true);
+          END IF;
+        END IF;
+      END
+      $$;
+    `);
+
     console.log('[fix-db] Schema auto-heal complete.');
   } catch (err) {
     console.error('[fix-db] Error during schema auto-heal:', err);

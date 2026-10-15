@@ -44,6 +44,7 @@ import rolesRoutes from './modules/roles/roles.routes';
 import usersRoutes from './modules/users/users.routes';
 import { rolesService } from './modules/roles/roles.service';
 import boardInventoryRoutes from './modules/inventory/boardInventory.routes';
+import installerPaymentsRoutes from './modules/installer-payments/installer-payments.routes';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 const app = express();
@@ -196,6 +197,7 @@ app.use(`${prefix}/qr`, qrRoutes);
 app.use(`${prefix}/audit`, auditRoutes);
 app.use(`${prefix}/docs`, docsRoutes);
 app.use(`${prefix}/export`, exportRoutes);
+app.use(`${prefix}/installer-payments`, installerPaymentsRoutes);
 app.use(`${prefix}/roles`, rolesRoutes);
 app.use(`${prefix}/users`, usersRoutes);
 

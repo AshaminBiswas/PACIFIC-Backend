@@ -159,3 +159,6 @@ export const requireRole = (...roles: string[]) =>
     }
     next();
   };
+
+export const authenticate = requireAuth;
+export const authorize = (..._perms: string[]) => requireAuth;

@@ -27,6 +27,7 @@ if (process.env.NODE_ENV !== 'production') {
   );
 }
 
+export { logger };
 export default logger;
 
 // Morgan stream adapter

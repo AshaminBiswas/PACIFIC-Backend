@@ -39,3 +39,5 @@ export const disconnectDatabases = async (): Promise<void> => {
     // ignore
   }
 };
+
+export default prisma;
