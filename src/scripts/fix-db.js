@@ -5,6 +5,7 @@
  * Uses DIRECT_URL (port 5432) for DDL operations.
  */
 const { Client } = require('pg');
+require('dotenv').config();
 
 async function run() {
   const connectionString = (process.env.DATABASE_URL || process.env.DIRECT_URL || '')
@@ -1159,6 +1160,24 @@ async function run() {
       CREATE INDEX IF NOT EXISTS idx_dispatch_records_orderId ON dispatch_records("orderId");
       CREATE INDEX IF NOT EXISTS idx_dispatch_records_packingListId ON dispatch_records("packingListId");
       CREATE INDEX IF NOT EXISTS idx_dispatch_records_number ON dispatch_records("dispatchNumber");
+    `);
+
+    // 21. Auto-sync sequences
+    await client.query(`
+      DO $$
+      DECLARE
+        max_serial INT;
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM pg_class WHERE relname = 'board_inventory_items_serialNumber_seq' AND relkind = 'S'
+        ) THEN
+          SELECT COALESCE(MAX("serialNumber"), 0) INTO max_serial FROM board_inventory_items;
+          IF max_serial > 0 THEN
+            PERFORM setval('public."board_inventory_items_serialNumber_seq"', max_serial, true);
+          END IF;
+        END IF;
+      END
+      $$;
     `);
 
     console.log('[fix-db] Schema auto-heal complete.');

@@ -246,7 +246,13 @@ export class BoardInventoryService {
     const prefix = vendorName.slice(0, 3).toUpperCase();
     const cleanDesign = data.designNo.replace(/[^a-zA-Z0-9]/g, '');
     const cleanThick = data.thickness.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-    const itemCode = `BRD-${warehouse.slice(0, 3)}-${prefix}-${cleanDesign}-${cleanThick}-${Date.now().toString().slice(-4)}`;
+    const cleanSize = (data.size || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    let itemCode = `BRD-${warehouse.slice(0, 3)}-${prefix}-${cleanDesign}-${cleanSize ? cleanSize + '-' : ''}${cleanThick}-${Date.now().toString().slice(-4)}`;
+
+    const existingCode = await prisma.boardInventoryItem.findUnique({ where: { itemCode } });
+    if (existingCode) {
+      itemCode = `${itemCode}-${Math.floor(1000 + Math.random() * 9000)}`;
+    }
 
     const opening = Number(data.openingStock) || 0;
     const reorder = Number(data.reorderLevel) || 10;
@@ -278,9 +284,17 @@ export class BoardInventoryService {
       });
 
       if (opening > 0) {
+        let baseMovementNumber = `BSM-OPN-${item.serialNumber.toString().padStart(4, '0')}`;
+        const existingMv = await tx.boardStockMovement.findUnique({
+          where: { movementNumber: baseMovementNumber },
+        });
+        if (existingMv) {
+          baseMovementNumber = `BSM-OPN-${item.serialNumber.toString().padStart(4, '0')}-${Date.now().toString().slice(-4)}`;
+        }
+
         await tx.boardStockMovement.create({
           data: {
-            movementNumber: `BSM-OPN-${item.serialNumber.toString().padStart(4, '0')}`,
+            movementNumber: baseMovementNumber,
             inventoryItemId: item.id,
             warehouse: item.warehouse,
             movementType: 'INWARD',
