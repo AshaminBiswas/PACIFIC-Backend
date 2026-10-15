@@ -11,6 +11,7 @@ import {
   CreateInstallerBillInput,
   UpdateInstallerBillInput,
   RecordPaymentInput,
+  RecordAdvanceInput,
   ListInstallerBillsQuery,
   ExportBillsQuery,
 } from './installer-payments.schema';
@@ -441,8 +442,10 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
   const rawTotal = subtotal + travelExpenses - deductionAmount;
   const total = Math.max(0, rawTotal);
   const initialAmountPaid = Number(input.initialAmountPaid || 0);
-  const balanceDue = Math.max(0, total - initialAmountPaid);
-  const isCleared = balanceDue === 0 && initialAmountPaid >= total && total > 0;
+  const advancePaid = Number(input.advancePaid || 0);
+  const totalPaid = initialAmountPaid + advancePaid;
+  const balanceDue = Math.max(0, total - totalPaid);
+  const isCleared = balanceDue === 0 && totalPaid >= total && total > 0;
   const paymentStatus = isCleared ? 'CLEARED' : 'PARTIAL';
 
   // 5. Generate atomic Bill No (PPSI-00001)
@@ -472,14 +475,21 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
         deductionReason,
         subtotal: new Prisma.Decimal(subtotal),
         total: new Prisma.Decimal(total),
-        amountPaid: new Prisma.Decimal(initialAmountPaid),
+        amountPaid: new Prisma.Decimal(totalPaid),
         balanceDue: new Prisma.Decimal(balanceDue),
         paymentStatus: paymentStatus as any,
         paymentDate: input.paymentDate
           ? new Date(input.paymentDate)
-          : initialAmountPaid > 0
+          : totalPaid > 0
           ? new Date()
           : null,
+        advancePaid: new Prisma.Decimal(advancePaid),
+        advanceDate: input.advanceDate
+          ? new Date(input.advanceDate)
+          : advancePaid > 0
+          ? new Date()
+          : null,
+        advanceNote: input.advanceNote || null,
         notes: input.notes,
         createdById,
         items: {
@@ -491,14 +501,31 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
       },
     });
 
+    if (advancePaid > 0) {
+      await tx.installerBillPayment.create({
+        data: {
+          billId: createdBill.id,
+          installerId: input.installerId || null,
+          amount: new Prisma.Decimal(advancePaid),
+          paymentDate: input.advanceDate ? new Date(input.advanceDate) : new Date(),
+          paymentMode: input.paymentMode || 'BANK_TRANSFER',
+          referenceNote: input.advanceNote ? `[Advance] ${input.advanceNote}` : 'Initial advance disbursement',
+          isAdvance: true,
+          recordedById: createdById,
+        },
+      });
+    }
+
     if (initialAmountPaid > 0) {
       await tx.installerBillPayment.create({
         data: {
           billId: createdBill.id,
+          installerId: input.installerId || null,
           amount: new Prisma.Decimal(initialAmountPaid),
           paymentDate: input.paymentDate ? new Date(input.paymentDate) : new Date(),
           paymentMode: input.paymentMode || 'BANK_TRANSFER',
           referenceNote: 'Initial payment upon bill creation',
+          isAdvance: false,
           recordedById: createdById,
         },
       });
@@ -532,9 +559,12 @@ export async function recordBillPayment(billId: string, input: RecordPaymentInpu
   }
 
   const paymentAmount = Number(input.amount);
+  const isAdvance = Boolean(input.isAdvance);
   const currentPaid = Number(bill.amountPaid || 0);
+  const currentAdvance = Number(bill.advancePaid || 0);
   const billTotal = Number(bill.total);
   const newAmountPaid = currentPaid + paymentAmount;
+  const newAdvancePaid = isAdvance ? currentAdvance + paymentAmount : currentAdvance;
   const newBalanceDue = Math.max(0, billTotal - newAmountPaid);
   const newlyCleared = newAmountPaid >= billTotal && bill.paymentStatus !== 'CLEARED';
   const newStatus = newAmountPaid >= billTotal ? 'CLEARED' : 'PARTIAL';
@@ -543,10 +573,12 @@ export async function recordBillPayment(billId: string, input: RecordPaymentInpu
     await tx.installerBillPayment.create({
       data: {
         billId,
+        installerId: bill.installerId || null,
         amount: new Prisma.Decimal(paymentAmount),
         paymentDate: new Date(input.paymentDate),
         paymentMode: input.paymentMode,
         referenceNote: input.referenceNote,
+        isAdvance,
         recordedById,
       },
     });
@@ -555,6 +587,11 @@ export async function recordBillPayment(billId: string, input: RecordPaymentInpu
       where: { id: billId },
       data: {
         amountPaid: new Prisma.Decimal(newAmountPaid),
+        advancePaid: new Prisma.Decimal(newAdvancePaid),
+        ...(isAdvance && {
+          advanceDate: new Date(input.paymentDate),
+          advanceNote: input.referenceNote || bill.advanceNote,
+        }),
         balanceDue: new Prisma.Decimal(newBalanceDue),
         paymentStatus: newStatus as any,
         paymentDate: new Date(input.paymentDate),
@@ -572,6 +609,126 @@ export async function recordBillPayment(billId: string, input: RecordPaymentInpu
   }
 
   return await getInstallerBillById(billId);
+}
+
+export async function recordInstallerAdvance(input: RecordAdvanceInput, recordedById?: string) {
+  const installer = await prisma.cubicleInstaller.findUnique({
+    where: { id: input.installerId },
+  });
+
+  if (!installer) {
+    const error: any = new Error('Installer not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const paymentAmount = Number(input.amount);
+  const paymentDate = new Date(input.paymentDate);
+
+  // If a billId was specifically passed, apply to that bill
+  let targetBill = input.billId
+    ? await prisma.installerBill.findUnique({ where: { id: input.billId } })
+    : null;
+
+  // If no billId passed, find an open bill for this installer if any exists
+  if (!targetBill) {
+    targetBill = await prisma.installerBill.findFirst({
+      where: {
+        installerId: installer.id,
+        deletedAt: null,
+        balanceDue: { gt: 0 },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  return await prisma.$transaction(async (tx) => {
+    const pmt = await tx.installerBillPayment.create({
+      data: {
+        installerId: installer.id,
+        billId: targetBill ? targetBill.id : null,
+        amount: new Prisma.Decimal(paymentAmount),
+        paymentDate,
+        paymentMode: input.paymentMode,
+        referenceNote: input.referenceNote ? `[Advance] ${input.referenceNote}` : '[Advance Disbursement]',
+        isAdvance: true,
+        recordedById,
+      },
+    });
+
+    if (targetBill) {
+      const currentPaid = Number(targetBill.amountPaid || 0);
+      const currentAdvance = Number(targetBill.advancePaid || 0);
+      const billTotal = Number(targetBill.total);
+      const newPaid = currentPaid + paymentAmount;
+      const newAdvance = currentAdvance + paymentAmount;
+      const newBalance = Math.max(0, billTotal - newPaid);
+      const newStatus = newPaid >= billTotal ? 'CLEARED' : 'PARTIAL';
+
+      await tx.installerBill.update({
+        where: { id: targetBill.id },
+        data: {
+          advancePaid: new Prisma.Decimal(newAdvance),
+          advanceDate: paymentDate,
+          advanceNote: input.referenceNote || targetBill.advanceNote,
+          amountPaid: new Prisma.Decimal(newPaid),
+          balanceDue: new Prisma.Decimal(newBalance),
+          paymentStatus: newStatus as any,
+          paymentDate,
+        },
+      });
+    }
+
+    return {
+      payment: pmt,
+      installerName: installer.name,
+      billNo: targetBill ? targetBill.billNo : null,
+      amount: paymentAmount,
+    };
+  });
+}
+
+export async function listInstallerAdvances(query?: { installerId?: string }) {
+  const where: Prisma.InstallerBillPaymentWhereInput = {
+    isAdvance: true,
+  };
+
+  if (query?.installerId) {
+    where.OR = [
+      { installerId: query.installerId },
+      { bill: { installerId: query.installerId } },
+    ];
+  }
+
+  const advances = await prisma.installerBillPayment.findMany({
+    where,
+    orderBy: { paymentDate: 'desc' },
+    include: {
+      installer: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+        },
+      },
+      bill: {
+        select: {
+          id: true,
+          billNo: true,
+          installerName: true,
+          total: true,
+          amountPaid: true,
+          advancePaid: true,
+          balanceDue: true,
+          paymentStatus: true,
+          siteAddress: true,
+        },
+      },
+    },
+  });
+
+  return advances;
 }
 
 export async function updateInstallerBill(

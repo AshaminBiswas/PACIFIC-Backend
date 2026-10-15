@@ -17,6 +17,8 @@ import {
   updateInstallerBillHandler,
   getBillAuditLogsHandler,
   recordBillPaymentHandler,
+  recordInstallerAdvanceHandler,
+  listInstallerAdvancesHandler,
   downloadBillPdfHandler,
   resendBillEmailHandler,
   deleteInstallerBillHandler,
@@ -106,6 +108,10 @@ router.post('/installers', authenticate, authorize('cubicle_installers.create'),
 router.patch('/installers/:id', authenticate, authorize('cubicle_installers.update'), updateCubicleInstallerHandler);
 router.delete('/installers/:id', authenticate, authorize('cubicle_installers.delete'), deactivateCubicleInstallerHandler);
 router.get('/installers/:id/ledger', authenticate, authorize('cubicle_installers.ledger', 'cubicle_installers.read', 'installer_payments.read'), getInstallerLedgerHandler);
+
+// ─── Advance Payment Routes ──────────────────────────────────────────────────
+router.get('/advances', authenticate, authorize('installer_payments.read'), listInstallerAdvancesHandler);
+router.post('/advances', authenticate, authorize('installer_payments.record_payment', 'installer_payments.update', 'installer_payments.create'), recordInstallerAdvanceHandler);
 
 // ─── Full Payment History Export ─────────────────────────────────────────────
 router.get('/export/excel', authenticate, authorize('installer_payments.export', 'installer_payments.read'), exportInstallerBillsExcelHandler);

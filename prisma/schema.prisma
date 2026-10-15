@@ -2805,6 +2805,7 @@ model CubicleInstaller {
   updatedAt DateTime        @updatedAt @map("updated_at")
 
   bills     InstallerBill[]
+  payments  InstallerBillPayment[]
 
   @@index([isActive])
   @@index([email])
@@ -2903,21 +2904,25 @@ model InstallerBillItem {
 }
 
 model InstallerBillPayment {
-  id                   String        @id @default(uuid())
-  billId               String        @map("bill_id")
-  amount               Decimal       @map("amount") @db.Decimal(12, 2)
-  paymentDate          DateTime      @map("payment_date")
-  paymentMode          String?       @map("payment_mode")
-  referenceNote        String?       @map("reference_note") @db.Text
-  isAdvance            Boolean       @default(false) @map("is_advance")
-  recordedById         String?       @map("recorded_by_id")
-  createdAt            DateTime      @default(now()) @map("created_at")
+  id                   String            @id @default(uuid())
+  billId               String?           @map("bill_id")
+  installerId          String?           @map("installer_id")
+  amount               Decimal           @map("amount") @db.Decimal(12, 2)
+  paymentDate          DateTime          @map("payment_date")
+  paymentMode          String?           @map("payment_mode")
+  referenceNote        String?           @map("reference_note") @db.Text
+  isAdvance            Boolean           @default(false) @map("is_advance")
+  recordedById         String?           @map("recorded_by_id")
+  createdAt            DateTime          @default(now()) @map("created_at")
 
   // Relations
-  bill                 InstallerBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  bill                 InstallerBill?    @relation(fields: [billId], references: [id], onDelete: Cascade)
+  installer            CubicleInstaller? @relation(fields: [installerId], references: [id], onDelete: SetNull)
 
   @@index([billId])
+  @@index([installerId])
   @@index([paymentDate])
+  @@index([isAdvance])
   @@map("installer_bill_payments")
 }
 

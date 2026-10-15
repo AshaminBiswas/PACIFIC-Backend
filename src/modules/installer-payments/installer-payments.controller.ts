@@ -9,6 +9,7 @@ import {
   CreateInstallerBillSchema,
   UpdateInstallerBillSchema,
   RecordPaymentSchema,
+  RecordAdvanceSchema,
   ListInstallerBillsQuerySchema,
   ExportBillsQuerySchema,
   ResendBillEmailSchema,
@@ -175,6 +176,27 @@ export const recordBillPaymentHandler = async (req: Request, res: Response, next
     const recordedById = (req as any).user?.id;
     const bill = await installerService.recordBillPayment(billId, body, recordedById);
     sendSuccess(res, bill, 'Payment installment recorded successfully', 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const recordInstallerAdvanceHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = RecordAdvanceSchema.parse(req.body);
+    const recordedById = (req as any).user?.id;
+    const result = await installerService.recordInstallerAdvance(body, recordedById);
+    sendSuccess(res, result, 'Installer advance payment recorded successfully', 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const listInstallerAdvancesHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const installerId = typeof req.query.installerId === 'string' ? req.query.installerId : undefined;
+    const advances = await installerService.listInstallerAdvances({ installerId });
+    sendSuccess(res, advances, 'Installer advances retrieved successfully');
   } catch (error) {
     next(error);
   }

@@ -1282,7 +1282,8 @@ async function run() {
 
       CREATE TABLE IF NOT EXISTS installer_bill_payments (
         id TEXT PRIMARY KEY,
-        bill_id TEXT NOT NULL REFERENCES installer_bills(id) ON DELETE CASCADE,
+        bill_id TEXT REFERENCES installer_bills(id) ON DELETE CASCADE,
+        installer_id TEXT REFERENCES cubicle_installers(id) ON DELETE SET NULL,
         amount NUMERIC(12, 2) NOT NULL,
         payment_date TIMESTAMPTZ NOT NULL,
         payment_mode TEXT,
@@ -1292,8 +1293,17 @@ async function run() {
         created_at TIMESTAMPTZ DEFAULT now()
       );
 
+      ALTER TABLE installer_bill_payments ALTER COLUMN bill_id DROP NOT NULL;
+      ALTER TABLE installer_bill_payments ADD COLUMN IF NOT EXISTS installer_id TEXT REFERENCES cubicle_installers(id) ON DELETE SET NULL;
       CREATE INDEX IF NOT EXISTS idx_installer_bill_pmts_bill ON installer_bill_payments(bill_id);
+      CREATE INDEX IF NOT EXISTS idx_installer_bill_pmts_installer ON installer_bill_payments(installer_id);
       CREATE INDEX IF NOT EXISTS idx_installer_bill_pmts_date ON installer_bill_payments(payment_date);
+      CREATE INDEX IF NOT EXISTS idx_installer_bill_pmts_advance ON installer_bill_payments(is_advance);
+
+      UPDATE installer_bill_payments p
+      SET installer_id = b.installer_id
+      FROM installer_bills b
+      WHERE p.bill_id = b.id AND p.installer_id IS NULL AND b.installer_id IS NOT NULL;
 
       CREATE TABLE IF NOT EXISTS installer_bill_sequences (
         id TEXT PRIMARY KEY,

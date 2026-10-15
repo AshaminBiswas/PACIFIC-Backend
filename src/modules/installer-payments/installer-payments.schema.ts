@@ -124,6 +124,17 @@ export const RecordPaymentSchema = z.object({
 
 export type RecordPaymentInput = z.infer<typeof RecordPaymentSchema>;
 
+export const RecordAdvanceSchema = z.object({
+  installerId: z.string().min(1, 'Installer ID is required'),
+  billId: z.string().optional().nullable(),
+  amount: z.coerce.number().positive('Advance amount must be greater than 0'),
+  paymentDate: z.string().min(1, 'Payment date is required'),
+  paymentMode: z.string().min(1, 'Payment mode is required').default('BANK_TRANSFER'),
+  referenceNote: z.string().optional(),
+});
+
+export type RecordAdvanceInput = z.infer<typeof RecordAdvanceSchema>;
+
 // ─── Query Schemas ───────────────────────────────────────────────────────────
 
 export const ListInstallerBillsQuerySchema = z.object({
