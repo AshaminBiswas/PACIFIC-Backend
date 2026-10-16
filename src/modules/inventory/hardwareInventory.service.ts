@@ -127,6 +127,11 @@ function sqlStringOrNull(val: string | undefined | null): string {
   return `'${str.replace(/'/g, "''")}'`;
 }
 
+function escapeSql(val: any): string {
+  if (val === undefined || val === null) return '';
+  return String(val).replace(/'/g, "''");
+}
+
 export class HardwareInventoryService {
   /**
    * List Hardware Inventory items with pagination and filters
@@ -246,7 +251,7 @@ export class HardwareInventoryService {
     // Fetch up to 25 recent movements
     const movRows: any[] = await prisma.$queryRawUnsafe(`
       SELECT * FROM hardware_stock_movements 
-      WHERE hardware_item_id = '${item.id}' OR sku = '${item.sku}' 
+      WHERE hardware_item_id = '${escapeSql(item.id)}' OR sku = '${escapeSql(item.sku)}' 
       ORDER BY created_at DESC 
       LIMIT 25
     `);
@@ -458,6 +463,12 @@ export class HardwareInventoryService {
     const notes = sqlStringOrNull(data.notes);
     const rack = data.locationRack ? sqlStringOrNull(data.locationRack) : item.location_rack ? sqlStringOrNull(item.location_rack) : 'NULL';
 
+    const cleanWarehouse = escapeSql(data.warehouse || item.warehouse || 'DELHI');
+    const cleanSku = escapeSql(item.sku);
+    const cleanName = escapeSql(item.name);
+    const cleanMaterial = escapeSql(item.material || 'STAINLESS_STEEL');
+    const cleanUnit = escapeSql(item.unit || "No's");
+
     // 1. Update item stock
     await prisma.$queryRawUnsafe(`
       UPDATE hardware_inventory_items 
@@ -479,9 +490,9 @@ export class HardwareInventoryService {
         stock_before, stock_after, unit, unit_cost, total_value, total_valuation,
         supplier_invoice_no, supplier_invoice_date, batch_lot_no, notes, created_at
       ) VALUES (
-        '${movId}', '${movNum}', '${cleanId}', '${item.sku}', '${item.name}', '${item.name}',
-        '${item.material}', '${data.warehouse || item.warehouse}', 'INWARD', CURRENT_DATE, ${qty},
-        ${stockBefore}, ${stockAfter}, '${item.unit}', ${unitCost}, ${totalVal}, ${totalVal},
+        '${movId}', '${movNum}', '${cleanId}', '${cleanSku}', '${cleanName}', '${cleanName}',
+        '${cleanMaterial}', '${cleanWarehouse}', 'INWARD', CURRENT_DATE, ${qty},
+        ${stockBefore}, ${stockAfter}, '${cleanUnit}', ${unitCost}, ${totalVal}, ${totalVal},
         ${invNo}, ${invDate}, ${batchNo}, ${notes}, NOW()
       )
     `);
@@ -534,9 +545,15 @@ export class HardwareInventoryService {
     const movId = `mov-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const movNum = `ISS-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
-    const issueRef = data.issueReference ? `'${data.issueReference.replace(/'/g, "''")}'` : 'NULL';
-    const issuedTo = data.issuedToPerson ? `'${data.issuedToPerson.replace(/'/g, "''")}'` : 'NULL';
-    const notes = data.notes ? `'${data.notes.replace(/'/g, "''")}'` : 'NULL';
+    const issueRef = sqlStringOrNull(data.issueReference);
+    const issuedTo = sqlStringOrNull(data.issuedToPerson);
+    const notes = sqlStringOrNull(data.notes);
+
+    const cleanWarehouse = escapeSql(data.warehouse || item.warehouse || 'DELHI');
+    const cleanSku = escapeSql(item.sku);
+    const cleanName = escapeSql(item.name);
+    const cleanMaterial = escapeSql(item.material || 'STAINLESS_STEEL');
+    const cleanUnit = escapeSql(item.unit || "No's");
 
     // 1. Update item stock
     await prisma.$queryRawUnsafe(`
@@ -557,9 +574,9 @@ export class HardwareInventoryService {
         stock_before, stock_after, unit, unit_cost, total_value, total_valuation,
         issue_reference, issued_to_person, notes, created_at
       ) VALUES (
-        '${movId}', '${movNum}', '${cleanId}', '${item.sku}', '${item.name}', '${item.name}',
-        '${item.material}', '${data.warehouse || item.warehouse}', 'ISSUE', CURRENT_DATE, ${qty},
-        ${stockBefore}, ${stockAfter}, '${item.unit}', ${unitCost}, ${totalVal}, ${totalVal},
+        '${movId}', '${movNum}', '${cleanId}', '${cleanSku}', '${cleanName}', '${cleanName}',
+        '${cleanMaterial}', '${cleanWarehouse}', 'ISSUE', CURRENT_DATE, ${qty},
+        ${stockBefore}, ${stockAfter}, '${cleanUnit}', ${unitCost}, ${totalVal}, ${totalVal},
         ${issueRef}, ${issuedTo}, ${notes}, NOW()
       )
     `);
