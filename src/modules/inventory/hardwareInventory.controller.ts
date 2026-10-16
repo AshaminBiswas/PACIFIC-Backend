@@ -85,6 +85,17 @@ export class HardwareInventoryController {
     }
   }
 
+  async getAnalytics(req: Request, res: Response) {
+    try {
+      const warehouse = (req.query.warehouse as string) || undefined;
+      const data = await hardwareInventoryService.getAnalyticsSummary(warehouse);
+      res.json({ success: true, data });
+    } catch (err: any) {
+      console.error('[HardwareInventory] getAnalytics error:', err);
+      res.status(500).json({ success: false, message: err.message || 'Failed to get analytics summary' });
+    }
+  }
+
   async listBranches(_req: Request, res: Response) {
     try {
       const data = await hardwareInventoryService.listBranches();

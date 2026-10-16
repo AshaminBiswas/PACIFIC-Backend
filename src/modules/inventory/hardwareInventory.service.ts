@@ -622,6 +622,80 @@ export class HardwareInventoryService {
   }
 
   /**
+   * Get Live Analytics & Metrics
+   */
+  async getAnalyticsSummary(warehouse?: string) {
+    const whClause = warehouse && warehouse !== 'ALL' ? `WHERE warehouse = '${warehouse.replace(/'/g, "''").toUpperCase()}'` : '';
+    const [items, movements] = await Promise.all([
+      prisma.$queryRawUnsafe<any[]>(`SELECT * FROM hardware_inventory_items ${whClause}`),
+      prisma.$queryRawUnsafe<any[]>(`SELECT * FROM hardware_stock_movements ${whClause} ORDER BY created_at DESC`),
+    ]);
+
+    const totalSkus = items.length;
+    let totalUnits = 0;
+    let totalValuation = 0;
+    let lowStockCount = 0;
+    let outOfStockCount = 0;
+
+    const materialDistribution: Record<string, { skus: number; units: number; valuation: number }> = {};
+    const branchDistribution: Record<string, { skus: number; units: number; valuation: number }> = {};
+    const colorDistribution: Record<string, number> = {};
+    const unitDistribution: Record<string, number> = {};
+
+    items.forEach((item) => {
+      const stock = Number(item.current_stock) || 0;
+      const cost = Number(item.unit_cost) || 0;
+      const val = stock * cost;
+
+      totalUnits += stock;
+      totalValuation += val;
+
+      const reorder = Number(item.reorder_level || item.reorder_qty) || 10;
+      if (stock <= 0) outOfStockCount++;
+      else if (stock <= reorder) lowStockCount++;
+
+      const mat = item.material || 'OTHER';
+      if (!materialDistribution[mat]) materialDistribution[mat] = { skus: 0, units: 0, valuation: 0 };
+      materialDistribution[mat].skus++;
+      materialDistribution[mat].units += stock;
+      materialDistribution[mat].valuation += val;
+
+      const wh = item.warehouse || 'DELHI';
+      if (!branchDistribution[wh]) branchDistribution[wh] = { skus: 0, units: 0, valuation: 0 };
+      branchDistribution[wh].skus++;
+      branchDistribution[wh].units += stock;
+      branchDistribution[wh].valuation += val;
+
+      const col = item.color || item.finish || 'Standard';
+      colorDistribution[col] = (colorDistribution[col] || 0) + 1;
+
+      const u = item.unit || "No's";
+      unitDistribution[u] = (unitDistribution[u] || 0) + 1;
+    });
+
+    const inwardMovements = movements.filter((m) => m.movement_type === 'INWARD');
+    const issueMovements = movements.filter((m) => m.movement_type === 'ISSUE');
+
+    const totalInwardUnits = inwardMovements.reduce((acc, m) => acc + (Number(m.quantity) || 0), 0);
+    const totalIssuedUnits = issueMovements.reduce((acc, m) => acc + (Number(m.quantity) || 0), 0);
+
+    return {
+      totalSkus,
+      totalUnits,
+      totalValuation: Math.round(totalValuation * 100) / 100,
+      lowStockCount,
+      outOfStockCount,
+      totalInwardUnits,
+      totalIssuedUnits,
+      materialDistribution,
+      branchDistribution,
+      colorDistribution,
+      unitDistribution,
+      recentMovements: movements.slice(0, 10).map(mapRowToMovement),
+    };
+  }
+
+  /**
    * List Hardware Branches
    */
   async listBranches() {

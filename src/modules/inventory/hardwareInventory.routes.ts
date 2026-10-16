@@ -7,6 +7,7 @@ const router = Router();
 router.get('/branches', (req, res) => hardwareInventoryController.listBranches(req, res));
 router.get('/vendors', (req, res) => hardwareInventoryController.listVendors(req, res));
 router.delete('/vendors/:id', (req, res) => hardwareInventoryController.deleteVendor(req, res));
+router.get('/analytics', (req, res) => hardwareInventoryController.getAnalytics(req, res));
 router.get('/movements', (req, res) => hardwareInventoryController.listMovements(req, res));
 router.post('/inward', (req, res) => hardwareInventoryController.inward(req, res));
 router.post('/issue', (req, res) => hardwareInventoryController.issue(req, res));
