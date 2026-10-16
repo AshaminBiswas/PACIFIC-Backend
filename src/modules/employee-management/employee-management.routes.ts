@@ -120,10 +120,6 @@ router.use(requireAdminOrSuperAdmin);
 // ─── Employee Master Data ─────────────────────────────────────────────────────
 router.get(['/', '/all'], authorize('employees.read'), listEmployeesHandler);
 router.post('/', authorize('employees.create'), createEmployeeHandler);
-router.get(['/detail/:id', '/:id'], authorize('employees.read'), getEmployeeHandler);
-router.put(['/detail/:id', '/:id'], authorize('employees.update'), updateEmployeeHandler);
-router.patch(['/detail/:id', '/:id'], authorize('employees.update'), updateEmployeeHandler);
-router.delete(['/detail/:id', '/:id'], authorize('employees.delete'), deactivateEmployeeHandler);
 
 // ─── Attendance Management ────────────────────────────────────────────────────
 router.get(['/attendance', '/attendance/monthly'], authorize('attendance.read'), listAttendanceHandler);
@@ -134,8 +130,8 @@ router.delete(['/attendance', '/attendance/record'], authorize('attendance.mark'
 
 // ─── Leave Ledger ─────────────────────────────────────────────────────────────
 router.post(['/leave/accrue-monthly', '/leaves/accrue'], authorize('leaves.accrue'), accrueMonthlyLeaveHandler);
-router.get(['/:id/leave-ledger', '/leaves/ledger/:id'], authorize('leaves.read'), getLeaveLedgerHandler);
-router.post(['/:id/leave-ledger', '/leaves/adjust/:id'], authorize('leaves.adjust'), adjustLeaveHandler);
+router.get(['/leaves/ledger/:id', '/:id/leave-ledger'], authorize('leaves.read'), getLeaveLedgerHandler);
+router.post(['/leaves/adjust/:id', '/:id/leave-ledger'], authorize('leaves.adjust'), adjustLeaveHandler);
 
 // ─── Advances ─────────────────────────────────────────────────────────────────
 router.get('/advances', authorize('advances.read'), listAdvancesHandler);
@@ -165,5 +161,11 @@ router.post('/payroll/:id/revert-draft', authorize('payroll.revert_draft'), reve
 router.post('/payroll/:id/mark-paid', authorize('payroll.disburse'), markPayrollPaidHandler);
 router.get(['/payroll/:id/pdf', '/payroll/:id/payslip-pdf'], authorize('payroll.download_payslip', 'payroll.read'), downloadPayslipPdfHandler);
 router.post(['/payroll/:id/resend-email', '/payroll/:id/resend-payslip-email'], authorize('payroll.email_payslip'), resendPayslipEmailHandler);
+
+// ─── Individual Employee Master Detail (Wildcard /:id MUST be last) ───────────
+router.get(['/detail/:id', '/:id'], authorize('employees.read'), getEmployeeHandler);
+router.put(['/detail/:id', '/:id'], authorize('employees.update'), updateEmployeeHandler);
+router.patch(['/detail/:id', '/:id'], authorize('employees.update'), updateEmployeeHandler);
+router.delete(['/detail/:id', '/:id'], authorize('employees.delete'), deactivateEmployeeHandler);
 
 export default router;

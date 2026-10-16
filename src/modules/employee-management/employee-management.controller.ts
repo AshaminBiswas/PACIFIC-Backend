@@ -49,9 +49,25 @@ export const updateEmployeeHandler = async (req: Request, res: Response, next: N
   }
 };
 
+const RESERVED_EMPLOYEE_SUBPATHS = new Set([
+  'attendance',
+  'advances',
+  'deductions',
+  'payroll',
+  'leave',
+  'leaves',
+  'detail',
+  'all',
+  'summary',
+  'ledger',
+]);
+
 export const getEmployeeHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = req.params.id as string;
+    if (id && RESERVED_EMPLOYEE_SUBPATHS.has(id.toLowerCase())) {
+      return next();
+    }
     const employee = await employeeService.getEmployee(id);
     if (!employee) {
       sendError(res, { code: 'NOT_FOUND', message: 'Employee not found' }, 404);
