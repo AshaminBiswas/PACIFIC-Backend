@@ -44,6 +44,7 @@ import rolesRoutes from './modules/roles/roles.routes';
 import usersRoutes from './modules/users/users.routes';
 import { rolesService } from './modules/roles/roles.service';
 import boardInventoryRoutes from './modules/inventory/boardInventory.routes';
+import hardwareInventoryRoutes from './modules/inventory/hardwareInventory.routes';
 import installerPaymentsRoutes from './modules/installer-payments/installer-payments.routes';
 import employeeManagementRoutes from './modules/employee-management/employee-management.routes';
 
@@ -192,6 +193,7 @@ app.use(`${prefix}/logistics/packing-lists`, packingListsRoutes);
 app.use(`${prefix}/warehouse/hardware-catalog`, hardwareCatalogRouter);
 app.use(`${prefix}/warehouse/hardware-issues`, hardwareIssueRoutes);
 app.use(`${prefix}/inventory/boards`, boardInventoryRoutes);
+app.use(`${prefix}/inventory/hardware`, hardwareInventoryRoutes);
 app.use(`${prefix}/finance`, financeRoutes);
 app.use(`${prefix}/followups`, followupsRoutes);
 app.use(`${prefix}/qr`, qrRoutes);

@@ -247,7 +247,8 @@ export class BoardInventoryService {
     const cleanDesign = data.designNo.replace(/[^a-zA-Z0-9]/g, '');
     const cleanThick = data.thickness.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
     const cleanSize = (data.size || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-    let itemCode = `BRD-${warehouse.slice(0, 3)}-${prefix}-${cleanDesign}-${cleanSize ? cleanSize + '-' : ''}${cleanThick}-${Date.now().toString().slice(-4)}`;
+    const randCodeSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+    let itemCode = `BRD-${warehouse.slice(0, 3)}-${prefix}-${cleanDesign}-${cleanSize ? cleanSize + '-' : ''}${cleanThick}-${Date.now().toString().slice(-4)}-${randCodeSuffix}`;
 
     const existingCode = await prisma.boardInventoryItem.findUnique({ where: { itemCode } });
     if (existingCode) {
@@ -284,12 +285,13 @@ export class BoardInventoryService {
       });
 
       if (opening > 0) {
-        let baseMovementNumber = `BSM-OPN-${item.serialNumber.toString().padStart(4, '0')}`;
+        const mvEntropy = `${Date.now().toString().slice(-6)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        let baseMovementNumber = `BSM-OPN-${item.serialNumber ? item.serialNumber.toString().padStart(4, '0') : '0000'}-${mvEntropy}`;
         const existingMv = await tx.boardStockMovement.findUnique({
           where: { movementNumber: baseMovementNumber },
         });
         if (existingMv) {
-          baseMovementNumber = `BSM-OPN-${item.serialNumber.toString().padStart(4, '0')}-${Date.now().toString().slice(-4)}`;
+          baseMovementNumber = `BSM-OPN-${mvEntropy}-${Math.floor(1000 + Math.random() * 9000)}`;
         }
 
         await tx.boardStockMovement.create({
@@ -494,7 +496,8 @@ export class BoardInventoryService {
 
       // 2. Generate unique movement number
       const seq = await tx.boardStockMovement.count();
-      const movementNumber = `BSM-INW-${Date.now().toString().slice(-6)}-${(seq + 1).toString().padStart(4, '0')}`;
+      const mvRand = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const movementNumber = `BSM-INW-${Date.now().toString().slice(-6)}-${(seq + 1).toString().padStart(4, '0')}-${mvRand}`;
 
       // 3. Create immutable movement ledger
       const movement = await tx.boardStockMovement.create({
@@ -553,7 +556,8 @@ export class BoardInventoryService {
 
       // 2. Generate unique movement number
       const seq = await tx.boardStockMovement.count();
-      const movementNumber = `BSM-ISS-${Date.now().toString().slice(-6)}-${(seq + 1).toString().padStart(4, '0')}`;
+      const mvRand = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const movementNumber = `BSM-ISS-${Date.now().toString().slice(-6)}-${(seq + 1).toString().padStart(4, '0')}-${mvRand}`;
 
       // 3. Create movement ledger entry
       const movement = await tx.boardStockMovement.create({
@@ -642,7 +646,8 @@ export class BoardInventoryService {
           },
         });
 
-        const movementNumber = `BSM-INW-${Date.now().toString().slice(-6)}-${(currentSeq + i + 1).toString().padStart(4, '0')}`;
+        const mvRand = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const movementNumber = `BSM-INW-${Date.now().toString().slice(-6)}-${(currentSeq + i + 1).toString().padStart(4, '0')}-${mvRand}`;
 
         const movement = await tx.boardStockMovement.create({
           data: {
@@ -741,7 +746,8 @@ export class BoardInventoryService {
           },
         });
 
-        const movementNumber = `BSM-ISS-${Date.now().toString().slice(-6)}-${(currentSeq + i + 1).toString().padStart(4, '0')}`;
+        const mvRand = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const movementNumber = `BSM-ISS-${Date.now().toString().slice(-6)}-${(currentSeq + i + 1).toString().padStart(4, '0')}-${mvRand}`;
 
         const movement = await tx.boardStockMovement.create({
           data: {
@@ -856,7 +862,8 @@ export class BoardInventoryService {
 
         // 2. Log ISSUE_AUTO movement
         const seq = await tx.boardStockMovement.count();
-        const movementNumber = `BSM-AUTO-${Date.now().toString().slice(-6)}-${(seq + 1).toString().padStart(4, '0')}`;
+        const mvRand = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const movementNumber = `BSM-AUTO-${Date.now().toString().slice(-6)}-${(seq + 1).toString().padStart(4, '0')}-${mvRand}`;
 
         const m = await tx.boardStockMovement.create({
           data: {

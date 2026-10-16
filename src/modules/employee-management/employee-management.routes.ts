@@ -118,23 +118,24 @@ router.use(authenticate);
 router.use(requireAdminOrSuperAdmin);
 
 // ─── Employee Master Data ─────────────────────────────────────────────────────
-router.get('/', authorize('employees.read'), listEmployeesHandler);
+router.get(['/', '/all'], authorize('employees.read'), listEmployeesHandler);
 router.post('/', authorize('employees.create'), createEmployeeHandler);
-router.get('/detail/:id', authorize('employees.read'), getEmployeeHandler);
-router.put('/detail/:id', authorize('employees.update'), updateEmployeeHandler);
-router.delete('/detail/:id', authorize('employees.delete'), deactivateEmployeeHandler);
+router.get(['/detail/:id', '/:id'], authorize('employees.read'), getEmployeeHandler);
+router.put(['/detail/:id', '/:id'], authorize('employees.update'), updateEmployeeHandler);
+router.patch(['/detail/:id', '/:id'], authorize('employees.update'), updateEmployeeHandler);
+router.delete(['/detail/:id', '/:id'], authorize('employees.delete'), deactivateEmployeeHandler);
 
 // ─── Attendance Management ────────────────────────────────────────────────────
-router.get('/attendance', authorize('attendance.read'), listAttendanceHandler);
+router.get(['/attendance', '/attendance/monthly'], authorize('attendance.read'), listAttendanceHandler);
 router.get('/attendance/monthly-report-pdf', authorize('attendance.read'), downloadMonthlyAttendanceReportPdfHandler);
-router.post('/attendance', authorize('attendance.mark', 'attendance.update'), recordAttendanceHandler);
+router.post(['/attendance', '/attendance/record'], authorize('attendance.mark', 'attendance.update'), recordAttendanceHandler);
 router.post('/attendance/batch', authorize('attendance.batch', 'attendance.mark'), batchRecordAttendanceHandler);
-router.delete('/attendance', authorize('attendance.mark', 'attendance.update'), deleteAttendanceHandler);
+router.delete(['/attendance', '/attendance/record'], authorize('attendance.mark', 'attendance.update'), deleteAttendanceHandler);
 
 // ─── Leave Ledger ─────────────────────────────────────────────────────────────
-router.post('/leave/accrue-monthly', authorize('leaves.accrue'), accrueMonthlyLeaveHandler);
-router.get('/:id/leave-ledger', authorize('leaves.read'), getLeaveLedgerHandler);
-router.post('/:id/leave-ledger', authorize('leaves.adjust'), adjustLeaveHandler);
+router.post(['/leave/accrue-monthly', '/leaves/accrue'], authorize('leaves.accrue'), accrueMonthlyLeaveHandler);
+router.get(['/:id/leave-ledger', '/leaves/ledger/:id'], authorize('leaves.read'), getLeaveLedgerHandler);
+router.post(['/:id/leave-ledger', '/leaves/adjust/:id'], authorize('leaves.adjust'), adjustLeaveHandler);
 
 // ─── Advances ─────────────────────────────────────────────────────────────────
 router.get('/advances', authorize('advances.read'), listAdvancesHandler);
@@ -142,6 +143,7 @@ router.get('/advances/summary', authorize('advances.read'), getAdvanceSummaryHan
 router.get('/advances/ledger', authorize('advances.read'), getAdvanceLedgerHandler);
 router.post('/advances', authorize('advances.create'), createAdvanceHandler);
 router.put('/advances/:id', authorize('advances.update'), updateAdvanceHandler);
+router.patch('/advances/:id', authorize('advances.update'), updateAdvanceHandler);
 router.post('/advances/:id/partial-deduct', authorize('advances.create', 'advances.update'), partialDeductAdvanceHandler);
 router.post('/advances/:id/recover', authorize('advances.create', 'advances.update'), recoverAdvanceHandler);
 router.delete('/advances/:id', authorize('advances.delete'), deleteAdvanceHandler);
@@ -150,17 +152,18 @@ router.delete('/advances/:id', authorize('advances.delete'), deleteAdvanceHandle
 router.get('/deductions', authorize('deductions.read'), listDeductionsHandler);
 router.post('/deductions', authorize('deductions.create'), createDeductionHandler);
 router.put('/deductions/:id', authorize('deductions.update'), updateDeductionHandler);
+router.patch('/deductions/:id', authorize('deductions.update'), updateDeductionHandler);
 router.delete('/deductions/:id', authorize('deductions.delete'), deleteDeductionHandler);
 
 // ─── Monthly Payroll Engine ───────────────────────────────────────────────────
 router.get('/payroll', authorize('payroll.read'), listPayrollRunsHandler);
 router.post('/payroll/calculate', authorize('payroll.calculate'), calculatePayrollHandler);
 router.post('/payroll/simulate', authorize('payroll.calculate'), simulateSalaryCalculationHandler);
-router.get('/payroll/defaults/:id', authorize('payroll.read', 'payroll.calculate'), getEmployeeSalaryDefaultsHandler);
+router.get(['/payroll/defaults', '/payroll/defaults/:id'], authorize('payroll.read', 'payroll.calculate'), getEmployeeSalaryDefaultsHandler);
 router.post('/payroll/:id/finalize', authorize('payroll.finalize'), finalizePayrollHandler);
 router.post('/payroll/:id/revert-draft', authorize('payroll.revert_draft'), revertPayrollToDraftHandler);
 router.post('/payroll/:id/mark-paid', authorize('payroll.disburse'), markPayrollPaidHandler);
-router.get('/payroll/:id/pdf', authorize('payroll.download_payslip', 'payroll.read'), downloadPayslipPdfHandler);
-router.post('/payroll/:id/resend-email', authorize('payroll.email_payslip'), resendPayslipEmailHandler);
+router.get(['/payroll/:id/pdf', '/payroll/:id/payslip-pdf'], authorize('payroll.download_payslip', 'payroll.read'), downloadPayslipPdfHandler);
+router.post(['/payroll/:id/resend-email', '/payroll/:id/resend-payslip-email'], authorize('payroll.email_payslip'), resendPayslipEmailHandler);
 
 export default router;

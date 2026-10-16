@@ -335,9 +335,13 @@ export const simulateSalaryCalculationHandler = async (req: Request, res: Respon
 
 export const getEmployeeSalaryDefaultsHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const id = req.params.id as string;
-    const month = Number(req.query.month) || 9;
-    const year = Number(req.query.year) || 2026;
+    const id = (req.params.id as string) || (req.query.employeeId as string);
+    if (!id) {
+      sendError(res, { code: 'BAD_REQUEST', message: 'Employee ID is required' }, 400);
+      return;
+    }
+    const month = Number(req.query.month) || (new Date().getMonth() + 1);
+    const year = Number(req.query.year) || new Date().getFullYear();
     const result = await employeeService.getEmployeeSalaryDefaults(id, month, year);
     sendSuccess(res, result, 'Employee salary defaults retrieved successfully');
   } catch (error) {
