@@ -1274,6 +1274,75 @@ export async function getInstallerLedger(installerId: string) {
     },
   });
 
+  const billIds = bills.map((b) => b.id);
+
+  // Fetch ALL payments (standalone advances where billId is null, plus payments linked to bills)
+  const allPayments = await prisma.installerBillPayment.findMany({
+    where: {
+      OR: [
+        { installerId: installer.id },
+        ...(billIds.length > 0 ? [{ billId: { in: billIds } }] : []),
+      ],
+    },
+    orderBy: { paymentDate: 'desc' },
+    include: {
+      bill: {
+        select: {
+          id: true,
+          billNo: true,
+          siteAddress: true,
+          sitePin: true,
+          total: true,
+          paymentStatus: true,
+        },
+      },
+    },
+  });
+
+  const advances = allPayments
+    .filter((p) => p.isAdvance)
+    .map((p) => ({
+      id: p.id,
+      billId: p.billId,
+      installerId: p.installerId,
+      amount: Number(p.amount),
+      paymentDate: p.paymentDate.toISOString(),
+      paymentMode: p.paymentMode || 'BANK_TRANSFER',
+      referenceNote: p.referenceNote,
+      isAdvance: true,
+      createdAt: p.createdAt.toISOString(),
+      bill: p.bill
+        ? {
+            id: p.bill.id,
+            billNo: p.bill.billNo,
+            siteAddress: p.bill.siteAddress,
+            total: Number(p.bill.total),
+          }
+        : null,
+    }));
+
+  const settlements = allPayments
+    .filter((p) => !p.isAdvance)
+    .map((p) => ({
+      id: p.id,
+      billId: p.billId,
+      installerId: p.installerId,
+      amount: Number(p.amount),
+      paymentDate: p.paymentDate.toISOString(),
+      paymentMode: p.paymentMode || 'BANK_TRANSFER',
+      referenceNote: p.referenceNote,
+      isAdvance: false,
+      createdAt: p.createdAt.toISOString(),
+      bill: p.bill
+        ? {
+            id: p.bill.id,
+            billNo: p.bill.billNo,
+            siteAddress: p.bill.siteAddress,
+            total: Number(p.bill.total),
+          }
+        : null,
+    }));
+
   let totalCubicleUnits = 0;
   let totalUmpUnits = 0;
   let totalLockerUnits = 0;
@@ -1281,8 +1350,6 @@ export async function getInstallerLedger(installerId: string) {
   let totalTravel = 0;
   let totalDeductions = 0;
   let netPayable = 0;
-  let totalPaid = 0;
-  let balanceDue = 0;
   let clearedCount = 0;
   let partialCount = 0;
 
@@ -1299,8 +1366,6 @@ export async function getInstallerLedger(installerId: string) {
     totalTravel += Number(b.travelExpenses || 0);
     totalDeductions += Number(b.deductionAmount || 0);
     netPayable += Number(b.total || 0);
-    totalPaid += Number(b.amountPaid || 0);
-    balanceDue += Number(b.balanceDue || 0);
 
     if (b.paymentStatus === 'CLEARED') {
       clearedCount++;
@@ -1308,6 +1373,90 @@ export async function getInstallerLedger(installerId: string) {
       partialCount++;
     }
   }
+
+  const totalAdvances = advances.reduce((acc, a) => acc + a.amount, 0);
+  const totalSettlements = settlements.reduce((acc, s) => acc + s.amount, 0);
+  const totalPaid = totalAdvances + totalSettlements;
+  const balanceDue = netPayable - totalPaid;
+
+  // Build Chronological Statement of Account Ledger
+  interface StatementEvent {
+    id: string;
+    rawDate: Date;
+    date: string;
+    type: 'BILL' | 'ADVANCE' | 'SETTLEMENT';
+    reference: string;
+    siteAddress?: string | null;
+    description: string;
+    paymentMode?: string | null;
+    debit: number;
+    credit: number;
+    balance: number;
+  }
+
+  const rawEvents: StatementEvent[] = [];
+
+  for (const b of bills) {
+    const rawDate = new Date(b.installDate || b.createdAt);
+    rawEvents.push({
+      id: `bill-${b.id}`,
+      rawDate,
+      date: rawDate.toISOString(),
+      type: 'BILL',
+      reference: b.billNo,
+      siteAddress: b.siteAddress,
+      description: `Installation work (${b.items.length || 1} units) at ${b.siteAddress}${b.notes ? ` — ${b.notes}` : ''}`,
+      paymentMode: null,
+      debit: Number(b.total),
+      credit: 0,
+      balance: 0,
+    });
+  }
+
+  for (const p of allPayments) {
+    const rawDate = new Date(p.paymentDate || p.createdAt);
+    const isAdv = p.isAdvance;
+    const ref = p.bill ? p.bill.billNo : isAdv ? 'ADV-VOUCHER' : 'PMT-DIRECT';
+    const desc = p.referenceNote
+      ? p.referenceNote
+      : isAdv
+      ? `Advance disbursement to installer`
+      : `Settlement payment against ${ref}`;
+
+    rawEvents.push({
+      id: `pmt-${p.id}`,
+      rawDate,
+      date: rawDate.toISOString(),
+      type: isAdv ? 'ADVANCE' : 'SETTLEMENT',
+      reference: ref,
+      siteAddress: p.bill?.siteAddress || null,
+      description: desc,
+      paymentMode: p.paymentMode || 'BANK_TRANSFER',
+      debit: 0,
+      credit: Number(p.amount),
+      balance: 0,
+    });
+  }
+
+  // Sort chronological (oldest to newest)
+  rawEvents.sort((a, b) => a.rawDate.getTime() - b.rawDate.getTime());
+
+  let running = 0;
+  const statementTransactions = rawEvents.map((ev) => {
+    running += (ev.debit - ev.credit);
+    return {
+      id: ev.id,
+      date: ev.date,
+      type: ev.type,
+      reference: ev.reference,
+      siteAddress: ev.siteAddress,
+      description: ev.description,
+      paymentMode: ev.paymentMode,
+      debit: ev.debit,
+      credit: ev.credit,
+      balance: Math.round(running * 100) / 100,
+    };
+  });
 
   return {
     installer,
@@ -1321,12 +1470,17 @@ export async function getInstallerLedger(installerId: string) {
       totalTravel,
       totalDeductions,
       netPayable,
+      totalAdvances,
+      totalSettlements,
       totalPaid,
       balanceDue,
       clearedCount,
       partialCount,
     },
     bills,
+    advances,
+    payments: settlements,
+    statementTransactions,
   };
 }
 
