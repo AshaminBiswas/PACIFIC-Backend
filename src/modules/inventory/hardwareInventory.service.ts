@@ -120,6 +120,13 @@ function mapRowToMovement(r: any): HardwareStockMovementDto {
   };
 }
 
+function sqlStringOrNull(val: string | undefined | null): string {
+  if (val === undefined || val === null) return 'NULL';
+  const str = String(val).trim();
+  if (str === '') return 'NULL';
+  return `'${str.replace(/'/g, "''")}'`;
+}
+
 export class HardwareInventoryService {
   /**
    * List Hardware Inventory items with pagination and filters
@@ -273,6 +280,12 @@ export class HardwareInventoryService {
     imageUrl?: string;
     notes?: string;
   }) {
+    if (!data.sku || !data.sku.trim()) {
+      throw new Error('SKU / Part Number is required.');
+    }
+    if (!data.name || !data.name.trim()) {
+      throw new Error('Hardware item name is required.');
+    }
     const cleanSku = data.sku.trim().toUpperCase().replace(/'/g, "''");
     // Check if SKU exists
     const existing: any[] = await prisma.$queryRawUnsafe(`
@@ -290,19 +303,19 @@ export class HardwareInventoryService {
     const now = new Date();
 
     const name = data.name.trim().replace(/'/g, "''");
-    const material = data.material.trim().replace(/'/g, "''");
-    const color = data.color.trim().replace(/'/g, "''");
+    const material = (data.material || 'STAINLESS_STEEL').trim().replace(/'/g, "''");
+    const color = (data.color || 'Standard').trim().replace(/'/g, "''");
     const unit = (data.unit || "No's").trim().replace(/'/g, "''");
     const hsn = (data.hsnCode || '8302').trim().replace(/'/g, "''");
     const wh = (data.warehouse || 'DELHI').trim().toUpperCase().replace(/'/g, "''");
-    const vendorId = data.vendorId ? `'${data.vendorId.replace(/'/g, "''")}'` : 'NULL';
-    const vendorName = data.vendorName ? `'${data.vendorName.replace(/'/g, "''")}'` : 'NULL';
-    const locationRack = data.locationRack ? `'${data.locationRack.replace(/'/g, "''")}'` : 'NULL';
-    const dia = data.dia ? `'${data.dia.replace(/'/g, "''")}'` : 'NULL';
-    const length = data.length ? `'${data.length.replace(/'/g, "''")}'` : 'NULL';
-    const width = data.width ? `'${data.width.replace(/'/g, "''")}'` : 'NULL';
-    const imageUrl = data.imageUrl ? `'${data.imageUrl.replace(/'/g, "''")}'` : 'NULL';
-    const notes = data.notes ? `'${data.notes.replace(/'/g, "''")}'` : 'NULL';
+    const vendorId = sqlStringOrNull(data.vendorId);
+    const vendorName = sqlStringOrNull(data.vendorName);
+    const locationRack = sqlStringOrNull(data.locationRack);
+    const dia = sqlStringOrNull(data.dia);
+    const length = sqlStringOrNull(data.length);
+    const width = sqlStringOrNull(data.width);
+    const imageUrl = sqlStringOrNull(data.imageUrl);
+    const notes = sqlStringOrNull(data.notes);
 
     await prisma.$queryRawUnsafe(`
       INSERT INTO hardware_inventory_items (
@@ -366,17 +379,17 @@ export class HardwareInventoryService {
     if (data.unit !== undefined) sets.push(`unit = '${data.unit.replace(/'/g, "''")}'`);
     if (data.hsnCode !== undefined) sets.push(`hsn_code = '${data.hsnCode.replace(/'/g, "''")}'`);
     if (data.warehouse !== undefined) sets.push(`warehouse = '${data.warehouse.replace(/'/g, "''")}'`);
-    if (data.vendorId !== undefined) sets.push(`vendor_id = ${data.vendorId ? `'${data.vendorId.replace(/'/g, "''")}'` : 'NULL'}`);
-    if (data.vendorName !== undefined) sets.push(`vendor_name = ${data.vendorName ? `'${data.vendorName.replace(/'/g, "''")}'` : 'NULL'}`);
+    if (data.vendorId !== undefined) sets.push(`vendor_id = ${sqlStringOrNull(data.vendorId)}`);
+    if (data.vendorName !== undefined) sets.push(`vendor_name = ${sqlStringOrNull(data.vendorName)}`);
     if (data.reorderLevel !== undefined) sets.push(`reorder_level = ${Number(data.reorderLevel) || 10}`);
     if (data.unitCost !== undefined) sets.push(`unit_cost = ${Number(data.unitCost) || 0}`);
-    if (data.locationRack !== undefined) sets.push(`location_rack = ${data.locationRack ? `'${data.locationRack.replace(/'/g, "''")}'` : 'NULL'}`);
-    if (data.dia !== undefined) sets.push(`dia = ${data.dia ? `'${data.dia.replace(/'/g, "''")}'` : 'NULL'}`);
-    if (data.length !== undefined) sets.push(`length = ${data.length ? `'${data.length.replace(/'/g, "''")}'` : 'NULL'}`);
-    if (data.width !== undefined) sets.push(`width = ${data.width ? `'${data.width.replace(/'/g, "''")}'` : 'NULL'}`);
-    if (data.imageUrl !== undefined) sets.push(`image_url = ${data.imageUrl ? `'${data.imageUrl.replace(/'/g, "''")}'` : 'NULL'}`);
+    if (data.locationRack !== undefined) sets.push(`location_rack = ${sqlStringOrNull(data.locationRack)}`);
+    if (data.dia !== undefined) sets.push(`dia = ${sqlStringOrNull(data.dia)}`);
+    if (data.length !== undefined) sets.push(`length = ${sqlStringOrNull(data.length)}`);
+    if (data.width !== undefined) sets.push(`width = ${sqlStringOrNull(data.width)}`);
+    if (data.imageUrl !== undefined) sets.push(`image_url = ${sqlStringOrNull(data.imageUrl)}`);
     if (data.status !== undefined) sets.push(`status = '${data.status.replace(/'/g, "''")}'`);
-    if (data.notes !== undefined) sets.push(`notes = ${data.notes ? `'${data.notes.replace(/'/g, "''")}'` : 'NULL'}`);
+    if (data.notes !== undefined) sets.push(`notes = ${sqlStringOrNull(data.notes)}`);
 
     await prisma.$queryRawUnsafe(`
       UPDATE hardware_inventory_items 
@@ -439,11 +452,11 @@ export class HardwareInventoryService {
     const movId = `mov-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const movNum = `INW-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
-    const invNo = data.supplierInvoiceNo ? `'${data.supplierInvoiceNo.replace(/'/g, "''")}'` : 'NULL';
-    const invDate = data.supplierInvoiceDate ? `'${data.supplierInvoiceDate.replace(/'/g, "''")}'` : 'NULL';
-    const batchNo = data.batchLotNo ? `'${data.batchLotNo.replace(/'/g, "''")}'` : 'NULL';
-    const notes = data.notes ? `'${data.notes.replace(/'/g, "''")}'` : 'NULL';
-    const rack = data.locationRack ? `'${data.locationRack.replace(/'/g, "''")}'` : item.location_rack ? `'${item.location_rack}'` : 'NULL';
+    const invNo = sqlStringOrNull(data.supplierInvoiceNo);
+    const invDate = sqlStringOrNull(data.supplierInvoiceDate);
+    const batchNo = sqlStringOrNull(data.batchLotNo);
+    const notes = sqlStringOrNull(data.notes);
+    const rack = data.locationRack ? sqlStringOrNull(data.locationRack) : item.location_rack ? sqlStringOrNull(item.location_rack) : 'NULL';
 
     // 1. Update item stock
     await prisma.$queryRawUnsafe(`
