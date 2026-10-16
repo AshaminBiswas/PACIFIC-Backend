@@ -1326,6 +1326,194 @@ async function run() {
         END IF;
       END
       $$;
+      -- 23. Employee Management & Payroll Suite
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'EmployeeStatus') THEN
+          CREATE TYPE "EmployeeStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'TERMINATED');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'GovernmentIdType') THEN
+          CREATE TYPE "GovernmentIdType" AS ENUM ('AADHAAR', 'PAN', 'VOTER_ID');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'AttendanceStatus') THEN
+          CREATE TYPE "AttendanceStatus" AS ENUM ('PRESENT', 'DOUBLE_DUTY', 'CL', 'EL', 'UL', 'HALF_DAY', 'LEAVE', 'HOLIDAY');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PayrollStatus') THEN
+          CREATE TYPE "PayrollStatus" AS ENUM ('DRAFT', 'FINALIZED', 'PAID');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'LeaveType') THEN
+          CREATE TYPE "LeaveType" AS ENUM ('CL', 'EL');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'LeaveTransactionType') THEN
+          CREATE TYPE "LeaveTransactionType" AS ENUM ('ACCRUAL', 'USAGE', 'ADJUSTMENT');
+        END IF;
+      END
+      $$;
+
+      CREATE TABLE IF NOT EXISTS employees (
+        id TEXT PRIMARY KEY,
+        employee_id TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        phone TEXT NOT NULL,
+        address TEXT NOT NULL,
+        government_id_type "GovernmentIdType" NOT NULL,
+        government_id_number TEXT NOT NULL,
+        bank_account_number TEXT,
+        bank_ifsc TEXT,
+        bank_name TEXT,
+        bank_account_holder TEXT,
+        designation TEXT NOT NULL,
+        department TEXT NOT NULL,
+        responsibilities TEXT,
+        monthly_ctc NUMERIC(12, 2) NOT NULL,
+        joining_date TIMESTAMPTZ NOT NULL,
+        status "EmployeeStatus" NOT NULL DEFAULT 'ACTIVE',
+        cl_balance NUMERIC(5, 2) NOT NULL DEFAULT 0,
+        el_balance NUMERIC(5, 2) NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_employees_emp_id ON employees(employee_id);
+      CREATE INDEX IF NOT EXISTS idx_employees_email ON employees(email);
+      CREATE INDEX IF NOT EXISTS idx_employees_dept ON employees(department);
+      CREATE INDEX IF NOT EXISTS idx_employees_status ON employees(status);
+
+      CREATE TABLE IF NOT EXISTS employee_attendances (
+        id TEXT PRIMARY KEY,
+        employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        date DATE NOT NULL,
+        status "AttendanceStatus" NOT NULL DEFAULT 'PRESENT',
+        is_sunday BOOLEAN NOT NULL DEFAULT false,
+        is_sunday_override BOOLEAN NOT NULL DEFAULT false,
+        overtime_hours NUMERIC(5, 2) NOT NULL DEFAULT 0,
+        notes TEXT,
+        marked_by_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CONSTRAINT employee_attendances_employee_date_unique UNIQUE (employee_id, date)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_emp_att_empid ON employee_attendances(employee_id);
+      CREATE INDEX IF NOT EXISTS idx_emp_att_date ON employee_attendances(date);
+      CREATE INDEX IF NOT EXISTS idx_emp_att_status ON employee_attendances(status);
+
+      CREATE TABLE IF NOT EXISTS employee_leave_ledgers (
+        id TEXT PRIMARY KEY,
+        employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        leave_type "LeaveType" NOT NULL,
+        transaction_type "LeaveTransactionType" NOT NULL,
+        amount NUMERIC(5, 2) NOT NULL,
+        balance_after NUMERIC(5, 2) NOT NULL,
+        month INT NOT NULL,
+        year INT NOT NULL,
+        reason TEXT,
+        recorded_by_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_emp_leave_empid ON employee_leave_ledgers(employee_id);
+      CREATE INDEX IF NOT EXISTS idx_emp_leave_ym ON employee_leave_ledgers(year, month);
+
+      CREATE TABLE IF NOT EXISTS employee_payroll_runs (
+        id TEXT PRIMARY KEY,
+        employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        month INT NOT NULL,
+        year INT NOT NULL,
+        monthly_ctc NUMERIC(12, 2) NOT NULL,
+        total_calendar_days INT NOT NULL,
+        sundays_count INT NOT NULL,
+        approved_sundays INT NOT NULL DEFAULT 0,
+        payable_days NUMERIC(6, 2) NOT NULL,
+        per_day_rate NUMERIC(12, 2) NOT NULL,
+        present_days NUMERIC(6, 2) NOT NULL,
+        double_duty_days NUMERIC(6, 2) NOT NULL DEFAULT 0,
+        cl_days NUMERIC(6, 2) NOT NULL,
+        el_days NUMERIC(6, 2) NOT NULL,
+        half_days NUMERIC(6, 2) NOT NULL,
+        unpaid_days NUMERIC(6, 2) NOT NULL,
+        holiday_days NUMERIC(6, 2) NOT NULL DEFAULT 0,
+        paid_days NUMERIC(6, 2) NOT NULL,
+        overtime_hours NUMERIC(6, 2) NOT NULL DEFAULT 0,
+        overtime_rate NUMERIC(10, 2) NOT NULL DEFAULT 0,
+        overtime_multiplier NUMERIC(4, 2) NOT NULL DEFAULT 1.0,
+        overtime_pay NUMERIC(12, 2) NOT NULL DEFAULT 0,
+        working_hours_per_day NUMERIC(4, 2) NOT NULL DEFAULT 8,
+        additional_allowances NUMERIC(12, 2) NOT NULL DEFAULT 0,
+        gross_salary NUMERIC(12, 2) NOT NULL,
+        advance_deduction NUMERIC(12, 2) NOT NULL DEFAULT 0,
+        other_deductions NUMERIC(12, 2) NOT NULL DEFAULT 0,
+        deduction_summary JSONB,
+        calculation_history JSONB,
+        net_salary NUMERIC(12, 2) NOT NULL,
+        status "PayrollStatus" NOT NULL DEFAULT 'DRAFT',
+        paid_at TIMESTAMPTZ,
+        payment_mode TEXT,
+        payment_reference TEXT,
+        payment_notes TEXT,
+        email_sent BOOLEAN NOT NULL DEFAULT false,
+        email_sent_at TIMESTAMPTZ,
+        email_status TEXT,
+        email_error TEXT,
+        created_by_id TEXT,
+        finalized_by_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CONSTRAINT employee_payroll_runs_emp_ym_unique UNIQUE (employee_id, year, month)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_emp_payroll_empid ON employee_payroll_runs(employee_id);
+      CREATE INDEX IF NOT EXISTS idx_emp_payroll_ym ON employee_payroll_runs(year, month);
+      CREATE INDEX IF NOT EXISTS idx_emp_payroll_status ON employee_payroll_runs(status);
+
+      CREATE TABLE IF NOT EXISTS employee_advances (
+        id TEXT PRIMARY KEY,
+        employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        amount NUMERIC(12, 2) NOT NULL,
+        original_amount NUMERIC(12, 2),
+        reason TEXT NOT NULL,
+        advance_date TIMESTAMPTZ NOT NULL DEFAULT now(),
+        recovery_month INT NOT NULL,
+        recovery_year INT NOT NULL,
+        is_recovered BOOLEAN NOT NULL DEFAULT false,
+        recovered_at TIMESTAMPTZ,
+        parent_advance_id TEXT,
+        payroll_run_id TEXT REFERENCES employee_payroll_runs(id) ON DELETE SET NULL,
+        created_by_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_emp_adv_empid ON employee_advances(employee_id);
+      CREATE INDEX IF NOT EXISTS idx_emp_adv_ym ON employee_advances(recovery_year, recovery_month);
+      CREATE INDEX IF NOT EXISTS idx_emp_adv_recovered ON employee_advances(is_recovered);
+
+      CREATE TABLE IF NOT EXISTS employee_deductions (
+        id TEXT PRIMARY KEY,
+        employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        amount NUMERIC(12, 2) NOT NULL,
+        reason TEXT NOT NULL,
+        apply_month INT NOT NULL,
+        apply_year INT NOT NULL,
+        is_applied BOOLEAN NOT NULL DEFAULT false,
+        applied_at TIMESTAMPTZ,
+        payroll_run_id TEXT REFERENCES employee_payroll_runs(id) ON DELETE SET NULL,
+        created_by_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_emp_ded_empid ON employee_deductions(employee_id);
+      CREATE INDEX IF NOT EXISTS idx_emp_ded_ym ON employee_deductions(apply_year, apply_month);
+      CREATE INDEX IF NOT EXISTS idx_emp_ded_applied ON employee_deductions(is_applied);
+
+      CREATE TABLE IF NOT EXISTS employee_id_sequences (
+        id TEXT PRIMARY KEY,
+        year_month TEXT UNIQUE NOT NULL,
+        last_number INT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
     `);
 
     console.log('[fix-db] Schema auto-heal complete.');
