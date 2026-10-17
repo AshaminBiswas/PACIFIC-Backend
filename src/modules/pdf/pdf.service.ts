@@ -150,6 +150,13 @@ export interface QuotationPdfData {
     overallHeight?: string;
     hardwarePackage?: string;
     make?: string;
+    customModelName?: string;
+    modelName?: string;
+    modelImageUrl?: string;
+    isCustom?: boolean;
+    hsnSac?: string;
+    customSpecsJson?: any;
+    notes?: string;
   }>;
   basicPrice: number;
   installationCharge?: number;
@@ -342,6 +349,11 @@ export interface PiPdfData {
     overallHeight?: string;
     hardwarePackage?: string;
     make?: string;
+    customModelName?: string;
+    modelName?: string;
+    isCustom?: boolean;
+    customSpecsJson?: any;
+    notes?: string;
   }>;
   taxSummary: Array<{
     gstRate: number;
@@ -735,13 +747,23 @@ export const pdfService = {
     const itemRows = data.items
       .map((it, idx) => {
         const fallbackSpecs = parseItemSpecs(it.description);
-        const boardType = it.boardType || fallbackSpecs.boardType;
-        const boardThickness = it.boardThickness || fallbackSpecs.boardThickness;
-        const boardColor = it.boardColor || fallbackSpecs.boardColor;
-        const cubicleSize = it.cubicleSize || fallbackSpecs.cubicleSize;
+        const customSpecs = ((it as any).customSpecsJson as any) || {};
+        const isCustom = Boolean((it as any).isCustom || customSpecs.isCustom || customSpecs.systemCategory === 'custom');
+        const customDims = (customSpecs.width || customSpecs.depth || customSpecs.height)
+          ? [
+              customSpecs.width ? `${customSpecs.width}mm W` : '',
+              customSpecs.depth ? `${customSpecs.depth}mm D` : '',
+              customSpecs.height ? `${customSpecs.height}mm H` : '',
+            ].filter(Boolean).join(' × ')
+          : '';
+
+        const boardType = it.boardType || customSpecs.boardType || customSpecs.boardMaterial || fallbackSpecs.boardType;
+        const boardThickness = it.boardThickness || customSpecs.boardThickness || fallbackSpecs.boardThickness;
+        const boardColor = it.boardColor || customSpecs.boardColor || customSpecs.colorFinish || fallbackSpecs.boardColor;
+        const cubicleSize = it.cubicleSize || customDims || fallbackSpecs.cubicleSize;
         const doorSize = it.doorSize || fallbackSpecs.doorSize;
         const overallHeight = it.overallHeight || fallbackSpecs.overallHeight;
-        const rawHardware = it.hardwarePackage || fallbackSpecs.hardwarePackage;
+        const rawHardware = it.hardwarePackage || customSpecs.hardwarePackage || customSpecs.hardwareType || fallbackSpecs.hardwarePackage;
         const showHardware = Boolean(
           rawHardware &&
           !rawHardware.includes('Golden, Black, SS') &&
@@ -754,18 +776,20 @@ export const pdfService = {
         const hardwarePackage = showHardware ? rawHardware : undefined;
         const displayDesc = cleanDescription(it.description);
 
-        const customModel = (it as any).customModelName || (it as any).modelName || (it as any).customSpecsJson?.customModelName || (it as any).model?.title;
+        const customModel = (it as any).customModelName || (it as any).modelName || customSpecs.customModelName || (it as any).model?.title;
+        const customNotes = customSpecs.notes || (it as any).notes;
 
         const hasSpecs = Boolean(
-          customModel || it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage
+          customModel || it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage || customNotes
         );
 
         const descLower = (it.description || '').toLowerCase();
         const isUrinal = descLower.includes('urinal') || descLower.includes('ump') || (cubicleSize && cubicleSize.includes('450mm'));
         const isLocker = descLower.includes('locker');
-        const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : 'Cubicle / Depth Size';
+        const isCubicle = !isUrinal && !isLocker && !isCustom && (descLower.includes('cubicle') || descLower.includes('restroom'));
+        const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : isCubicle ? 'Cubicle / Depth Size' : 'Dimensions';
         const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
-        const showDoor = doorSize && !doorSize.toLowerCase().includes('n/a') && (!isUrinal || doorSize.trim() !== 'N/A');
+        const showDoor = !isCustom && doorSize && !doorSize.toLowerCase().includes('n/a') && (!isUrinal || doorSize.trim() !== 'N/A');
 
         return `
           <tr>
@@ -776,13 +800,14 @@ export const pdfService = {
                 <div class="spec-box">
                   ${customModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
                   ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
-                  ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
+                  ${boardType ? `<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${boardType}</div>` : ''}
                   ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
-                  ${boardColor ? `<div>• <strong>Board Color:</strong> ${boardColor}</div>` : ''}
+                  ${boardColor ? `<div>• <strong>Color / Finish:</strong> ${boardColor}</div>` : ''}
                   ${cubicleSize ? `<div>• <strong>${sizeLabel}:</strong> ${cubicleSize}</div>` : ''}
                   ${showDoor ? `<div>• <strong>${doorLabel}:</strong> ${doorSize}</div>` : ''}
                   ${overallHeight ? `<div>• <strong>Overall Height:</strong> ${overallHeight}</div>` : ''}
                   ${hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${hardwarePackage}</div>` : ''}
+                  ${customNotes ? `<div>• <strong>Notes / Specs:</strong> ${customNotes}</div>` : ''}
                 </div>
               ` : ''}
             </td>
@@ -1644,6 +1669,22 @@ export const pdfService = {
       });
     }
 
+    const hasCubicleItems = data.items.some(isCubiclePdfItem);
+    const accessoriesSectionTitle = hasCubicleItems
+      ? 'Standard Inclusions & Hardware Accessories'
+      : 'System Inclusions & Technical Specifications';
+
+    let accessoriesContentHtml = this.formatQuotationAccessoriesHtml(data.accessoriesText);
+    if (!hasCubicleItems && (!data.accessoriesText || data.accessoriesText.includes('Gravity Hinges'))) {
+      accessoriesContentHtml = `
+        <div style="font-size: 9.5px; line-height: 1.5; padding: 2px 0;">
+          <div style="margin-bottom: 4px;">• <strong>Technical Hardware &amp; Mountings:</strong> High-grade architectural fittings, brackets, and structural anchors selected specifically for the quoted custom systems.</div>
+          <div style="margin-bottom: 4px;">• <strong>Precision Fabrication:</strong> Engineered CNC machining, fine edge banding, and stringent factory dimensional tolerances.</div>
+          <div style="margin-bottom: 4px;">• <strong>Workmanship Standard:</strong> Commercial heavy-duty specifications designed for high performance, durability, and aesthetics.</div>
+        </div>
+      `;
+    }
+
     const modelImages = (data.modelImages || []).filter((img) => img && img.imageUrl);
     const hasModelImages = modelImages.length > 0;
 
@@ -1924,37 +1965,58 @@ export const pdfService = {
             const descLower = (item.description || '').toLowerCase();
             const isUrinal = descLower.includes('urinal') || descLower.includes('ump') || (item.cubicleSize && item.cubicleSize.includes('450mm'));
             const isLocker = descLower.includes('locker');
-            const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : 'Cubicle / Depth Size';
-            const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
-            const showDoor = item.doorSize && !item.doorSize.toLowerCase().includes('n/a') && (!isUrinal || item.doorSize.trim() !== 'N/A');
-            const showHardware = Boolean(
-              item.hardwarePackage &&
-              !item.hardwarePackage.includes('Golden, Black, SS') &&
-              !item.hardwarePackage.includes('SS Hardware (Golden, Black, SS)') &&
-              !item.hardwarePackage.includes('SS 304 Stainless Steel (Satin/Brushed)') &&
-              !item.hardwarePackage.includes('SS 304 Stainless Steel') &&
-              !item.hardwarePackage.toLowerCase().includes('satin/brushed') &&
-              !item.hardwarePackage.toLowerCase().includes('ss 304')
-            );
+            const isCustom = Boolean((item as any).isCustom || ((item as any).customSpecsJson as any)?.isCustom || ((item as any).customSpecsJson as any)?.systemCategory === 'custom');
+            const isCubicle = !isUrinal && !isLocker && !isCustom && (descLower.includes('cubicle') || descLower.includes('restroom') || descLower.includes('toilet'));
 
-            const customModel = (item as any).customModelName || (item as any).modelName || ((item as any).customSpecsJson as any)?.customModelName || ((item as any).customSpecsJson as any)?.modelName;
+            const customSpecs = ((item as any).customSpecsJson as any) || {};
+            const customModel = (item as any).customModelName || (item as any).modelName || customSpecs.customModelName || customSpecs.modelName;
+
+            const customDims = (customSpecs.width || customSpecs.depth || customSpecs.height)
+              ? [
+                  customSpecs.width ? `${customSpecs.width}mm W` : '',
+                  customSpecs.depth ? `${customSpecs.depth}mm D` : '',
+                  customSpecs.height ? `${customSpecs.height}mm H` : '',
+                ].filter(Boolean).join(' × ')
+              : '';
+            const displaySize = item.cubicleSize || customDims;
+            const displayBoardType = item.boardType || customSpecs.boardMaterial || customSpecs.boardType;
+            const displayBoardThickness = item.boardThickness || customSpecs.boardThickness;
+            const displayBoardColor = item.boardColor || customSpecs.colorFinish || customSpecs.boardColor;
+            const displayHardware = item.hardwarePackage || customSpecs.hardwareType || customSpecs.hardwarePackage;
+            const displayNotes = customSpecs.notes || (item as any).notes;
+            const displayHsn = (item as any).hsnSac || customSpecs.hsnSac;
+
+            const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : isCubicle ? 'Cubicle / Depth Size' : 'Dimensions';
+            const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
+            const showDoor = !isCustom && item.doorSize && !item.doorSize.toLowerCase().includes('n/a') && (!isUrinal || item.doorSize.trim() !== 'N/A');
+            const showHardware = Boolean(
+              displayHardware &&
+              !displayHardware.includes('Golden, Black, SS') &&
+              !displayHardware.includes('SS Hardware (Golden, Black, SS)') &&
+              !displayHardware.includes('SS 304 Stainless Steel (Satin/Brushed)') &&
+              !displayHardware.includes('SS 304 Stainless Steel') &&
+              !displayHardware.toLowerCase().includes('satin/brushed') &&
+              !displayHardware.toLowerCase().includes('ss 304')
+            );
 
             return `
             <tr>
               <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
               <td>
                 <div style="font-weight: bold; font-size: 11px;">${item.description}</div>
-                ${customModel || item.make || item.boardType || item.cubicleSize || item.boardColor || item.boardThickness || item.doorSize || item.overallHeight || showHardware ? `
+                ${customModel || item.make || displayBoardType || displaySize || displayBoardColor || displayBoardThickness || showDoor || item.overallHeight || showHardware || displayHsn || displayNotes ? `
                   <div class="spec-box">
                     ${customModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
                     ${item.make ? `<div>• <strong>Make:</strong> ${item.make}</div>` : ''}
-                    ${item.boardType ? `<div>• <strong>Board Type:</strong> ${item.boardType}</div>` : ''}
-                    ${item.boardThickness ? `<div>• <strong>Board Thickness:</strong> ${item.boardThickness}</div>` : ''}
-                    ${item.boardColor ? `<div>• <strong>Board Color:</strong> ${item.boardColor}</div>` : ''}
-                    ${item.cubicleSize ? `<div>• <strong>${sizeLabel}:</strong> ${item.cubicleSize}</div>` : ''}
+                    ${displayBoardType ? `<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${displayBoardType}</div>` : ''}
+                    ${displayBoardThickness ? `<div>• <strong>Board Thickness:</strong> ${displayBoardThickness}</div>` : ''}
+                    ${displayBoardColor ? `<div>• <strong>Color / Finish:</strong> ${displayBoardColor}</div>` : ''}
+                    ${displaySize ? `<div>• <strong>${sizeLabel}:</strong> ${displaySize}</div>` : ''}
                     ${showDoor ? `<div>• <strong>${doorLabel}:</strong> ${item.doorSize}</div>` : ''}
                     ${item.overallHeight ? `<div>• <strong>Overall Height:</strong> ${item.overallHeight}</div>` : ''}
-                    ${showHardware ? `<div>• <strong>Hardware Package:</strong> ${item.hardwarePackage}</div>` : ''}
+                    ${showHardware ? `<div>• <strong>Hardware / Fittings:</strong> ${displayHardware}</div>` : ''}
+                    ${displayHsn ? `<div>• <strong>HSN/SAC:</strong> ${displayHsn}</div>` : ''}
+                    ${displayNotes ? `<div>• <strong>Fabrication Notes:</strong> ${displayNotes}</div>` : ''}
                   </div>
                 ` : ''}
               </td>
@@ -2109,7 +2171,7 @@ export const pdfService = {
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 2px;">
         <tr>
           <td style="width: ${hasModelImages ? '65%' : '100%'}; vertical-align: bottom;">
-            <div class="section-title-p2" style="margin: 6px 0 2px 0;">Standard Inclusions &amp; Hardware Accessories</div>
+            <div class="section-title-p2" style="margin: 6px 0 2px 0;">${accessoriesSectionTitle}</div>
           </td>
           ${hasModelImages ? `
           <td style="width: 35%; vertical-align: bottom; text-align: right;">
@@ -2125,7 +2187,7 @@ export const pdfService = {
         <table style="width: 100%; border-collapse: collapse;">
           <tr>
             <td style="width: ${hasModelImages ? '65%' : '100%'}; vertical-align: top; padding: 6px 10px; ${hasModelImages ? 'border-right: 1.5px solid #000000;' : ''}">
-              ${this.formatQuotationAccessoriesHtml(data.accessoriesText)}
+              ${accessoriesContentHtml}
             </td>
             ${hasModelImages ? `
             <td style="width: 35%; vertical-align: middle; padding: 6px 8px; background: #fafbfc; text-align: center;">
