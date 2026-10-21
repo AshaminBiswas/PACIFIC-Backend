@@ -48,6 +48,7 @@ import hardwareInventoryRoutes from './modules/inventory/hardwareInventory.route
 import installerPaymentsRoutes from './modules/installer-payments/installer-payments.routes';
 import employeeManagementRoutes from './modules/employee-management/employee-management.routes';
 import upRoutes from './modules/up/up.routes';
+import wacrmRoutes from './modules/wacrm/wacrm.routes';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 const app = express();
@@ -206,6 +207,7 @@ app.use(`${prefix}/employees`, employeeManagementRoutes);
 app.use(`${prefix}/roles`, rolesRoutes);
 app.use(`${prefix}/users`, usersRoutes);
 app.use(`${prefix}/up`, upRoutes);
+app.use(`${prefix}/wacrm`, wacrmRoutes);
 
 // ─── Initialize Roles & Permissions ──────────────────────────────────────────
 rolesService.seedDefaultRolesAndPermissions().catch((err) => {
