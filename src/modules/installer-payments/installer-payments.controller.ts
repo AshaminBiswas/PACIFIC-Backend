@@ -250,6 +250,17 @@ export const deleteInstallerBillHandler = async (req: Request, res: Response, ne
   }
 };
 
+export const deleteInstallerAdvanceHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const userId = (req as any).user?.id;
+    const result = await installerService.deleteInstallerPayment(id, userId);
+    sendSuccess(res, result, result.message || 'Payment record deleted successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ─── Super Admin Export Handler ──────────────────────────────────────────────
 
 export const exportInstallerBillsExcelHandler = async (req: Request, res: Response, next: NextFunction) => {

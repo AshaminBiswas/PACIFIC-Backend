@@ -22,6 +22,7 @@ import {
   downloadBillPdfHandler,
   resendBillEmailHandler,
   deleteInstallerBillHandler,
+  deleteInstallerAdvanceHandler,
   exportInstallerBillsExcelHandler,
 } from './installer-payments.controller';
 
@@ -112,6 +113,10 @@ router.get('/installers/:id/ledger', authenticate, authorize('cubicle_installers
 // ─── Advance Payment Routes ──────────────────────────────────────────────────
 router.get('/advances', authenticate, authorize('installer_payments.read'), listInstallerAdvancesHandler);
 router.post('/advances', authenticate, authorize('installer_payments.record_payment', 'installer_payments.update', 'installer_payments.create'), recordInstallerAdvanceHandler);
+router.delete('/advances/:id', authenticate, authorize('installer_payments.delete', 'installer_payments.record_payment', 'installer_payments.update'), deleteInstallerAdvanceHandler);
+
+// ─── Payment Record Deletion Route ───────────────────────────────────────────
+router.delete('/payments/:id', authenticate, authorize('installer_payments.delete', 'installer_payments.record_payment', 'installer_payments.update'), deleteInstallerAdvanceHandler);
 
 // ─── Full Payment History Export ─────────────────────────────────────────────
 router.get('/export/excel', authenticate, authorize('installer_payments.export', 'installer_payments.read'), exportInstallerBillsExcelHandler);

@@ -1510,3 +1510,129 @@ export async function deleteInstallerBill(billId: string, superAdminId?: string)
   return true;
 }
 
+// ─── Payment & Advance Deletion ──────────────────────────────────────────────
+
+/**
+ * Delete an installer payment or advance disbursement record.
+ * If linked to an installer bill, automatically recalculates and restores
+ * the bill's advancePaid, amountPaid, balanceDue, and paymentStatus.
+ */
+export async function deleteInstallerPayment(paymentId: string, deletedById?: string) {
+  const payment = await prisma.installerBillPayment.findUnique({
+    where: { id: paymentId },
+    include: {
+      installer: true,
+      bill: true,
+    },
+  });
+
+  if (!payment) {
+    const error: any = new Error('Installer payment record not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const paymentAmount = Number(payment.amount);
+  const isAdvance = payment.isAdvance;
+  const targetBillId = payment.billId;
+
+  return await prisma.$transaction(async (tx) => {
+    let restoredBill: any = null;
+
+    if (targetBillId) {
+      const bill = await tx.installerBill.findUnique({
+        where: { id: targetBillId },
+      });
+
+      if (bill) {
+        const currentPaid = Number(bill.amountPaid || 0);
+        const currentAdvance = Number(bill.advancePaid || 0);
+        const billTotal = Number(bill.total || 0);
+
+        const newPaid = Math.max(0, currentPaid - paymentAmount);
+        const newAdvance = isAdvance ? Math.max(0, currentAdvance - paymentAmount) : currentAdvance;
+        const newBalance = Math.max(0, billTotal - newPaid);
+        const newStatus = newBalance === 0 && newPaid >= billTotal && billTotal > 0 ? 'CLEARED' : 'PARTIAL';
+
+        // Check if other advance payments remain on this bill
+        const remainingAdvances = await tx.installerBillPayment.findMany({
+          where: {
+            billId: targetBillId,
+            isAdvance: true,
+            id: { not: paymentId },
+          },
+          orderBy: { paymentDate: 'desc' },
+          take: 1,
+        });
+
+        const latestRemainingAdvance = remainingAdvances[0] || null;
+
+        restoredBill = await tx.installerBill.update({
+          where: { id: targetBillId },
+          data: {
+            amountPaid: new Prisma.Decimal(newPaid),
+            advancePaid: new Prisma.Decimal(newAdvance),
+            balanceDue: new Prisma.Decimal(newBalance),
+            paymentStatus: newStatus as any,
+            advanceDate: latestRemainingAdvance ? latestRemainingAdvance.paymentDate : null,
+            advanceNote: latestRemainingAdvance ? latestRemainingAdvance.referenceNote : null,
+          },
+        });
+      }
+    }
+
+    await tx.installerBillPayment.delete({
+      where: { id: paymentId },
+    });
+
+    if (deletedById) {
+      await tx.auditLog.create({
+        data: {
+          userId: deletedById,
+          action: 'DELETE',
+          module: 'InstallerPayments',
+          entityType: 'InstallerBillPayment',
+          entityId: paymentId,
+          oldData: {
+            amount: paymentAmount,
+            isAdvance,
+            installerId: payment.installerId,
+            installerName: payment.installer?.name,
+            billId: targetBillId,
+            billNo: payment.bill?.billNo,
+          },
+        },
+      }).catch((e) => logger.warn(`[Installer Payments] Failed to create audit log for payment deletion: ${e?.message}`));
+    }
+
+    logger.info(
+      `[Installer Payments] Deleted ${isAdvance ? 'advance' : 'payment'} record ${paymentId} (₹${paymentAmount}) for installer ${payment.installer?.name || 'unknown'}${targetBillId ? ` linked to bill #${payment.bill?.billNo}` : ''}`
+    );
+
+    return {
+      success: true,
+      message: `${isAdvance ? 'Advance disbursement' : 'Payment record'} of ₹${paymentAmount.toLocaleString('en-IN')} deleted successfully.`,
+      deletedPayment: {
+        id: paymentId,
+        amount: paymentAmount,
+        isAdvance,
+        installerName: payment.installer?.name,
+        billNo: payment.bill?.billNo || null,
+      },
+      restoredBill: restoredBill
+        ? {
+            id: restoredBill.id,
+            billNo: restoredBill.billNo,
+            amountPaid: Number(restoredBill.amountPaid),
+            advancePaid: Number(restoredBill.advancePaid),
+            balanceDue: Number(restoredBill.balanceDue),
+            paymentStatus: restoredBill.paymentStatus,
+          }
+        : null,
+    };
+  });
+}
+
+export const deleteInstallerAdvance = deleteInstallerPayment;
+
+
