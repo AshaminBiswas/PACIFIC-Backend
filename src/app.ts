@@ -49,6 +49,7 @@ import installerPaymentsRoutes from './modules/installer-payments/installer-paym
 import employeeManagementRoutes from './modules/employee-management/employee-management.routes';
 import upRoutes from './modules/up/up.routes';
 import wacrmRoutes from './modules/wacrm/wacrm.routes';
+import mailRoutes from './modules/mail/mail.routes';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 const app = express();
@@ -208,6 +209,7 @@ app.use(`${prefix}/roles`, rolesRoutes);
 app.use(`${prefix}/users`, usersRoutes);
 app.use(`${prefix}/up`, upRoutes);
 app.use(`${prefix}/wacrm`, wacrmRoutes);
+app.use(`${prefix}/mail`, mailRoutes);
 
 // ─── Initialize Roles & Permissions ──────────────────────────────────────────
 rolesService.seedDefaultRolesAndPermissions().catch((err) => {
