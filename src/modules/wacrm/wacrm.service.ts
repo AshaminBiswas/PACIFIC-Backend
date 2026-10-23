@@ -124,68 +124,68 @@ export const listConversations = async (status?: string, search?: string) => {
 };
 
 export const getConversation = async (id: string) => {
-  const convs = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT 
-       cv.id,
-       cv.contact_id as "contactId",
-       cv.status,
-       cv.assigned_agent_name as "assignedAgentName",
-       cv.last_message_text as "lastMessageText",
-       cv.last_message_at as "lastMessageAt",
-       cv.unread_count as "unreadCount",
-       cv.created_at as "createdAt",
-       c.name as "contactName",
-       c.phone as "contactPhone",
-       c.email as "contactEmail",
-       c.company as "contactCompany",
-       c.notes as "contactNotes",
-       coalesce(
-         (
-           SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'color', t.color))
-           FROM public.wacrm_contact_tags ct
-           JOIN public.wacrm_tags t ON t.id = ct.tag_id
-           WHERE ct.contact_id = c.id
-         ),
-         '[]'::json
-       ) as tags
-     FROM public.wacrm_conversations cv
-     JOIN public.wacrm_contacts c ON c.id = cv.contact_id
-     WHERE cv.id = $1::uuid
-     LIMIT 1;`,
-    id
-  );
+  // Execute conversation lookup, message history, and unread reset in parallel
+  const [convs, messages] = await Promise.all([
+    prisma.$queryRawUnsafe<any[]>(
+      `SELECT 
+         cv.id,
+         cv.contact_id as "contactId",
+         cv.status,
+         cv.assigned_agent_name as "assignedAgentName",
+         cv.last_message_text as "lastMessageText",
+         cv.last_message_at as "lastMessageAt",
+         cv.unread_count as "unreadCount",
+         cv.created_at as "createdAt",
+         c.name as "contactName",
+         c.phone as "contactPhone",
+         c.email as "contactEmail",
+         c.company as "contactCompany",
+         c.notes as "contactNotes",
+         coalesce(
+           (
+             SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'color', t.color))
+             FROM public.wacrm_contact_tags ct
+             JOIN public.wacrm_tags t ON t.id = ct.tag_id
+             WHERE ct.contact_id = c.id
+           ),
+           '[]'::json
+         ) as tags
+       FROM public.wacrm_conversations cv
+       JOIN public.wacrm_contacts c ON c.id = cv.contact_id
+       WHERE cv.id = $1::uuid
+       LIMIT 1;`,
+      id
+    ),
+    prisma.$queryRawUnsafe<any[]>(
+      `SELECT 
+         id,
+         conversation_id as "conversationId",
+         sender_type as "senderType",
+         sender_name as "senderName",
+         content_type as "contentType",
+         content_text as "contentText",
+         media_url as "mediaUrl",
+         template_name as "templateName",
+         message_id as "messageId",
+         status,
+         reaction,
+         interactive_payload as "interactivePayload",
+         ai_generated as "aiGenerated",
+         created_at as "createdAt"
+       FROM public.wacrm_messages
+       WHERE conversation_id = $1::uuid
+       ORDER BY created_at ASC;`,
+      id
+    ),
+    prisma.$executeRawUnsafe(
+      `UPDATE public.wacrm_conversations SET unread_count = 0, updated_at = NOW() WHERE id = $1::uuid AND unread_count > 0;`,
+      id
+    ).catch(() => {})
+  ]);
 
   if (convs.length === 0) {
     throw new AppError('Conversation not found', 404);
   }
-
-  const messages = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT 
-       id,
-       conversation_id as "conversationId",
-       sender_type as "senderType",
-       sender_name as "senderName",
-       content_type as "contentType",
-       content_text as "contentText",
-       media_url as "mediaUrl",
-       template_name as "templateName",
-       message_id as "messageId",
-       status,
-       reaction,
-       interactive_payload as "interactivePayload",
-       ai_generated as "aiGenerated",
-       created_at as "createdAt"
-     FROM public.wacrm_messages
-     WHERE conversation_id = $1::uuid
-     ORDER BY created_at ASC;`,
-    id
-  );
-
-  // Mark as read
-  await prisma.$executeRawUnsafe(
-    `UPDATE public.wacrm_conversations SET unread_count = 0, updated_at = NOW() WHERE id = $1::uuid;`,
-    id
-  );
 
   return {
     conversation: {
@@ -1274,3 +1274,20 @@ export const createTemplate = async (input: {
 
   return created;
 };
+
+// ─── 14. High-Performance Database Indexing Engine ───────────────────────────
+export const ensureWacrmIndexes = async () => {
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS idx_wacrm_messages_conv_created ON public.wacrm_messages (conversation_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_wacrm_conversations_contact ON public.wacrm_conversations (contact_id);
+      CREATE INDEX IF NOT EXISTS idx_wacrm_conversations_updated ON public.wacrm_conversations (updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_wacrm_conversations_status ON public.wacrm_conversations (status);
+    `);
+  } catch {
+    // Non-fatal if DB permissions restrict direct DDL
+  }
+};
+
+// Execute asynchronously on module init to warm indexes
+ensureWacrmIndexes().catch(() => {});
