@@ -237,8 +237,10 @@ export const sendMessage = async (operatorName: string, input: SendWacrmMessageI
     const config = await prisma.$queryRawUnsafe<any[]>(
       `SELECT phone_number_id, access_token, status FROM public.wacrm_config WHERE status = 'connected' LIMIT 1;`
     );
-    if (config.length > 0 && recipientPhone) {
-      const { phone_number_id, access_token } = config[0];
+    const phone_number_id = config[0]?.phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const access_token = config[0]?.access_token || process.env.WHATSAPP_ACCESS_TOKEN;
+
+    if (phone_number_id && access_token && recipientPhone) {
       const payload: any = {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
@@ -737,15 +739,23 @@ export const getWhatsAppConfig = async () => {
      LIMIT 1;`
   );
   if (rows.length === 0) {
+    const envPhone = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
+    const envToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
     return {
-      status: 'disconnected',
-      phoneNumberId: '',
-      wabaId: '',
-      verifyToken: 'pacific_wacrm_verify_secret',
-      webhookUrl: '/api/v1/wacrm/webhook',
+      status: envPhone && envToken ? 'connected' : 'disconnected',
+      phoneNumberId: envPhone,
+      wabaId: process.env.WHATSAPP_WABA_ID || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
+      verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || 'pacific_wacrm_verify_secret',
+      webhookUrl: process.env.WHATSAPP_WEBHOOK_URL || '/api/v1/wacrm/webhook',
     };
   }
-  return rows[0];
+  const row = rows[0];
+  return {
+    ...row,
+    phoneNumberId: row.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || '',
+    wabaId: row.wabaId || process.env.WHATSAPP_WABA_ID || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
+    verifyToken: row.verifyToken || process.env.WHATSAPP_VERIFY_TOKEN || 'pacific_wacrm_verify_secret',
+  };
 };
 
 export const saveWhatsAppConfig = async (input: SaveWacrmConfigInput) => {
@@ -1114,7 +1124,7 @@ export const generateAiDraftReply = async (conversationId: string) => {
     `SELECT provider, api_key, model, system_prompt, temperature, knowledge_base FROM public.wacrm_ai_config LIMIT 1;`
   );
   const cfg = aiConfig[0] || {};
-  const apiKey = cfg.api_key;
+  const apiKey = cfg.api_key || process.env.OPENAI_API_KEY;
   const kbSummary = Array.isArray(cfg.knowledge_base)
     ? cfg.knowledge_base.map((k: any) => `${k.title}: ${k.content}`).join('\n')
     : '';
@@ -1190,11 +1200,12 @@ export const testWhatsAppConnection = async () => {
   const configs = await prisma.$queryRawUnsafe<any[]>(
     `SELECT phone_number_id, access_token, status FROM public.wacrm_config LIMIT 1;`
   );
-  if (configs.length === 0 || !configs[0].phone_number_id || !configs[0].access_token) {
-    throw new AppError('WhatsApp Cloud API credentials not configured', 400);
-  }
+  const phone_number_id = configs[0]?.phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const access_token = configs[0]?.access_token || process.env.WHATSAPP_ACCESS_TOKEN;
 
-  const { phone_number_id, access_token } = configs[0];
+  if (!phone_number_id || !access_token) {
+    throw new AppError('WhatsApp Cloud API credentials not configured in DB or .env', 400);
+  }
 
   try {
     const res = await fetch(

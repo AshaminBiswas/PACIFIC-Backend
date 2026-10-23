@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'node:crypto';
 import { AuthRequest } from '../../middleware/auth.middleware';
 import { sendSuccess } from '../../utils/response';
 import * as wacrmService from './wacrm.service';
@@ -193,8 +194,9 @@ export const verifyWebhook = (req: Request, res: Response) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
+  const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || 'pacific_wacrm_verify_secret';
 
-  if (mode === 'subscribe' && token === 'pacific_wacrm_verify_secret') {
+  if (mode === 'subscribe' && token === expectedToken) {
     res.status(200).send(challenge);
   } else {
     res.status(403).send('Forbidden');
@@ -202,6 +204,26 @@ export const verifyWebhook = (req: Request, res: Response) => {
 };
 
 export const handleWebhook = async (req: Request, res: Response) => {
+  // Validate HMAC-SHA256 signature if META_APP_SECRET is set
+  const secret = process.env.META_APP_SECRET || process.env.WHATSAPP_APP_SECRET;
+  const signatureHeader = req.headers['x-hub-signature-256'] as string | undefined;
+
+  if (secret && signatureHeader) {
+    try {
+      const rawBody = (req as any).rawBody || JSON.stringify(req.body);
+      const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+      const a = Buffer.from(signatureHeader);
+      const b = Buffer.from(expected);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        console.warn('[WACRM Webhook] Invalid HMAC signature rejected');
+        res.status(403).json({ error: 'Invalid webhook signature' });
+        return;
+      }
+    } catch (sigErr) {
+      console.warn('[WACRM Webhook] Signature verification error:', sigErr);
+    }
+  }
+
   // Acknowledge Meta immediately with 200 OK
   res.status(200).json({ status: 'received' });
 };
