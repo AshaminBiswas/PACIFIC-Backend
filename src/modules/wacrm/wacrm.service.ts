@@ -171,6 +171,9 @@ export const getConversation = async (id: string) => {
        template_name as "templateName",
        message_id as "messageId",
        status,
+       reaction,
+       interactive_payload as "interactivePayload",
+       ai_generated as "aiGenerated",
        created_at as "createdAt"
      FROM public.wacrm_messages
      WHERE conversation_id = $1::uuid
@@ -274,6 +277,24 @@ export const sendMessage = async (operatorName: string, input: SendWacrmMessageI
     console.warn('[WACRM] Meta Cloud API live dispatch warning (message stored locally):', metaErr?.message || metaErr);
   }
 
+  // Resolve template body text if sending a template without custom text
+  let resolvedContentText = input.contentText;
+  if (!resolvedContentText && input.templateName) {
+    try {
+      const tplRes = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT body_text as "bodyText" FROM public.wacrm_templates WHERE name = $1 LIMIT 1;`,
+        input.templateName
+      );
+      if (tplRes.length > 0 && tplRes[0].bodyText) {
+        resolvedContentText = tplRes[0].bodyText;
+      } else {
+        resolvedContentText = `Template: ${input.templateName}`;
+      }
+    } catch {
+      resolvedContentText = `Template: ${input.templateName}`;
+    }
+  }
+
   // Insert message record into PostgreSQL
   const msgRes = await prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO public.wacrm_messages (
@@ -289,7 +310,7 @@ export const sendMessage = async (operatorName: string, input: SendWacrmMessageI
     conversationId,
     operatorName,
     input.contentType || 'text',
-    input.contentText || (input.templateName ? `[Template: ${input.templateName}]` : ''),
+    resolvedContentText || '',
     input.mediaUrl || null,
     input.templateName || null,
     metaMessageId,
@@ -297,7 +318,7 @@ export const sendMessage = async (operatorName: string, input: SendWacrmMessageI
   );
 
   // Update conversation
-  const preview = input.contentText || (input.templateName ? `[Template: ${input.templateName}]` : 'Media');
+  const preview = resolvedContentText || (input.templateName ? `Template: ${input.templateName}` : 'Media');
   await prisma.$executeRawUnsafe(
     `UPDATE public.wacrm_conversations 
      SET last_message_text = $1, last_message_at = NOW(), updated_at = NOW()
@@ -306,7 +327,23 @@ export const sendMessage = async (operatorName: string, input: SendWacrmMessageI
     conversationId
   );
 
-  return msgRes[0];
+  const raw = msgRes[0] || {};
+  return {
+    id: raw.id,
+    conversationId: raw.conversation_id,
+    senderType: raw.sender_type,
+    senderName: raw.sender_name,
+    contentType: raw.content_type,
+    contentText: raw.content_text,
+    mediaUrl: raw.media_url,
+    templateName: raw.template_name,
+    messageId: raw.message_id,
+    status: raw.status,
+    reaction: raw.reaction || null,
+    interactivePayload: raw.interactive_payload || null,
+    aiGenerated: raw.ai_generated || false,
+    createdAt: raw.created_at ? new Date(raw.created_at).toISOString() : new Date().toISOString(),
+  };
 };
 
 export const updateConversation = async (id: string, input: UpdateConversationStatusInput) => {

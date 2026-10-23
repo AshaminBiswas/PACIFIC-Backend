@@ -38,7 +38,7 @@ export const sendMessage = async (req: AuthRequest, res: Response, next: NextFun
   try {
     const operatorName = (req.user as any)?.firstName
       ? `${(req.user as any).firstName} ${(req.user as any).lastName || ''}`.trim()
-      : req.user?.email || 'Pacific Sales';
+      : req.user?.email ? req.user.email.split('@')[0] : 'Pacific Sales';
     const data = await wacrmService.sendMessage(operatorName, req.body);
     sendSuccess(res, data, 'Message sent successfully', 201);
   } catch (err) {
