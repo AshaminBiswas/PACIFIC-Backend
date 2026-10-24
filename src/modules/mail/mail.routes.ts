@@ -128,6 +128,7 @@ router.get('/admin/diagnostics', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.getOp
 
 /** GET /api/v1/mail/admin/outbox-failures — Troubleshooting failures (omits bodies) */
 router.get('/admin/outbox-failures', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.getOutboxFailures);
+router.get('/admin/outbox/failures', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.getOutboxFailures); // alias
 
 /** GET /api/v1/mail/admin/addresses — List addresses with status and quota */
 router.get('/admin/addresses', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.listAdminAddresses);
@@ -140,5 +141,6 @@ router.patch('/admin/users/:userId/access', requireRole('SUPER_ADMIN', 'ADMIN'),
 
 /** GET /api/v1/mail/audit — Immutable audit logs */
 router.get('/audit', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.getAuditLogs);
+router.get('/admin/audit', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.getAuditLogs); // alias
 
 export default router;

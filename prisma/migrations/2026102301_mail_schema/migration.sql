@@ -27,8 +27,10 @@ CREATE TYPE "MailJobStatus" AS ENUM (
   'PENDING',
   'PROCESSING',
   'SENT',
+  'COMPLETED',
   'FAILED',
-  'CANCELLED'
+  'CANCELLED',
+  'RETRY'
 );
 
 -- Delivery/engagement events tracked per message

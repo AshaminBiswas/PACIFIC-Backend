@@ -853,7 +853,7 @@ export const eventRepository = {
          VALUES ($1, $2, $3::"MailEventType", $4, $5)`,
         params.messageId,
         params.outboxId ?? null,
-        params.eventType,
+        params.eventType.toUpperCase(),
         params.recipientId ?? null,
         params.metadata ? JSON.stringify(params.metadata) : null
       );
