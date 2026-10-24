@@ -1024,11 +1024,35 @@ export const ordersService = {
       }
     }
 
+    const compAddr = company?.addresses?.find((a: any) => a.isDefault) || company?.addresses?.[0];
+    const isKolkataOrder =
+      company?.id === 'a25090ef-f6c0-407f-8b1e-1da8d506308c' ||
+      company?.stateCode === '19' ||
+      company?.entityCode === 'PPS-KOL' ||
+      (company?.companyName || '').toLowerCase().includes('kolkata') ||
+      (order.orderNumber || '').startsWith('PPSK/');
+
+    let companyAddress = '';
+    if (compAddr) {
+      const parts = [
+        compAddr.addressLine1,
+        compAddr.addressLine2,
+        compAddr.city,
+        compAddr.state ? `${compAddr.state}${compAddr.postalCode ? ` - ${compAddr.postalCode}` : ''}` : (compAddr.postalCode ? `PIN: ${compAddr.postalCode}` : '')
+      ].filter(Boolean);
+      companyAddress = parts.join(', ');
+    }
+    if (!companyAddress) {
+      companyAddress = isKolkataOrder
+        ? 'Village Burirhat Bazar, P.O-Chowrashi, P.S- Deganga, Dist.-North 24 Paragana, Kolkata, West Bengal - 743424'
+        : 'H-3, JR Complex, Gate No. 4, Melaram farm, Sewa Dham Rd, Mandoli, Delhi - 110093';
+    }
+
     return pdfService.generateSalesOrderPdfHtml({
       orderNumber: order.orderNumber,
       orderDate: order.orderDate.toISOString(),
       companyName: company?.companyName || 'Pacific Panels Systems Pvt. Ltd.',
-      companyAddress: company?.addresses?.[0]?.addressLine1 || 'H-3, JR Complex, Mandoli, New Delhi - 110093',
+      companyAddress,
       companyPhone: company?.phone || '+91-98100-XXXXX',
       companyEmail: company?.email || 'orders@pacificcubicles.com',
       companyGstin: company?.gstin || '07CIJPS1392A2Z9',
@@ -1215,13 +1239,37 @@ export const ordersService = {
           quantity: Number(it.quantity) || 1,
         }));
 
+    const dispatchCompAddr = company?.addresses?.find((a: any) => a.isDefault) || company?.addresses?.[0];
+    const isKolkataDispatch =
+      company?.id === 'a25090ef-f6c0-407f-8b1e-1da8d506308c' ||
+      company?.stateCode === '19' ||
+      company?.entityCode === 'PPS-KOL' ||
+      (company?.companyName || '').toLowerCase().includes('kolkata') ||
+      (dispatch.dispatchNumber || '').startsWith('PPSK/');
+
+    let dispatchCompanyAddress = '';
+    if (dispatchCompAddr) {
+      const parts = [
+        dispatchCompAddr.addressLine1,
+        dispatchCompAddr.addressLine2,
+        dispatchCompAddr.city,
+        dispatchCompAddr.state ? `${dispatchCompAddr.state}${dispatchCompAddr.postalCode ? ` - ${dispatchCompAddr.postalCode}` : ''}` : (dispatchCompAddr.postalCode ? `PIN: ${dispatchCompAddr.postalCode}` : '')
+      ].filter(Boolean);
+      dispatchCompanyAddress = parts.join(', ');
+    }
+    if (!dispatchCompanyAddress) {
+      dispatchCompanyAddress = isKolkataDispatch
+        ? 'Village Burirhat Bazar, P.O-Chowrashi, P.S- Deganga, Dist.-North 24 Paragana, Kolkata, West Bengal - 743424'
+        : 'H-3, JR Complex, Gate No. 4, Melaram farm, Sewa Dham Rd, Mandoli, Delhi - 110093';
+    }
+
     return pdfService.generateDispatchChallanPdfHtml({
       dispatchNumber: dispatch.dispatchNumber,
       dispatchDate: dispatch.dispatchDate.toISOString(),
       orderNumber: order?.orderNumber || undefined,
       packingListNumber: dispatch.packingList?.packingListNumber || undefined,
       companyName: company?.companyName || 'Pacific Panels Systems Pvt. Ltd.',
-      companyAddress: company?.addresses?.[0]?.addressLine1 || 'H-3, JR Complex, Mandoli, New Delhi - 110093',
+      companyAddress: dispatchCompanyAddress,
       companyGstin: company?.gstin || '07CIJPS1392A2Z9',
       logoUrl: company?.logoUrl || undefined,
       customerName: customer?.legalName || shippingSnapshot?.recipient || 'Customer Consignee',

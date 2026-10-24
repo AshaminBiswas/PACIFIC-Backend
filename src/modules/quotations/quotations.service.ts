@@ -482,6 +482,12 @@ export const quotationsService = {
       data: {
         revisionNumber: newRevNumber,
         companyProfileId: updateData.companyProfileId || existing.companyProfileId,
+        recipientSalutation: updateData.recipientSalutation ?? existing.recipientSalutation,
+        recipientName: updateData.recipientName ?? existing.recipientName,
+        recipientCompany: updateData.recipientCompany ?? existing.recipientCompany,
+        recipientAddress: updateData.recipientAddress ?? existing.recipientAddress,
+        recipientEmail: updateData.recipientEmail ?? existing.recipientEmail,
+        recipientPhone: updateData.recipientPhone ?? existing.recipientPhone,
         projectName: updateData.projectName ?? existing.projectName,
         subject: updateData.subject ?? existing.subject,
         basicPrice: updateData.basicPrice ?? existing.basicPrice,
@@ -753,6 +759,30 @@ export const quotationsService = {
       }
     }
 
+    const compAddr = quote.companyProfile?.addresses?.find((a: any) => a.isDefault) || quote.companyProfile?.addresses?.[0];
+    const isKolkataQuote =
+      quote.companyProfileId === 'a25090ef-f6c0-407f-8b1e-1da8d506308c' ||
+      quote.companyProfile?.stateCode === '19' ||
+      quote.companyProfile?.entityCode === 'PPS-KOL' ||
+      (quote.companyProfile?.companyName || '').toLowerCase().includes('kolkata') ||
+      (quote.referenceNumber || '').startsWith('PPSK/');
+
+    let fullCompanyAddress = '';
+    if (compAddr) {
+      const parts = [
+        compAddr.addressLine1,
+        compAddr.addressLine2,
+        compAddr.city,
+        compAddr.state ? `${compAddr.state}${compAddr.postalCode ? ` - ${compAddr.postalCode}` : ''}` : (compAddr.postalCode ? `PIN: ${compAddr.postalCode}` : '')
+      ].filter(Boolean);
+      fullCompanyAddress = parts.join(', ');
+    }
+    if (!fullCompanyAddress) {
+      fullCompanyAddress = isKolkataQuote
+        ? 'Village Burirhat Bazar, P.O-Chowrashi, P.S- Deganga, Dist.-North 24 Paragana, Kolkata, West Bengal - 743424'
+        : 'H-3, JR Complex, Gate No. 4, Melaram farm, Sewa Dham Rd, Mandoli, Delhi - 110093';
+    }
+
     return pdfService.generateQuotationPdfHtml({
       referenceNumber: quote.referenceNumber,
       revisionNumber: quote.revisionNumber,
@@ -761,7 +791,7 @@ export const quotationsService = {
       subject: quote.subject,
       title: quote.title,
       companyName: quote.companyProfile.companyName,
-      companyAddress: quote.companyProfile.addresses?.[0]?.addressLine1 || 'H-3, JR Complex, Mandoli, New Delhi - 110093',
+      companyAddress: fullCompanyAddress,
       companyPhone: quote.companyProfile.phone || '',
       companyEmail: quote.companyProfile.email || '',
       companyGstin: quote.companyProfile.gstin || '',

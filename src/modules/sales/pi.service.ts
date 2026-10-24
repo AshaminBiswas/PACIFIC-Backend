@@ -690,10 +690,29 @@ export const piService = {
       accountName: (primaryBank as any)?.accountName || pi.companyProfile.companyName || defaultBank.accountName,
     };
 
-    const companyAddress =
-      pi.companyProfile.addresses?.[0]?.addressLine1 ||
-      [pi.companyProfile.state, pi.companyProfile.country].filter(Boolean).join(', ') ||
-      'H-3, JR Complex, Mandoli, New Delhi - 110093';
+    const compAddr = pi.companyProfile.addresses?.find((a: any) => a.isDefault) || pi.companyProfile.addresses?.[0];
+    const isKolkataPi =
+      pi.companyProfileId === 'a25090ef-f6c0-407f-8b1e-1da8d506308c' ||
+      pi.companyProfile?.stateCode === '19' ||
+      pi.companyProfile?.entityCode === 'PPS-KOL' ||
+      (pi.companyProfile?.companyName || '').toLowerCase().includes('kolkata') ||
+      (pi.piNumber || '').startsWith('PPSK/');
+
+    let companyAddress = '';
+    if (compAddr) {
+      const parts = [
+        compAddr.addressLine1,
+        compAddr.addressLine2,
+        compAddr.city,
+        compAddr.state ? `${compAddr.state}${compAddr.postalCode ? ` - ${compAddr.postalCode}` : ''}` : (compAddr.postalCode ? `PIN: ${compAddr.postalCode}` : '')
+      ].filter(Boolean);
+      companyAddress = parts.join(', ');
+    }
+    if (!companyAddress) {
+      companyAddress = isKolkataPi
+        ? 'Village Burirhat Bazar, P.O-Chowrashi, P.S- Deganga, Dist.-North 24 Paragana, Kolkata, West Bengal - 743424'
+        : 'H-3, JR Complex, Gate No. 4, Melaram farm, Sewa Dham Rd, Mandoli, Delhi - 110093';
+    }
 
     const customerPan =
       (billToParty as any)?.pan ||
