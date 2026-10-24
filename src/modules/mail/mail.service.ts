@@ -16,8 +16,16 @@ import {
   mailAuditRepository,
   eventRepository,
   searchRepository,
+  attachmentRepository,
+  adminRepository,
   type DbClient,
 } from './mail.repository';
+import {
+  sanitizeFilename,
+  validateAttachmentExtension,
+  getMailStorageAdapter,
+  MAX_ATTACHMENT_SIZE_BYTES,
+} from './mail.storage';
 import type {
   MailAddress,
   MailThread,
@@ -26,6 +34,11 @@ import type {
   MailThreadSummary,
   MailFolder,
   FolderCounts,
+  MailAttachment,
+  MailOperationalMetrics,
+  MailOutboxFailure,
+  MailAdminAddressSummary,
+  AttachmentUploadResponse,
 } from './mail.types';
 import type {
   ProvisionAddressInput,
@@ -788,6 +801,7 @@ export const mailboxService = {
   /**
    * Get full thread detail with all participant messages.
    * Enforces participant access check and marks messages read.
+   * Optimized: uses batch set queries to eliminate N+1 DB round trips.
    */
   async getThreadDetail(
     userId: string,
@@ -805,31 +819,11 @@ export const mailboxService = {
     );
     if (!accessCheck[0]) throw Object.assign(new Error('Thread not found or access denied'), { status: 404 });
 
-    // Retrieve all messages in thread visible to this user
-    const msgRows = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT m.id
-       FROM mail_messages m
-       JOIN mailbox_items mi ON mi.message_id = m.id
-       WHERE mi.user_id = $1 AND mi.thread_id = $2
-       ORDER BY m.sent_at ASC NULLS LAST, m.created_at ASC`,
-      userId,
-      threadId
-    );
+    // High-performance batch retrieval (3 set queries total for messages, recipients & attachments)
+    const messages = await messageRepository.findDetailsByThreadId(threadId, userId);
 
-    const messages: MailMessageDetail[] = [];
-    for (const row of msgRows) {
-      const detail = await messageRepository.findDetailById(row.id, userId);
-      if (detail) {
-        messages.push(detail);
-        // Mark as read on view
-        await prisma.$executeRawUnsafe(
-          `UPDATE mailbox_items SET is_read = TRUE, updated_at = NOW()
-           WHERE user_id = $1 AND message_id = $2 AND is_read = FALSE`,
-          userId,
-          row.id
-        );
-      }
-    }
+    // Batch mark thread unread items as read in a single update query
+    await mailboxRepository.markThreadRead(threadId, userId);
 
     await mailAuditRepository.log({
       actorUserId: userId,
@@ -1042,11 +1036,224 @@ export const mailSearchService = {
 };
 
 // =============================================================================
-// 6. Admin Audit Service
+// 6. Attachment Service (Step 4 Security & Storage)
+// =============================================================================
+
+export const mailAttachmentService = {
+  /**
+   * Upload an attachment linked to a draft or message owned by the caller.
+   * Validates size, extension, sanitizes filename, and writes to private storage.
+   */
+  async uploadAttachment(
+    user: AuthenticatedSender,
+    messageId: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
+    ipAddress?: string
+  ): Promise<AttachmentUploadResponse> {
+    // 1. Verify user account status
+    if (user.isActive === false) {
+      throw Object.assign(new Error('User account is suspended or disabled'), { status: 403 });
+    }
+
+    // 2. Verify caller is the owner/sender of the message
+    const message = await messageRepository.findById(messageId);
+    if (!message) {
+      throw Object.assign(new Error('Message not found'), { status: 404 });
+    }
+    if (message.senderUserId !== user.id) {
+      throw Object.assign(new Error('Access denied: You are not the sender of this message'), { status: 403 });
+    }
+
+    // 3. Validate size
+    if (file.size > MAX_ATTACHMENT_SIZE_BYTES || file.buffer.length > MAX_ATTACHMENT_SIZE_BYTES) {
+      throw Object.assign(
+        new Error(`Attachment size exceeds maximum limit of 25MB (${file.size} bytes)`),
+        { status: 400 }
+      );
+    }
+
+    // 4. Sanitize filename and validate extension against security policy
+    const cleanFilename = sanitizeFilename(file.originalname);
+    const extValidation = validateAttachmentExtension(cleanFilename);
+    if (!extValidation.isValid) {
+      throw Object.assign(new Error(extValidation.error), { status: 400 });
+    }
+
+    // 5. Store file securely via storage adapter
+    const storageAdapter = getMailStorageAdapter();
+    const storageResult = await storageAdapter.save(
+      file.buffer,
+      cleanFilename,
+      file.mimetype || 'application/octet-stream'
+    );
+
+    // 6. Persist metadata in database
+    const attachment = await attachmentRepository.create({
+      messageId,
+      filename: cleanFilename,
+      mimeType: file.mimetype || 'application/octet-stream',
+      sizeBytes: storageResult.sizeBytes,
+      storagePath: storageResult.storagePath,
+      storageBucket: storageResult.storageBucket,
+      checksumSha256: storageResult.checksumSha256,
+      isInline: false,
+    });
+
+    // 7. Audit log
+    await mailAuditRepository.log({
+      actorUserId: user.id,
+      action: 'ATTACHMENT_UPLOAD',
+      resourceType: 'attachment',
+      resourceId: attachment.id,
+      ipAddress,
+      metadata: {
+        messageId,
+        filename: cleanFilename,
+        sizeBytes: storageResult.sizeBytes,
+      },
+    });
+
+    return {
+      id: attachment.id,
+      messageId: attachment.messageId,
+      filename: attachment.filename,
+      mimeType: attachment.mimeType,
+      sizeBytes: attachment.sizeBytes,
+      checksumSha256: attachment.checksumSha256,
+      uploadedAt: attachment.uploadedAt,
+    };
+  },
+
+  /**
+   * Retrieve an attachment stream for download.
+   * Enforces strict mailbox-level authorization: caller must have a mailbox_item
+   * for the parent message, or be the original sender.
+   */
+  async getAttachmentStream(
+    userId: string,
+    attachmentId: string,
+    ipAddress?: string
+  ): Promise<{ stream: NodeJS.ReadableStream; attachment: MailAttachment }> {
+    const authCheck = await attachmentRepository.checkUserAccessToAttachment(attachmentId, userId);
+    if (!authCheck.allowed || !authCheck.attachment) {
+      // Return 404 to avoid leaking existence of private attachments
+      throw Object.assign(new Error('Attachment not found or access denied'), { status: 404 });
+    }
+
+    const storageAdapter = getMailStorageAdapter();
+    const stream = await storageAdapter.getStream(
+      authCheck.attachment.storagePath,
+      authCheck.attachment.storageBucket
+    );
+
+    await mailAuditRepository.log({
+      actorUserId: userId,
+      action: 'ATTACHMENT_DOWNLOAD',
+      resourceType: 'attachment',
+      resourceId: attachmentId,
+      ipAddress,
+      metadata: {
+        filename: authCheck.attachment.filename,
+        sizeBytes: authCheck.attachment.sizeBytes,
+      },
+    });
+
+    return { stream, attachment: authCheck.attachment };
+  },
+
+  /**
+   * Get metadata of an attachment with authorization check.
+   */
+  async getAttachmentMetadata(userId: string, attachmentId: string): Promise<MailAttachment> {
+    const authCheck = await attachmentRepository.checkUserAccessToAttachment(attachmentId, userId);
+    if (!authCheck.allowed || !authCheck.attachment) {
+      throw Object.assign(new Error('Attachment not found or access denied'), { status: 404 });
+    }
+    return authCheck.attachment;
+  },
+};
+
+// =============================================================================
+// 7. Admin Control & Operations Service (Step 4)
 // =============================================================================
 
 export const mailAdminService = {
   async getAuditLogs(page: number, limit: number, actorUserId?: string) {
     return mailAuditRepository.list(page, limit, actorUserId);
+  },
+
+  async getOperationalMetrics(adminUserId: string, ipAddress?: string): Promise<MailOperationalMetrics> {
+    const metrics = await adminRepository.getOperationalMetrics();
+    await mailAuditRepository.log({
+      actorUserId: adminUserId,
+      action: 'ADMIN_VIEW_METRICS',
+      resourceType: 'system',
+      resourceId: 'metrics',
+      ipAddress,
+    });
+    return metrics;
+  },
+
+  async getOutboxFailures(
+    adminUserId: string,
+    page = 1,
+    limit = 20,
+    ipAddress?: string
+  ): Promise<{ items: MailOutboxFailure[]; total: number }> {
+    const failures = await adminRepository.getOutboxFailures(page, limit);
+    await mailAuditRepository.log({
+      actorUserId: adminUserId,
+      action: 'ADMIN_VIEW_OUTBOX_FAILURES',
+      resourceType: 'system',
+      resourceId: 'outbox',
+      ipAddress,
+      metadata: { count: failures.items.length },
+    });
+    return failures;
+  },
+
+  async listAddresses(
+    _adminUserId: string,
+    page = 1,
+    limit = 20,
+    search?: string
+  ): Promise<{ items: MailAdminAddressSummary[]; total: number }> {
+    return adminRepository.listAddresses(page, limit, search);
+  },
+
+  async updateAddressStatus(
+    adminUserId: string,
+    addressId: string,
+    isActive: boolean,
+    ipAddress?: string
+  ): Promise<MailAddress> {
+    const updated = await adminRepository.updateAddressStatus(addressId, isActive);
+    await mailAuditRepository.log({
+      actorUserId: adminUserId,
+      action: 'ADMIN_UPDATE_ADDRESS_STATUS',
+      resourceType: 'address',
+      resourceId: addressId,
+      ipAddress,
+      metadata: { isActive, targetUserId: updated.userId },
+    });
+    return updated;
+  },
+
+  async toggleUserAccess(
+    adminUserId: string,
+    targetUserId: string,
+    isActive: boolean,
+    ipAddress?: string
+  ): Promise<{ success: boolean; targetUserId: string; isActive: boolean }> {
+    await adminRepository.updateUserMailAccess(targetUserId, isActive);
+    await mailAuditRepository.log({
+      actorUserId: adminUserId,
+      action: 'ADMIN_TOGGLE_USER_ACCESS',
+      resourceType: 'user',
+      resourceId: targetUserId,
+      ipAddress,
+      metadata: { isActive },
+    });
+    return { success: true, targetUserId, isActive };
   },
 };

@@ -4,9 +4,10 @@
 // All business logic is delegated to the service layer.
 // =============================================================================
 
-import { Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
 import { sendSuccess, sendPaginated } from '../../utils/response';
+import { mailMetrics } from './mail.metrics';
 import type {
   ProvisionAddressInput,
   SendMailInput,
@@ -26,6 +27,7 @@ import {
   mailboxItemService,
   mailSearchService,
   mailAdminService,
+  mailAttachmentService,
   type AuthenticatedSender,
 } from './mail.service';
 
@@ -382,6 +384,245 @@ export const getAuditLogs = async (req: AuthRequest, res: Response, next: NextFu
       hasNextPage: page * limit < result.total,
       hasPrevPage: page > 1,
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── 7. Attachment Handling (Step 4 Security & Storage) ───────────────────────
+
+/**
+ * POST /api/v1/mail/attachments (or /api/v1/mail/messages/:messageId/attachments)
+ * Uploads an attachment linked to a draft or message.
+ */
+export const uploadAttachment = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const messageId = (req.params.messageId || req.body.messageId || req.params.id) as string;
+    if (!messageId) {
+      res.status(400).json({ success: false, message: 'messageId is required to associate attachment' });
+      return;
+    }
+    if (!req.file) {
+      res.status(400).json({ success: false, message: 'No attachment file provided in request' });
+      return;
+    }
+
+    const attachment = await mailAttachmentService.uploadAttachment(
+      sender,
+      messageId,
+      {
+        buffer: req.file.buffer,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+      },
+      ipAddress
+    );
+
+    sendSuccess(res, attachment, 'Attachment uploaded successfully', 201);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/v1/mail/attachments/:id/download
+ * Streams the attachment with safe security headers after verifying mailbox authorization.
+ */
+export const downloadAttachment = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const attachmentId = req.params.id;
+
+    const { stream, attachment } = await mailAttachmentService.getAttachmentStream(
+      sender.id,
+      attachmentId,
+      ipAddress
+    );
+
+    const safeFilename = attachment.filename.replace(/"/g, '\\"');
+    const encodedFilename = encodeURIComponent(attachment.filename);
+
+    res.setHeader('Content-Type', attachment.mimeType || 'application/octet-stream');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`
+    );
+    res.setHeader('Content-Length', attachment.sizeBytes);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+
+    stream.pipe(res);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/v1/mail/attachments/:id
+ * Retrieves attachment metadata after verifying mailbox authorization.
+ */
+export const getAttachmentMetadata = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender } = getCaller(req);
+    const attachmentId = req.params.id;
+    const meta = await mailAttachmentService.getAttachmentMetadata(sender.id, attachmentId);
+    sendSuccess(res, meta, 'Attachment metadata retrieved');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── 8. Admin Control Plane (Step 4 RBAC & Boundary Enforcement) ──────────────
+
+/**
+ * GET /api/v1/mail/admin/metrics
+ * Returns operational delivery metrics, active address totals, and queue health.
+ * Strictly omits message bodies to protect private mailboxes from administrative snooping.
+ */
+export const getOperationalMetrics = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const metrics = await mailAdminService.getOperationalMetrics(sender.id, ipAddress);
+    sendSuccess(res, metrics, 'Operational metrics retrieved');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/v1/mail/admin/outbox-failures
+ * Lists delivery job failures with errors. Message bodies are omitted.
+ */
+export const getOutboxFailures = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+
+    const result = await mailAdminService.getOutboxFailures(sender.id, page, limit, ipAddress);
+
+    sendPaginated(res, result.items, {
+      page,
+      limit,
+      totalItems: result.total,
+      totalPages: Math.ceil(result.total / limit),
+      hasNextPage: page * limit < result.total,
+      hasPrevPage: page > 1,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/v1/mail/admin/addresses
+ * Lists internal mail addresses with associated account info and quotas.
+ */
+export const listAdminAddresses = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender } = getCaller(req);
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+    const search = req.query.search as string | undefined;
+
+    const result = await mailAdminService.listAddresses(sender.id, page, limit, search);
+
+    sendPaginated(res, result.items, {
+      page,
+      limit,
+      totalItems: result.total,
+      totalPages: Math.ceil(result.total / limit),
+      hasNextPage: page * limit < result.total,
+      hasPrevPage: page > 1,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PATCH /api/v1/mail/admin/addresses/:id/status
+ * Enables or disables an internal mail address.
+ */
+export const updateAddressStatus = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const addressId = req.params.id;
+    const isActive = Boolean(req.body.isActive);
+
+    const updated = await mailAdminService.updateAddressStatus(sender.id, addressId, isActive, ipAddress);
+    sendSuccess(res, updated, `Address ${isActive ? 'activated' : 'deactivated'} successfully`);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PATCH /api/v1/mail/admin/users/:userId/access
+ * Enables or disables all internal mail addresses for a specific user.
+ */
+export const toggleUserMailAccess = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const userId = req.params.userId;
+    const isActive = Boolean(req.body.isActive);
+
+    const result = await mailAdminService.toggleUserAccess(sender.id, userId, isActive, ipAddress);
+    sendSuccess(res, result, `User mail access ${isActive ? 'granted' : 'revoked'} successfully`);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── 9. Health & Diagnostics Checks (Step 5) ──────────────────────────────────
+
+/**
+ * GET /api/v1/mail/health
+ * Public liveness probe for orchestrator container health monitoring.
+ */
+export const getMailHealth = async (_req: Request, res: Response): Promise<void> => {
+  res.json({
+    status: 'HEALTHY',
+    service: 'pacific-mail',
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.round(process.uptime()),
+  });
+};
+
+/**
+ * GET /api/v1/mail/ready
+ * Readiness probe checking database connectivity and queue health.
+ */
+export const getMailReadiness = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const snap = await mailMetrics.getDiagnosticsSnapshot();
+    const isReady = snap.database.status === 'CONNECTED';
+    res.status(isReady ? 200 : 503).json({
+      status: isReady ? 'READY' : 'DEGRADED',
+      service: 'pacific-mail',
+      database: snap.database,
+      queueDepth: snap.queue.depth,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(503).json({
+      status: 'UNAVAILABLE',
+      error: err.message,
+    });
+  }
+};
+
+/**
+ * GET /api/v1/mail/admin/diagnostics
+ * Detailed operational metrics, latency percentiles, error rates, and queue depth.
+ * (SUPER_ADMIN and ADMIN only).
+ */
+export const getOperationalDiagnostics = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const diagnostics = await mailMetrics.getDiagnosticsSnapshot();
+    sendSuccess(res, diagnostics, 'Operational diagnostics snapshot retrieved');
   } catch (err) {
     next(err);
   }

@@ -5,8 +5,11 @@
 // =============================================================================
 
 import { Router } from 'express';
+import multer from 'multer';
 import { requireAuth, requireRole } from '../../middleware/auth.middleware';
 import { validate } from '../../middleware/validate.middleware';
+import { MAX_ATTACHMENT_SIZE_BYTES } from './mail.storage';
+import { mailLoggingMiddleware } from './mail.metrics';
 import {
   ProvisionAddressSchema,
   SendMailSchema,
@@ -24,7 +27,25 @@ import * as ctrl from './mail.controller';
 
 const router = Router();
 
-// All mail routes require authentication
+// ─── 0. Logging Middleware & Public Health Probes (Step 5) ────────────────────
+router.use(mailLoggingMiddleware);
+
+/** GET /api/v1/mail/health — Container liveness check */
+router.get('/health', ctrl.getMailHealth);
+
+/** GET /api/v1/mail/ready — Database & queue readiness check */
+router.get('/ready', ctrl.getMailReadiness);
+
+// Configure safe memory upload parser
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: MAX_ATTACHMENT_SIZE_BYTES, // 25 MB
+    files: 1,
+  },
+});
+
+// All subsequent mail routes require authentication
 router.use(requireAuth);
 
 // ─── 1. Identity & Addresses ──────────────────────────────────────────────────
@@ -87,8 +108,37 @@ router.post('/mailbox/bulk', validate(BulkMailboxActionSchema), ctrl.bulkAction)
 /** GET /api/v1/mail/search?q= — Search across messages, threads, subjects, dates */
 router.get('/search', validate(MailSearchQuerySchema), ctrl.searchMail);
 
-// ─── 6. Admin Audit Logs ──────────────────────────────────────────────────────
-/** GET /api/v1/mail/audit — Immutable audit logs (ADMIN / SUPER_ADMIN only) */
+// ─── 6. Attachment Management & Downloads (Step 4) ────────────────────────────
+/** POST /api/v1/mail/attachments — Upload attachment linked to messageId */
+router.post('/attachments', upload.single('file'), ctrl.uploadAttachment);
+router.post('/messages/:messageId/attachments', upload.single('file'), ctrl.uploadAttachment);
+
+/** GET /api/v1/mail/attachments/:id/download — Authorized download with safe headers */
+router.get('/attachments/:id/download', ctrl.downloadAttachment);
+
+/** GET /api/v1/mail/attachments/:id — Attachment metadata */
+router.get('/attachments/:id', ctrl.getAttachmentMetadata);
+
+// ─── 7. Admin Control Plane (Step 4: SUPER_ADMIN & ADMIN only) ────────────────
+/** GET /api/v1/mail/admin/metrics — Operational metrics and delivery stats */
+router.get('/admin/metrics', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.getOperationalMetrics);
+
+/** GET /api/v1/mail/admin/diagnostics — Performance percentiles, queue depth & storage (Step 5) */
+router.get('/admin/diagnostics', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.getOperationalDiagnostics);
+
+/** GET /api/v1/mail/admin/outbox-failures — Troubleshooting failures (omits bodies) */
+router.get('/admin/outbox-failures', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.getOutboxFailures);
+
+/** GET /api/v1/mail/admin/addresses — List addresses with status and quota */
+router.get('/admin/addresses', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.listAdminAddresses);
+
+/** PATCH /api/v1/mail/admin/addresses/:id/status — Enable or disable mail address */
+router.patch('/admin/addresses/:id/status', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.updateAddressStatus);
+
+/** PATCH /api/v1/mail/admin/users/:userId/access — Enable/disable mail access for user */
+router.patch('/admin/users/:userId/access', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.toggleUserMailAccess);
+
+/** GET /api/v1/mail/audit — Immutable audit logs */
 router.get('/audit', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.getAuditLogs);
 
 export default router;

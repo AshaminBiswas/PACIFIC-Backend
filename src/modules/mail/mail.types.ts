@@ -282,3 +282,56 @@ export interface MailListQuery {
 
 // ─── Transport Interface (Step 2 slot) ───────────────────────────────────────
 // IMailTransport is defined in mail.transport.interface.ts
+
+// ─── Step 4: Admin & Attachment Contracts ────────────────────────────────────
+
+export interface MailOperationalMetrics {
+  totalMessagesSent: number;
+  totalActiveAddresses: number;
+  pendingOutboxCount: number;
+  failedOutboxCount: number;
+  completedOutboxCount: number;
+  recentFailures24h: number;
+  deliverySuccessRate: number;
+}
+
+export interface MailOutboxFailure {
+  id: string;
+  messageId: string;
+  status: MailJobStatus;
+  transport: string;
+  attempts: number;
+  maxAttempts: number;
+  lastError: string | null;
+  nextAttemptAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  subject: string;
+  senderAddress: string;
+}
+
+export interface MailAdminAddressSummary {
+  id: string;
+  userId: string;
+  localPart: string;
+  domain: string;
+  fullAddress: string;
+  displayName: string | null;
+  isActive: boolean;
+  isPrimary: boolean;
+  userEmail: string;
+  userName: string;
+  createdAt: Date;
+  hourlyQuota: number;
+}
+
+export interface AttachmentUploadResponse {
+  id: string;
+  messageId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  checksumSha256: string | null;
+  uploadedAt: Date;
+}
+

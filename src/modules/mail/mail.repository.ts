@@ -22,6 +22,9 @@ import type {
   MailListQuery,
   MailFolder,
   FolderCounts,
+  MailOperationalMetrics,
+  MailOutboxFailure,
+  MailAdminAddressSummary,
 } from './mail.types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -314,6 +317,105 @@ export const messageRepository = {
     }
 
     return result;
+  },
+
+  /**
+   * High-Performance Thread Detail Fetcher:
+   * Eliminates N+1 database queries by batch-loading messages, recipients,
+   * and attachments for the entire thread in just 3 set queries.
+   */
+  async findDetailsByThreadId(
+    threadId: string,
+    callerUserId: string,
+    client: DbClient = prisma
+  ): Promise<MailMessageDetail[]> {
+    // 1. Fetch all messages in thread visible to the caller
+    const msgRows = await client.$queryRawUnsafe<any[]>(
+      `SELECT m.*,
+              a.local_part as from_local_part, a.domain as from_domain, a.display_name as from_display_name
+       FROM mail_messages m
+       JOIN mail_addresses a ON a.id = m.from_address_id
+       JOIN mailbox_items mi ON mi.message_id = m.id
+       WHERE mi.user_id = $1 AND mi.thread_id = $2
+       ORDER BY m.sent_at ASC NULLS LAST, m.created_at ASC`,
+      callerUserId,
+      threadId
+    );
+
+    if (!msgRows || msgRows.length === 0) {
+      return [];
+    }
+
+    const messageIds = msgRows.map((r) => r.id);
+
+    // 2. Batch fetch all recipients for all messages in thread
+    const recipRows = await client.$queryRawUnsafe<any[]>(
+      `SELECT id, message_id, type, raw_email, user_id
+       FROM mail_recipients
+       WHERE message_id = ANY($1)`,
+      messageIds
+    );
+
+    const recipsByMessage = new Map<string, any[]>();
+    for (const r of recipRows) {
+      const list = recipsByMessage.get(r.message_id) || [];
+      list.push(r);
+      recipsByMessage.set(r.message_id, list);
+    }
+
+    // 3. Batch fetch all attachments for all messages in thread
+    const attachRows = await client.$queryRawUnsafe<any[]>(
+      `SELECT * FROM mail_attachments WHERE message_id = ANY($1) ORDER BY uploaded_at ASC`,
+      messageIds
+    );
+
+    const attachesByMessage = new Map<string, any[]>();
+    for (const a of attachRows) {
+      const list = attachesByMessage.get(a.message_id) || [];
+      list.push(a);
+      attachesByMessage.set(a.message_id, list);
+    }
+
+    // 4. Assemble message details with strict BCC isolation
+    return msgRows.map((r) => {
+      const msg = mapMessage(r);
+      const isSender = msg.senderUserId === callerUserId;
+      const allRecips = recipsByMessage.get(msg.id) || [];
+      const allAttaches = attachesByMessage.get(msg.id) || [];
+
+      const publicRecips = allRecips
+        .filter((recip) => recip.type !== 'BCC')
+        .map((recip) => ({
+          id: recip.id,
+          type: recip.type,
+          rawEmail: recip.raw_email,
+          userId: recip.user_id,
+        }));
+
+      const detail: MailMessageDetail = {
+        ...msg,
+        fromAddress: {
+          id: r.from_address_id,
+          localPart: r.from_local_part,
+          domain: r.from_domain,
+          displayName: r.from_display_name,
+        },
+        recipients: publicRecips,
+        attachments: allAttaches.map(mapAttachment),
+      };
+
+      if (isSender) {
+        detail.bccRecipients = allRecips
+          .filter((recip) => recip.type === 'BCC')
+          .map((recip) => ({
+            id: recip.id,
+            rawEmail: recip.raw_email,
+            userId: recip.user_id,
+          }));
+      }
+
+      return detail;
+    });
   },
 
   async updateDraft(
@@ -675,6 +777,17 @@ export const mailboxRepository = {
 
     return counts;
   },
+
+  /** Batch mark all unread messages in a thread as read in a single SQL update */
+  async markThreadRead(threadId: string, userId: string, client: DbClient = prisma): Promise<number> {
+    return client.$executeRawUnsafe(
+      `UPDATE mailbox_items
+       SET is_read = TRUE, updated_at = NOW()
+       WHERE user_id = $1 AND thread_id = $2 AND is_read = FALSE`,
+      userId,
+      threadId
+    );
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -926,6 +1039,300 @@ export const searchRepository = {
     };
   },
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Attachment Repository (Step 4 Security & Storage)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const attachmentRepository = {
+  /** Create attachment record linked to a message (e.g. draft). */
+  async create(
+    data: {
+      messageId: string;
+      filename: string;
+      mimeType: string;
+      sizeBytes: number;
+      storagePath: string;
+      storageBucket?: string;
+      checksumSha256?: string;
+      isInline?: boolean;
+      contentId?: string | null;
+    },
+    client: DbClient = prisma
+  ): Promise<MailAttachment> {
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `INSERT INTO mail_attachments (
+         message_id, filename, mime_type, size_bytes, storage_path, storage_bucket,
+         checksum_sha256, is_inline, content_id
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      data.messageId,
+      data.filename,
+      data.mimeType,
+      data.sizeBytes,
+      data.storagePath,
+      data.storageBucket || 'mail-attachments',
+      data.checksumSha256 ?? null,
+      data.isInline ?? false,
+      data.contentId ?? null
+    );
+    return mapAttachment(rows[0]);
+  },
+
+  /** Find attachment metadata by ID. */
+  async findById(id: string, client: DbClient = prisma): Promise<MailAttachment | null> {
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `SELECT * FROM mail_attachments WHERE id = $1 LIMIT 1`,
+      id
+    );
+    return rows[0] ? mapAttachment(rows[0]) : null;
+  },
+
+  /** Find all attachments for a message. */
+  async findByMessageId(messageId: string, client: DbClient = prisma): Promise<MailAttachment[]> {
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `SELECT * FROM mail_attachments WHERE message_id = $1 ORDER BY uploaded_at ASC`,
+      messageId
+    );
+    return rows.map(mapAttachment);
+  },
+
+  /**
+   * Enforces strict mailbox-level authorization for attachment download.
+   * A user is permitted to download an attachment ONLY if:
+   * 1. They are the original sender of the message, OR
+   * 2. They possess a corresponding row in mailbox_items for that message.
+   */
+  async checkUserAccessToAttachment(
+    attachmentId: string,
+    userId: string,
+    client: DbClient = prisma
+  ): Promise<{ allowed: boolean; attachment: MailAttachment | null }> {
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `SELECT att.*,
+              m.sender_user_id,
+              EXISTS(
+                SELECT 1 FROM mailbox_items mi
+                WHERE mi.message_id = att.message_id AND mi.user_id = $2
+              ) AS in_mailbox
+       FROM mail_attachments att
+       JOIN mail_messages m ON m.id = att.message_id
+       WHERE att.id = $1
+       LIMIT 1`,
+      attachmentId,
+      userId
+    );
+
+    if (!rows || rows.length === 0) {
+      return { allowed: false, attachment: null };
+    }
+
+    const row = rows[0];
+    const isSender = row.sender_user_id === userId;
+    const inMailbox = Boolean(row.in_mailbox);
+    const allowed = isSender || inMailbox;
+
+    return {
+      allowed,
+      attachment: mapAttachment(row),
+    };
+  },
+
+  /** Delete an attachment row. */
+  async delete(id: string, client: DbClient = prisma): Promise<boolean> {
+    const count = await client.$executeRawUnsafe(
+      `DELETE FROM mail_attachments WHERE id = $1`,
+      id
+    );
+    return count > 0;
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin Repository (Step 4 Operations & Privacy Boundary)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const adminRepository = {
+  /**
+   * Aggregates operational delivery metrics and queue health.
+   * Does NOT access or expose any private message body text or HTML.
+   */
+  async getOperationalMetrics(client: DbClient = prisma): Promise<MailOperationalMetrics> {
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `SELECT
+         (SELECT COUNT(*)::int FROM mail_messages WHERE is_draft = FALSE) AS total_sent,
+         (SELECT COUNT(*)::int FROM mail_addresses WHERE is_active = TRUE) AS total_active_addrs,
+         (SELECT COUNT(*)::int FROM mail_outbox WHERE status = 'PENDING') AS pending_outbox,
+         (SELECT COUNT(*)::int FROM mail_outbox WHERE status = 'FAILED') AS failed_outbox,
+         (SELECT COUNT(*)::int FROM mail_outbox WHERE status = 'COMPLETED') AS completed_outbox,
+         (SELECT COUNT(*)::int FROM mail_outbox WHERE status = 'FAILED' AND updated_at >= NOW() - INTERVAL '24 hours') AS recent_failures_24h`
+    );
+
+    const r = rows[0] || {};
+    const totalSent = Number(r.total_sent ?? 0);
+    const totalActiveAddrs = Number(r.total_active_addrs ?? 0);
+    const pendingOutbox = Number(r.pending_outbox ?? 0);
+    const failedOutbox = Number(r.failed_outbox ?? 0);
+    const completedOutbox = Number(r.completed_outbox ?? 0);
+    const recentFailures24h = Number(r.recent_failures_24h ?? 0);
+
+    const totalOutbox = pendingOutbox + failedOutbox + completedOutbox;
+    const deliverySuccessRate = totalOutbox > 0
+      ? Math.round((completedOutbox / totalOutbox) * 100)
+      : 100;
+
+    return {
+      totalMessagesSent: totalSent,
+      totalActiveAddresses: totalActiveAddrs,
+      pendingOutboxCount: pendingOutbox,
+      failedOutboxCount: failedOutbox,
+      completedOutboxCount: completedOutbox,
+      recentFailures24h,
+      deliverySuccessRate,
+    };
+  },
+
+  /**
+   * Retrieves delivery job failures for troubleshooting.
+   * Strictly omits message bodies to protect mailbox privacy from administrative snooping.
+   */
+  async getOutboxFailures(
+    page = 1,
+    limit = 20,
+    client: DbClient = prisma
+  ): Promise<{ items: MailOutboxFailure[]; total: number }> {
+    const offset = (page - 1) * limit;
+
+    const countRows = await client.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*)::int AS total FROM mail_outbox WHERE status = 'FAILED'`
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `SELECT o.id, o.message_id, o.status, o.transport, o.attempts, o.max_attempts,
+              o.last_error, o.next_attempt_at, o.created_at, o.updated_at,
+              m.subject,
+              addr.local_part, addr.domain
+       FROM mail_outbox o
+       JOIN mail_messages m ON m.id = o.message_id
+       JOIN mail_addresses addr ON addr.id = m.from_address_id
+       WHERE o.status = 'FAILED'
+       ORDER BY o.updated_at DESC
+       LIMIT $1 OFFSET $2`,
+      limit,
+      offset
+    );
+
+    const items: MailOutboxFailure[] = rows.map((r) => ({
+      id: r.id,
+      messageId: r.message_id,
+      status: r.status,
+      transport: r.transport,
+      attempts: Number(r.attempts),
+      maxAttempts: Number(r.max_attempts),
+      lastError: r.last_error,
+      nextAttemptAt: r.next_attempt_at,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      subject: r.subject,
+      senderAddress: `${r.local_part}@${r.domain}`,
+    }));
+
+    return { items, total };
+  },
+
+  /**
+   * List internal mail addresses with associated account info and quotas.
+   */
+  async listAddresses(
+    page = 1,
+    limit = 20,
+    search?: string,
+    client: DbClient = prisma
+  ): Promise<{ items: MailAdminAddressSummary[]; total: number }> {
+    const offset = (page - 1) * limit;
+    let whereClause = `WHERE 1=1`;
+    const params: any[] = [];
+
+    if (search) {
+      params.push(`%${search.toLowerCase()}%`);
+      whereClause += ` AND (LOWER(a.local_part) LIKE $${params.length} OR LOWER(u.email) LIKE $${params.length})`;
+    }
+
+    const countRows = await client.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*)::int AS total
+       FROM mail_addresses a
+       JOIN users u ON u.id = a.user_id
+       ${whereClause}`,
+      ...params
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    params.push(limit, offset);
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `SELECT a.id, a.user_id, a.local_part, a.domain, a.display_name, a.is_active, a.is_primary, a.created_at,
+              u.email AS user_email,
+              COALESCE(NULLIF(TRIM(u."firstName" || ' ' || COALESCE(u."lastName", '')), ''), u.email) AS user_name
+       FROM mail_addresses a
+       JOIN users u ON u.id = a.user_id
+       ${whereClause}
+       ORDER BY a.created_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      ...params
+    );
+
+    const items: MailAdminAddressSummary[] = rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      localPart: r.local_part,
+      domain: r.domain,
+      fullAddress: `${r.local_part}@${r.domain}`,
+      displayName: r.display_name,
+      isActive: r.is_active,
+      isPrimary: r.is_primary,
+      userEmail: r.user_email,
+      userName: r.user_name,
+      createdAt: r.created_at,
+      hourlyQuota: 60, // standard default quota
+    }));
+
+    return { items, total };
+  },
+
+  /** Enable or disable an internal mail address */
+  async updateAddressStatus(
+    addressId: string,
+    isActive: boolean,
+    client: DbClient = prisma
+  ): Promise<MailAddress> {
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `UPDATE mail_addresses
+       SET is_active = $2, updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      addressId,
+      isActive
+    );
+    if (!rows[0]) throw Object.assign(new Error('Address not found'), { status: 404 });
+    return mapAddress(rows[0]);
+  },
+
+  /** Toggle internal mail access for all addresses of a user */
+  async updateUserMailAccess(
+    userId: string,
+    isActive: boolean,
+    client: DbClient = prisma
+  ): Promise<void> {
+    await client.$executeRawUnsafe(
+      `UPDATE mail_addresses
+       SET is_active = $2, updated_at = NOW()
+       WHERE user_id = $1`,
+      userId,
+      isActive
+    );
+  },
+};
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Row → Domain Object Mappers (snake_case → camelCase)
