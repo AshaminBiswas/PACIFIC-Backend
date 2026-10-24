@@ -71,7 +71,7 @@ export function parseRecipientAddress(raw: string): ParsedRecipient | null {
   if (angleMatch) {
     return {
       displayName: angleMatch[1].trim() || null,
-      localPart: angleMatch[2].trim().toLowerCase(),
+      localPart: angleMatch[2].trim().toLowerCase().replace(/\.+$/, ''),
       domain: angleMatch[3].trim().toLowerCase(),
       rawEmail: raw,
     };
@@ -82,7 +82,7 @@ export function parseRecipientAddress(raw: string): ParsedRecipient | null {
   if (plainMatch) {
     return {
       displayName: null,
-      localPart: plainMatch[1].trim().toLowerCase(),
+      localPart: plainMatch[1].trim().toLowerCase().replace(/\.+$/, ''),
       domain: plainMatch[2].trim().toLowerCase(),
       rawEmail: raw,
     };
@@ -98,7 +98,7 @@ export function computeSize(text?: string | null, html?: string | null): number 
 
 /** Generate RFC 2822 Message-ID */
 export function generateMessageId(): string {
-  return `<${Date.now()}.${crypto.randomUUID()}@pacific.internal>`;
+  return `<${Date.now()}.${crypto.randomUUID()}@pacificproduct.in>`;
 }
 
 export interface AuthenticatedSender {
@@ -295,6 +295,43 @@ export const mailComposeService = {
             }
             continue;
           }
+        }
+
+        // Check if recipient email matches any registered system user's login email
+        const userMatch = await prisma.$queryRawUnsafe<any[]>(
+          `SELECT id, email, "firstName", "lastName", "isActive"
+           FROM users
+           WHERE LOWER(email) = LOWER($1)
+           LIMIT 1`,
+          raw.trim()
+        );
+
+        if (userMatch && userMatch[0]) {
+          const u = userMatch[0];
+          if (!u.isActive) {
+            throw Object.assign(
+              new Error(`Recipient account is suspended or disabled: "${raw}"`),
+              { status: 400 }
+            );
+          }
+
+          // Link to user's internal mail identity
+          const autoAddr = await addressRepository.autoProvisionIfMissing(
+            u.id,
+            u.firstName || parsed.localPart,
+            u.lastName || '',
+            u.email
+          );
+
+          resolvedRecipients.push({
+            type,
+            rawEmail: raw,
+            userId: u.id,
+            addressId: autoAddr.id,
+          });
+
+          recipientUserIds.add(u.id);
+          continue;
         }
 
         // External Recipient (gateway routed via outbox & outbound adapter)

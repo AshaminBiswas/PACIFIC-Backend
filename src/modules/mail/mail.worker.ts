@@ -155,10 +155,13 @@ export class MailOutboxWorker {
       }
 
       // 3b. If there are external recipients, dispatch via OutboundMailAdapter
-      const externalRecipients = recipients.filter((r: any) => !r.user_id).map((r: any) => r.raw_email);
+      const toExt = recipients.filter((r: any) => !r.user_id && r.type === 'TO').map((r: any) => r.raw_email);
+      const ccExt = recipients.filter((r: any) => !r.user_id && r.type === 'CC').map((r: any) => r.raw_email);
+      const bccExt = recipients.filter((r: any) => !r.user_id && r.type === 'BCC').map((r: any) => r.raw_email);
+      const allExt = [...toExt, ...ccExt, ...bccExt];
       let outboundResult: any = null;
 
-      if (externalRecipients.length > 0 || job.transport === 'smtp' || job.transport === 'resend') {
+      if (allExt.length > 0 || job.transport === 'smtp' || job.transport === 'resend') {
         const { getOutboundAdapter } = await import('./mail.adapters');
         const adapter = getOutboundAdapter();
         const msgRows = await (tx as DbClient).$queryRawUnsafe<any[]>(
@@ -169,13 +172,13 @@ export class MailOutboxWorker {
           messageId
         );
         const m = msgRows[0];
-        if (m) {
+        if (m && allExt.length > 0) {
           outboundResult = await adapter.send({
             message: m,
             fromAddress: m.display_name ? `"${m.display_name}" <${m.local_part}@${m.domain}>` : `${m.local_part}@${m.domain}`,
-            toRecipients: externalRecipients,
-            ccRecipients: [],
-            bccRecipients: [],
+            toRecipients: toExt.length > 0 ? toExt : allExt,
+            ccRecipients: ccExt,
+            bccRecipients: bccExt,
             subject: m.subject,
             bodyText: m.body_text,
             bodyHtml: m.body_html,
@@ -184,6 +187,9 @@ export class MailOutboxWorker {
             inReplyTo: m.in_reply_to,
             references: m.references,
           });
+          if (outboundResult && !outboundResult.accepted) {
+            throw new Error(outboundResult.error || 'Outbound mail dispatch failed');
+          }
         }
       }
 

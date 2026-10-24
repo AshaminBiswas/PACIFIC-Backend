@@ -193,6 +193,58 @@ export class SmtpOutboundAdapter implements IOutboundMailAdapter {
   }
 }
 
+/**
+ * Resend Outbound Gateway Adapter: Dispatches messages via Resend API
+ */
+export class ResendOutboundAdapter implements IOutboundMailAdapter {
+  readonly name = 'resend';
+
+  async send(payload: OutboundMessagePayload): Promise<OutboundAdapterResult> {
+    try {
+      const { emailService } = await import('../../utils/email.service');
+      const res = await emailService.sendEmail({
+        from: payload.fromAddress.includes('<')
+          ? payload.fromAddress
+          : `Pacific Products & Solutions <${payload.fromAddress}>`,
+        to: payload.toRecipients,
+        cc: payload.ccRecipients.length > 0 ? payload.ccRecipients : undefined,
+        bcc: payload.bccRecipients.length > 0 ? payload.bccRecipients : undefined,
+        subject: payload.subject,
+        text: payload.bodyText || undefined,
+        html: payload.bodyHtml || payload.bodyText || '',
+      });
+
+      if (!res.success) {
+        return {
+          accepted: false,
+          provider: 'resend',
+          status: 'FAILED',
+          error: res.error || 'Resend delivery failed',
+        };
+      }
+
+      return {
+        accepted: true,
+        provider: 'resend',
+        externalMessageId: res.id,
+        status: 'SENT',
+        metadata: { resendId: res.id },
+      };
+    } catch (err: any) {
+      return {
+        accepted: false,
+        provider: 'resend',
+        status: 'FAILED',
+        error: err.message || 'Resend adapter dispatch error',
+      };
+    }
+  }
+
+  async ping(): Promise<boolean> {
+    return Boolean(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.startsWith('re_'));
+  }
+}
+
 // ─── 4. Inbound Webhook Implementation ────────────────────────────────────────
 
 export class WebhookInboundAdapter implements IInboundMailAdapter {
@@ -239,9 +291,12 @@ export class WebhookInboundAdapter implements IInboundMailAdapter {
 // ─── 5. Factory & Gateway Status ──────────────────────────────────────────────
 
 export function getOutboundAdapter(): IOutboundMailAdapter {
-  const provider = (process.env.MAIL_OUTBOUND_PROVIDER || 'sandbox').toLowerCase();
+  const provider = (process.env.MAIL_OUTBOUND_PROVIDER || '').toLowerCase();
   if (provider === 'smtp') {
     return new SmtpOutboundAdapter();
+  }
+  if (provider === 'resend' || (process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.startsWith('re_'))) {
+    return new ResendOutboundAdapter();
   }
   return new SandboxOutboundAdapter();
 }
@@ -256,10 +311,14 @@ export function getGatewayStatus(): {
   provider: string;
   defaultDomain: string;
 } {
+  const hasResend = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.startsWith('re_'));
+  const hasSmtp = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER);
+  const activeProvider = process.env.MAIL_OUTBOUND_PROVIDER || (hasResend ? 'resend' : hasSmtp ? 'smtp' : 'sandbox');
+
   return {
-    externalSendingEnabled: process.env.MAIL_EXTERNAL_SENDING_ENABLED === 'true',
+    externalSendingEnabled: hasResend || hasSmtp || process.env.MAIL_EXTERNAL_SENDING_ENABLED === 'true',
     externalReceivingEnabled: process.env.MAIL_EXTERNAL_RECEIVING_ENABLED === 'true',
-    provider: process.env.MAIL_OUTBOUND_PROVIDER || 'sandbox',
+    provider: activeProvider,
     defaultDomain: 'pacificproduct.in',
   };
 }

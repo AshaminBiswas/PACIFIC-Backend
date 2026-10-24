@@ -18,6 +18,14 @@ const startServer = async () => {
     server.headersTimeout = 66000;
 
     await connectDatabases();
+
+    // Start background transactional mail outbox worker
+    try {
+      const { MailOutboxWorker } = await import('./modules/mail/mail.worker');
+      MailOutboxWorker.getInstance().start();
+    } catch (workerErr) {
+      console.warn('⚠️ [MailOutboxWorker] Failed to start worker:', workerErr);
+    }
   } catch (error) {
     console.error('Failed to start server:', error);
     await disconnectDatabases();
@@ -34,6 +42,10 @@ const startServer = async () => {
 
     server?.close(async () => {
       clearTimeout(forceExit);
+      try {
+        const { MailOutboxWorker } = await import('./modules/mail/mail.worker');
+        await MailOutboxWorker.getInstance().stop(4000);
+      } catch {}
       await disconnectDatabases();
       process.exit(0);
     });

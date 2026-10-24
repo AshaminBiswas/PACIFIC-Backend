@@ -9,6 +9,8 @@ export interface SendEmailOptions {
   text?: string;
   from?: string;
   replyTo?: string;
+  cc?: string | string[];
+  bcc?: string | string[];
   attachments?: Array<{
     filename: string;
     content: Buffer | string;
@@ -104,6 +106,8 @@ class EmailService {
     const payload = {
       from: fromAddress,
       to: Array.isArray(options.to) ? options.to : [options.to],
+      cc: options.cc ? (Array.isArray(options.cc) ? options.cc : [options.cc]) : undefined,
+      bcc: options.bcc ? (Array.isArray(options.bcc) ? options.bcc : [options.bcc]) : undefined,
       subject: options.subject,
       html: options.html,
       text: options.text,
@@ -131,6 +135,8 @@ class EmailService {
         const response = await resend.emails.send({
           from: fromAddress,
           to: Array.isArray(options.to) ? options.to : [options.to],
+          cc: options.cc ? (Array.isArray(options.cc) ? options.cc : [options.cc]) : undefined,
+          bcc: options.bcc ? (Array.isArray(options.bcc) ? options.bcc : [options.bcc]) : undefined,
           subject: options.subject,
           html: options.html,
           text: options.text,

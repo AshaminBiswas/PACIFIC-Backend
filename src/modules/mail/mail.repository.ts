@@ -356,19 +356,20 @@ export const addressRepository = {
     const existing = await this.findByUserId(userId, client);
     if (existing) return existing;
 
-    // Create a sensible local_part: firstName.lastName or email prefix
-    let candidate = `${firstName}.${lastName}`.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+    // Create a sensible local_part: firstName.lastName or email prefix (strip trailing dots/special chars)
+    let candidate = `${firstName}.${lastName}`.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').replace(/\.+$/, '');
     if (!candidate || candidate.length < 3) {
-      candidate = email.split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '');
+      candidate = email.split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '').replace(/\.+$/, '');
     }
     if (!candidate || candidate.length < 3) {
       candidate = `user.${userId.slice(0, 8)}`;
     }
+    candidate = candidate.replace(/\.+$/, '');
     if (candidate.length > 50) {
-      candidate = candidate.slice(0, 50);
+      candidate = candidate.slice(0, 50).replace(/\.+$/, '');
     }
 
-    const domain = 'pacific.internal';
+    const domain = 'pacificproduct.in';
     const displayName = `${firstName} ${lastName}`.trim() || null;
 
     // Check collision
