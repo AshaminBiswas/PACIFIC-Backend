@@ -931,6 +931,140 @@ export async function deleteAdvance(id: string) {
   return res;
 }
 
+/**
+ * Reconciles employee advances during salary calculation or payroll finalization.
+ * Supports multiple advances per month, full deductions, and partial deductions with carry-forward.
+ */
+export async function reconcileAdvancesForPayroll(
+  employeeId: string,
+  month: number,
+  year: number,
+  deductedAmount: number,
+  payrollRunId: string,
+  actorId?: string,
+  txClient?: Prisma.TransactionClient
+) {
+  const db = txClient || prisma;
+  const targetDeduction = Number(deductedAmount || 0);
+
+  // 1. Reset/revert any advances that were previously reconciled by this payroll run
+  const previouslyReconciled = await db.employeeAdvance.findMany({
+    where: {
+      payrollRunId,
+      employeeId,
+    },
+  });
+
+  if (previouslyReconciled.length > 0) {
+    const parentIds = previouslyReconciled.map((a) => a.id);
+    // Delete any active carry-forward advances spawned by these
+    await db.employeeAdvance.deleteMany({
+      where: {
+        parentAdvanceId: { in: parentIds },
+        isRecovered: false,
+      },
+    });
+
+    // Restore original amounts and reopen
+    for (const adv of previouslyReconciled) {
+      await db.employeeAdvance.update({
+        where: { id: adv.id },
+        data: {
+          amount: adv.originalAmount ? adv.originalAmount : adv.amount,
+          isRecovered: false,
+          recoveredAt: null,
+          payrollRunId: null,
+        },
+      });
+    }
+  }
+
+  if (targetDeduction <= 0) {
+    return;
+  }
+
+  // 2. Fetch all unrecovered advances for this employee scheduled up to this month/year (FIFO)
+  const pendingAdvances = await db.employeeAdvance.findMany({
+    where: {
+      employeeId,
+      isRecovered: false,
+      OR: [
+        { recoveryYear: { lt: year } },
+        { recoveryYear: year, recoveryMonth: { lte: month } },
+      ],
+    },
+    orderBy: [{ advanceDate: 'asc' }, { createdAt: 'asc' }],
+  });
+
+  if (pendingAdvances.length === 0) {
+    return;
+  }
+
+  let remainingToDeduct = targetDeduction;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+
+  for (const adv of pendingAdvances) {
+    if (remainingToDeduct <= 0) break;
+
+    const currentAmount = Number(adv.amount);
+    const originalTotal = Number(adv.originalAmount || adv.amount);
+
+    if (remainingToDeduct >= currentAmount) {
+      // Full recovery of this specific advance
+      await db.employeeAdvance.update({
+        where: { id: adv.id },
+        data: {
+          isRecovered: true,
+          recoveredAt: new Date(),
+          payrollRunId,
+          reason: adv.reason.includes('[Deducted in')
+            ? adv.reason
+            : `${adv.reason} [Deducted in ${getMonthName(month)} ${year} Salary: ₹${currentAmount.toLocaleString('en-IN')}]`,
+        },
+      });
+      remainingToDeduct -= currentAmount;
+    } else {
+      // Partial deduction of this advance
+      const deductPortion = Number(remainingToDeduct.toFixed(2));
+      const carryForwardBalance = Number((currentAmount - deductPortion).toFixed(2));
+
+      // Mark the deducted portion as recovered in this payroll run
+      await db.employeeAdvance.update({
+        where: { id: adv.id },
+        data: {
+          amount: new Prisma.Decimal(deductPortion),
+          originalAmount: new Prisma.Decimal(originalTotal),
+          isRecovered: true,
+          recoveredAt: new Date(),
+          payrollRunId,
+          reason: `${adv.reason} [Partially Deducted in ${getMonthName(month)} ${year} Salary: ₹${deductPortion.toLocaleString('en-IN')} of ₹${currentAmount.toLocaleString('en-IN')}]`,
+        },
+      });
+
+      // Spawn carry-forward advance for the remaining unrecovered balance
+      if (carryForwardBalance > 0) {
+        await db.employeeAdvance.create({
+          data: {
+            employeeId: adv.employeeId,
+            amount: new Prisma.Decimal(carryForwardBalance),
+            originalAmount: new Prisma.Decimal(originalTotal),
+            reason: `Remaining advance balance (₹${carryForwardBalance.toLocaleString('en-IN')} of ₹${originalTotal.toLocaleString('en-IN')}) carried forward from ${getMonthName(month)} ${year}: ${adv.reason}`,
+            advanceDate: adv.advanceDate,
+            recoveryMonth: nextMonth,
+            recoveryYear: nextYear,
+            isRecovered: false,
+            parentAdvanceId: adv.id,
+            createdById: actorId,
+          },
+        });
+      }
+
+      remainingToDeduct = 0;
+    }
+  }
+}
+
 export async function listAdvances(query: ListAdvancesQuery) {
   const where: Prisma.EmployeeAdvanceWhereInput = {};
   if (query.employeeId) where.employeeId = query.employeeId;
@@ -2024,9 +2158,21 @@ export async function getEmployeeSalaryDefaults(employeeId: string, month: numbe
         employeeId: employee.id,
         isRecovered: false,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ advanceDate: 'asc' }, { createdAt: 'desc' }],
     }),
   ]);
+
+  // If existing run has already reconciled advances, include them in the relevant list for full visibility
+  const allRelevantAdvances = await prisma.employeeAdvance.findMany({
+    where: {
+      employeeId: employee.id,
+      OR: [
+        { isRecovered: false },
+        ...(existingRun ? [{ payrollRunId: existingRun.id }] : []),
+      ],
+    },
+    orderBy: [{ advanceDate: 'asc' }, { createdAt: 'desc' }],
+  });
 
   let presentDays = 0;
   let doubleDutyDays = 0;
@@ -2070,6 +2216,10 @@ export async function getEmployeeSalaryDefaults(employeeId: string, month: numbe
   const otherDeductions = deductions.reduce((sum, d) => sum + Number(d.amount || 0), 0);
   const totalPendingAdvance = allUnrecoveredAdvances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
 
+  const initialDeduction = existingRun?.advanceDeduction !== undefined
+    ? Number(existingRun.advanceDeduction)
+    : advanceDeduction;
+
   return {
     employeeId: employee.id,
     employeeName: employee.name,
@@ -2083,11 +2233,11 @@ export async function getEmployeeSalaryDefaults(employeeId: string, month: numbe
     additionalDoubleDutyCredits: doubleDutyDays,
     approvedOvertimeHours: overtimeHours,
     overtimeMultiplier: existingRun?.overtimeMultiplier ? Number(existingRun.overtimeMultiplier) : 1.0,
-    partialDeductions: advanceDeduction + otherDeductions,
+    partialDeductions: initialDeduction + otherDeductions,
     totalPendingAdvance,
-    monthScheduledAdvance: advanceDeduction,
-    pendingAdvancesCount: allUnrecoveredAdvances.length,
-    pendingAdvancesList: allUnrecoveredAdvances.map((a) => ({
+    monthScheduledAdvance: initialDeduction,
+    pendingAdvancesCount: allRelevantAdvances.length,
+    pendingAdvancesList: allRelevantAdvances.map((a) => ({
       id: a.id,
       amount: Number(a.amount),
       originalAmount: a.originalAmount ? Number(a.originalAmount) : Number(a.amount),
@@ -2095,6 +2245,8 @@ export async function getEmployeeSalaryDefaults(employeeId: string, month: numbe
       recoveryMonth: a.recoveryMonth,
       recoveryYear: a.recoveryYear,
       advanceDate: a.advanceDate,
+      isRecovered: a.isRecovered,
+      isDeductedInThisRun: existingRun ? a.payrollRunId === existingRun.id : false,
     })),
     additionalAllowances: existingRun?.additionalAllowances ? Number(existingRun.additionalAllowances) : 0,
   };
@@ -2295,6 +2447,17 @@ export async function simulateSalaryCalculation(
       },
     });
 
+    if (saveToPayroll) {
+      await reconcileAdvancesForPayroll(
+        employee.id,
+        month,
+        year,
+        partialDeductions,
+        savedRun.id,
+        actorId
+      );
+    }
+
     return {
       ...breakdown,
       savedPayrollRun: savedRun,
@@ -2328,20 +2491,15 @@ export async function finalizePayroll(payrollRunId: string, finalizedById?: stri
   });
   if (!run) throw new Error('Payroll run not found');
 
-  // Mark advances as recovered
-  await prisma.employeeAdvance.updateMany({
-    where: {
-      employeeId: run.employeeId,
-      recoveryMonth: run.month,
-      recoveryYear: run.year,
-      isRecovered: false,
-    },
-    data: {
-      isRecovered: true,
-      recoveredAt: new Date(),
-      payrollRunId: run.id,
-    },
-  });
+  // Reconcile and lock advances using this payroll run's advanceDeduction
+  await reconcileAdvancesForPayroll(
+    run.employeeId,
+    run.month,
+    run.year,
+    Number(run.advanceDeduction || 0),
+    run.id,
+    finalizedById
+  );
 
   // Mark deductions as applied
   await prisma.employeeDeduction.updateMany({
@@ -2380,24 +2538,29 @@ export async function revertPayrollToDraft(payrollRunId: string, superAdminId?: 
   }
 
   // 1. Reopen any advances that were marked recovered by this payroll run
-  await prisma.employeeAdvance.updateMany({
-    where: {
-      OR: [
-        { payrollRunId: run.id },
-        {
-          employeeId: run.employeeId,
-          recoveryMonth: run.month,
-          recoveryYear: run.year,
-          isRecovered: true,
-        },
-      ],
-    },
-    data: {
-      isRecovered: false,
-      recoveredAt: null,
-      payrollRunId: null,
-    },
+  const runAdvances = await prisma.employeeAdvance.findMany({
+    where: { payrollRunId: run.id },
   });
+  if (runAdvances.length > 0) {
+    const parentIds = runAdvances.map((a) => a.id);
+    await prisma.employeeAdvance.deleteMany({
+      where: {
+        parentAdvanceId: { in: parentIds },
+        isRecovered: false,
+      },
+    });
+    for (const adv of runAdvances) {
+      await prisma.employeeAdvance.update({
+        where: { id: adv.id },
+        data: {
+          amount: adv.originalAmount ? adv.originalAmount : adv.amount,
+          isRecovered: false,
+          recoveredAt: null,
+          payrollRunId: null,
+        },
+      });
+    }
+  }
 
   // 2. Reopen any deductions that were marked applied by this payroll run
   await prisma.employeeDeduction.updateMany({
@@ -2440,6 +2603,16 @@ export async function markPayrollPaid(payrollRunId: string, input: MarkPayrollPa
     include: { employee: true },
   });
   if (!run) throw new Error('Payroll run not found');
+
+  // Ensure advances are fully reconciled on payment
+  await reconcileAdvancesForPayroll(
+    run.employeeId,
+    run.month,
+    run.year,
+    Number(run.advanceDeduction || 0),
+    run.id,
+    superAdminId
+  );
 
   const updated = await prisma.employeePayrollRun.update({
     where: { id: payrollRunId },
