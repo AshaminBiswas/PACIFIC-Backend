@@ -1083,7 +1083,7 @@ export const eventRepository = {
     try {
       await client.$executeRawUnsafe(
         `INSERT INTO mail_events (message_id, outbox_id, event_type, recipient_id, metadata)
-         VALUES ($1, $2, $3::"MailEventType", $4, $5)`,
+         VALUES ($1, $2, $3::"MailEventType", $4, $5::jsonb)`,
         params.messageId,
         params.outboxId ?? null,
         params.eventType.toUpperCase(),
@@ -1113,7 +1113,7 @@ export const mailAuditRepository = {
     try {
       await client.$executeRawUnsafe(
         `INSERT INTO mail_audit_logs (actor_user_id, action, resource_type, resource_id, ip_address, user_agent, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
         params.actorUserId,
         params.action,
         params.resourceType,

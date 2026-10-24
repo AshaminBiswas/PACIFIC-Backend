@@ -209,6 +209,9 @@ export class MailOutboxWorker {
         },
         tx
       );
+    }, {
+      maxWait: 15000,
+      timeout: 30000,
     });
   }
 

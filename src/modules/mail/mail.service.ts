@@ -410,6 +410,9 @@ export const mailComposeService = {
       );
 
       return { message, thread };
+    }, {
+      maxWait: 15000,
+      timeout: 30000,
     });
 
     // 7. Audit log (outside transaction for resilience)
