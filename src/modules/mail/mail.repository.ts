@@ -35,9 +35,10 @@ export const addressRepository = {
   /** Find the primary active address for a user. */
   async findByUserId(userId: string, client: DbClient = prisma): Promise<MailAddress | null> {
     const rows = await client.$queryRawUnsafe<any[]>(
-      `SELECT id, user_id, local_part, domain, display_name, is_primary, is_active, created_at, updated_at
-       FROM mail_addresses
-       WHERE user_id = $1 AND is_primary = TRUE AND is_active = TRUE
+      `SELECT a.*, u.email as user_email, u."firstName" as user_first_name, u."lastName" as user_last_name
+       FROM mail_addresses a
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE a.user_id = $1 AND a.is_primary = TRUE AND a.is_active = TRUE
        LIMIT 1`,
       userId
     );
@@ -46,34 +47,44 @@ export const addressRepository = {
 
   async findById(id: string, client: DbClient = prisma): Promise<MailAddress | null> {
     const rows = await client.$queryRawUnsafe<any[]>(
-      `SELECT id, user_id, local_part, domain, display_name, is_primary, is_active, created_at, updated_at
-       FROM mail_addresses WHERE id = $1`,
+      `SELECT a.*, u.email as user_email, u."firstName" as user_first_name, u."lastName" as user_last_name
+       FROM mail_addresses a
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE a.id = $1`,
       id
     );
     return rows[0] ? mapAddress(rows[0]) : null;
   },
 
-  async findByLocalPart(localPart: string, domain = 'pacific.internal', client: DbClient = prisma): Promise<MailAddress | null> {
+  async findByLocalPart(localPart: string, domain = 'pacificproduct.in', client: DbClient = prisma): Promise<MailAddress | null> {
     const rows = await client.$queryRawUnsafe<any[]>(
-      `SELECT id, user_id, local_part, domain, display_name, is_primary, is_active, created_at, updated_at
-       FROM mail_addresses WHERE local_part = $1 AND domain = $2`,
+      `SELECT a.*, u.email as user_email, u."firstName" as user_first_name, u."lastName" as user_last_name
+       FROM mail_addresses a
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE a.local_part = $1 AND a.domain = $2`,
       localPart,
       domain
     );
     return rows[0] ? mapAddress(rows[0]) : null;
   },
 
-  /** Resolve recipient address together with user active status */
+  /** Resolve recipient address together with user active status (supports aliases & dual domains) */
   async resolveRecipientWithUserStatus(
     localPart: string,
-    domain = 'pacific.internal',
+    domain = 'pacificproduct.in',
     client: DbClient = prisma
   ): Promise<{ address: MailAddress; userActive: boolean; addressActive: boolean } | null> {
     const rows = await client.$queryRawUnsafe<any[]>(
-      `SELECT a.*, u."isActive" as user_active
+      `SELECT a.*,
+              u."isActive" as user_active,
+              u.email as user_email,
+              u."firstName" as user_first_name,
+              u."lastName" as user_last_name
        FROM mail_addresses a
-       JOIN users u ON u.id = a.user_id
-       WHERE a.local_part = $1 AND a.domain = $2
+       LEFT JOIN mail_aliases al ON al.address_id = a.id AND al.is_active = TRUE
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE (a.local_part = $1 AND (a.domain = $2 OR a.domain = 'pacific.internal' OR a.domain = 'pacificproduct.in'))
+          OR (al.alias_local_part = $1 AND (al.alias_domain = $2 OR al.alias_domain = 'pacificproduct.in'))
        LIMIT 1`,
       localPart,
       domain
@@ -81,16 +92,235 @@ export const addressRepository = {
     if (!rows[0]) return null;
     return {
       address: mapAddress(rows[0]),
-      userActive: Boolean(rows[0].user_active),
+      userActive: rows[0].user_id ? Boolean(rows[0].user_active) : true,
       addressActive: Boolean(rows[0].is_active),
     };
+  },
+
+  /** Admin create a new address record */
+  async createAddress(
+    params: {
+      localPart: string;
+      domain?: string;
+      displayName?: string | null;
+      userId?: string | null;
+      maxStorageBytes?: number;
+      dailySendQuota?: number;
+      isShared?: boolean;
+      assignedBy?: string | null;
+    },
+    client: DbClient = prisma
+  ): Promise<MailAddress> {
+    const domain = params.domain || 'pacificproduct.in';
+    const isPrimary = params.userId ? true : false;
+
+    if (params.userId) {
+      await client.$executeRawUnsafe(
+        `UPDATE mail_addresses SET is_primary = FALSE WHERE user_id = $1 AND is_primary = TRUE`,
+        params.userId
+      );
+    }
+
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `INSERT INTO mail_addresses (
+         user_id, local_part, domain, display_name, is_primary, is_active,
+         verification_status, max_storage_bytes, daily_send_quota, is_shared,
+         assigned_by, assigned_at
+       )
+       VALUES (
+         $1::TEXT, $2, $3, $4, $5, TRUE,
+         'INTERNAL_ONLY'::"MailAddressStatus",
+         $6::BIGINT, $7::INT, $8::BOOLEAN, $9::TEXT,
+         CASE WHEN $1::TEXT IS NOT NULL THEN NOW() ELSE NULL END
+       )
+       RETURNING *`,
+      params.userId ?? null,
+      params.localPart,
+      domain,
+      params.displayName ?? null,
+      isPrimary,
+      params.maxStorageBytes ?? 524288000,
+      params.dailySendQuota ?? 100,
+      Boolean(params.isShared),
+      params.assignedBy ?? null
+    );
+
+    const created = mapAddress(rows[0]);
+
+    if (params.userId) {
+      await client.$executeRawUnsafe(
+        `INSERT INTO mail_address_assignments (address_id, user_id, assigned_by, assigned_at, reason)
+         VALUES ($1, $2, $3, NOW(), 'Initial address creation & assignment')`,
+        created.id,
+        params.userId,
+        params.assignedBy ?? null
+      );
+    }
+
+    return created;
+  },
+
+  /** Admin assign an address to a user */
+  async assignUser(
+    addressId: string,
+    userId: string,
+    assignedBy: string | null,
+    reason?: string,
+    client: DbClient = prisma
+  ): Promise<MailAddress> {
+    // 1. Close any previous open assignment in history
+    await client.$executeRawUnsafe(
+      `UPDATE mail_address_assignments
+       SET unassigned_at = NOW(), reason = COALESCE($1::TEXT, reason)
+       WHERE address_id = $2 AND unassigned_at IS NULL`,
+      reason ? `Reassigned: ${reason}` : 'Reassigned to another user',
+      addressId
+    );
+
+    // 2. Clear is_primary on previous user's addresses if making this one primary
+    await client.$executeRawUnsafe(
+      `UPDATE mail_addresses SET is_primary = FALSE WHERE user_id = $1 AND is_primary = TRUE`,
+      userId
+    );
+
+    // 3. Update address row
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `UPDATE mail_addresses
+       SET user_id = $1, assigned_by = $2::TEXT, assigned_at = NOW(), is_primary = TRUE, updated_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      userId,
+      assignedBy,
+      addressId
+    );
+
+    // 4. Record new assignment entry
+    await client.$executeRawUnsafe(
+      `INSERT INTO mail_address_assignments (address_id, user_id, assigned_by, assigned_at, reason)
+       VALUES ($1, $2, $3::TEXT, NOW(), $4::TEXT)`,
+      addressId,
+      userId,
+      assignedBy,
+      reason ?? 'Assigned by administrator'
+    );
+
+    return mapAddress(rows[0]);
+  },
+
+  /** Admin unassign an address from a user */
+  async unassignUser(
+    addressId: string,
+    assignedBy: string | null,
+    reason?: string,
+    client: DbClient = prisma
+  ): Promise<MailAddress> {
+    // 1. Close open assignment in history
+    await client.$executeRawUnsafe(
+      `UPDATE mail_address_assignments
+       SET unassigned_at = NOW(), reason = COALESCE($1::TEXT, 'Unassigned by administrator')
+       WHERE address_id = $2 AND unassigned_at IS NULL`,
+      reason ?? null,
+      addressId
+    );
+
+    // 2. Set user_id to NULL
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `UPDATE mail_addresses
+       SET user_id = NULL, assigned_by = $1::TEXT, assigned_at = NULL, is_primary = FALSE, updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      assignedBy,
+      addressId
+    );
+
+    return mapAddress(rows[0]);
+  },
+
+  /** Admin update storage & send quotas */
+  async updateQuotas(
+    addressId: string,
+    quotas: { maxStorageBytes?: number; dailySendQuota?: number },
+    client: DbClient = prisma
+  ): Promise<MailAddress> {
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `UPDATE mail_addresses
+       SET max_storage_bytes = COALESCE($1::BIGINT, max_storage_bytes),
+           daily_send_quota  = COALESCE($2::INT, daily_send_quota),
+           updated_at        = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      quotas.maxStorageBytes ?? null,
+      quotas.dailySendQuota ?? null,
+      addressId
+    );
+    return mapAddress(rows[0]);
+  },
+
+  /** Get assignment history */
+  async getAssignmentHistory(addressId: string, client: DbClient = prisma): Promise<any[]> {
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `SELECT a.*,
+              u.email AS user_email,
+              admin_u.email AS assigned_by_email
+       FROM mail_address_assignments a
+       LEFT JOIN users u ON u.id = a.user_id
+       LEFT JOIN users admin_u ON admin_u.id = a.assigned_by
+       WHERE a.address_id = $1
+       ORDER BY a.assigned_at DESC`,
+      addressId
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      addressId: r.address_id,
+      userId: r.user_id,
+      userEmail: r.user_email,
+      assignedBy: r.assigned_by,
+      assignedByEmail: r.assigned_by_email,
+      assignedAt: r.assigned_at,
+      unassignedAt: r.unassigned_at,
+      reason: r.reason,
+      createdAt: r.created_at,
+    }));
+  },
+
+  /** Alias Management */
+  async createAlias(
+    addressId: string,
+    aliasLocalPart: string,
+    aliasDomain = 'pacificproduct.in',
+    displayName?: string | null,
+    client: DbClient = prisma
+  ): Promise<any> {
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `INSERT INTO mail_aliases (address_id, alias_local_part, alias_domain, display_name)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      addressId,
+      aliasLocalPart,
+      aliasDomain,
+      displayName ?? null
+    );
+    return rows[0];
+  },
+
+  async deleteAlias(aliasId: string, client: DbClient = prisma): Promise<boolean> {
+    const count = await client.$executeRawUnsafe(`DELETE FROM mail_aliases WHERE id = $1`, aliasId);
+    return count > 0;
+  },
+
+  async listAliases(addressId: string, client: DbClient = prisma): Promise<any[]> {
+    const rows = await client.$queryRawUnsafe<any[]>(
+      `SELECT * FROM mail_aliases WHERE address_id = $1 ORDER BY created_at DESC`,
+      addressId
+    );
+    return rows;
   },
 
   async upsert(
     userId: string,
     localPart: string,
     displayName: string | null,
-    domain = 'pacific.internal',
+    domain = 'pacificproduct.in',
     client: DbClient = prisma
   ): Promise<MailAddress> {
     await client.$executeRawUnsafe(
@@ -106,7 +336,7 @@ export const addressRepository = {
              is_primary   = TRUE,
              is_active    = TRUE,
              updated_at   = NOW()
-       RETURNING id, user_id, local_part, domain, display_name, is_primary, is_active, created_at, updated_at`,
+       RETURNING *`,
       userId,
       localPart,
       domain,
@@ -1262,7 +1492,7 @@ export const adminRepository = {
     const countRows = await client.$queryRawUnsafe<any[]>(
       `SELECT COUNT(*)::int AS total
        FROM mail_addresses a
-       JOIN users u ON u.id = a.user_id
+       LEFT JOIN users u ON u.id = a.user_id
        ${whereClause}`,
       ...params
     );
@@ -1271,10 +1501,12 @@ export const adminRepository = {
     params.push(limit, offset);
     const rows = await client.$queryRawUnsafe<any[]>(
       `SELECT a.id, a.user_id, a.local_part, a.domain, a.display_name, a.is_active, a.is_primary, a.created_at,
+              a.verification_status, a.max_storage_bytes, a.daily_send_quota, a.is_shared, a.assigned_at,
               u.email AS user_email,
-              COALESCE(NULLIF(TRIM(u."firstName" || ' ' || COALESCE(u."lastName", '')), ''), u.email) AS user_name
+              COALESCE(NULLIF(TRIM(u."firstName" || ' ' || COALESCE(u."lastName", '')), ''), u.email) AS user_name,
+              (SELECT COUNT(*)::int FROM mail_aliases al WHERE al.address_id = a.id AND al.is_active = TRUE) AS alias_count
        FROM mail_addresses a
-       JOIN users u ON u.id = a.user_id
+       LEFT JOIN users u ON u.id = a.user_id
        ${whereClause}
        ORDER BY a.created_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -1291,9 +1523,15 @@ export const adminRepository = {
       isActive: r.is_active,
       isPrimary: r.is_primary,
       userEmail: r.user_email,
-      userName: r.user_name,
+      userName: r.user_name || (r.user_id ? 'Assigned User' : 'Unassigned'),
       createdAt: r.created_at,
       hourlyQuota: 60, // standard default quota
+      verificationStatus: r.verification_status || 'INTERNAL_ONLY',
+      maxStorageBytes: Number(r.max_storage_bytes || 524288000),
+      dailySendQuota: Number(r.daily_send_quota || 100),
+      isShared: Boolean(r.is_shared),
+      assignedAt: r.assigned_at,
+      aliasCount: Number(r.alias_count || 0),
     }));
 
     return { items, total };
@@ -1341,15 +1579,28 @@ export const adminRepository = {
 function mapAddress(r: any): MailAddress {
   return {
     id: r.id,
-    userId: r.user_id,
+    userId: r.user_id || null,
     localPart: r.local_part,
     domain: r.domain,
     displayName: r.display_name,
-    isPrimary: r.is_primary,
-    isActive: r.is_active,
+    isPrimary: Boolean(r.is_primary),
+    isActive: Boolean(r.is_active),
+    verificationStatus: r.verification_status || 'INTERNAL_ONLY',
+    maxStorageBytes: Number(r.max_storage_bytes || 524288000),
+    dailySendQuota: Number(r.daily_send_quota || 100),
+    isShared: Boolean(r.is_shared),
+    assignedBy: r.assigned_by || null,
+    assignedAt: r.assigned_at ? new Date(r.assigned_at) : null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     fullAddress: `${r.local_part}@${r.domain}`,
+    user: r.user_email
+      ? {
+          email: r.user_email,
+          firstName: r.user_first_name || '',
+          lastName: r.user_last_name || '',
+        }
+      : undefined,
   };
 }
 

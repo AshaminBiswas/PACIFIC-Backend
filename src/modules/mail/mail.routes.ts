@@ -22,6 +22,11 @@ import {
   BulkMailboxActionSchema,
   MailListQuerySchema,
   MailSearchQuerySchema,
+  CreateAddressAdminSchema,
+  AssignAddressSchema,
+  UnassignAddressSchema,
+  UpdateAddressQuotasSchema,
+  CreateAliasSchema,
 } from './mail.schema';
 import * as ctrl from './mail.controller';
 
@@ -35,6 +40,9 @@ router.get('/health', ctrl.getMailHealth);
 
 /** GET /api/v1/mail/ready — Database & queue readiness check */
 router.get('/ready', ctrl.getMailReadiness);
+
+/** POST /api/v1/mail/webhooks/inbound — Inbound gateway webhook (signature verified) */
+router.post('/webhooks/inbound', ctrl.handleInboundWebhook);
 
 // Configure safe memory upload parser
 const upload = multer({
@@ -132,6 +140,33 @@ router.get('/admin/outbox/failures', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.g
 
 /** GET /api/v1/mail/admin/addresses — List addresses with status and quota */
 router.get('/admin/addresses', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.listAdminAddresses);
+
+/** POST /api/v1/mail/admin/addresses — Create new address under @pacificproduct.in */
+router.post('/admin/addresses', requireRole('SUPER_ADMIN', 'ADMIN'), validate(CreateAddressAdminSchema), ctrl.createAddressAdmin);
+
+/** POST /api/v1/mail/admin/addresses/:id/assign — Assign address to user */
+router.post('/admin/addresses/:id/assign', requireRole('SUPER_ADMIN', 'ADMIN'), validate(AssignAddressSchema), ctrl.assignAddress);
+
+/** POST /api/v1/mail/admin/addresses/:id/unassign — Unassign address from user */
+router.post('/admin/addresses/:id/unassign', requireRole('SUPER_ADMIN', 'ADMIN'), validate(UnassignAddressSchema), ctrl.unassignAddress);
+
+/** PATCH /api/v1/mail/admin/addresses/:id/quotas — Update storage & daily send quotas */
+router.patch('/admin/addresses/:id/quotas', requireRole('SUPER_ADMIN', 'ADMIN'), validate(UpdateAddressQuotasSchema), ctrl.updateAddressQuotas);
+
+/** GET /api/v1/mail/admin/addresses/:id/history — Assignment history audit log */
+router.get('/admin/addresses/:id/history', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.getAssignmentHistory);
+
+/** GET /api/v1/mail/admin/addresses/:id/aliases — List aliases for address */
+router.get('/admin/addresses/:id/aliases', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.listAliases);
+
+/** POST /api/v1/mail/admin/aliases — Create alias for address */
+router.post('/admin/aliases', requireRole('SUPER_ADMIN', 'ADMIN'), validate(CreateAliasSchema), ctrl.createAlias);
+
+/** DELETE /api/v1/mail/admin/aliases/:id — Delete alias */
+router.delete('/admin/aliases/:id', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.deleteAlias);
+
+/** GET /api/v1/mail/admin/dns/readiness — Read-only DNS audit and proposed change plan */
+router.get('/admin/dns/readiness', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.getDnsReadiness);
 
 /** PATCH /api/v1/mail/admin/addresses/:id/status — Enable or disable mail address */
 router.patch('/admin/addresses/:id/status', requireRole('SUPER_ADMIN', 'ADMIN'), ctrl.updateAddressStatus);

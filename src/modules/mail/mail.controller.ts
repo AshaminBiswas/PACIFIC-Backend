@@ -8,6 +8,12 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
 import { sendSuccess, sendPaginated } from '../../utils/response';
 import { mailMetrics } from './mail.metrics';
+import {
+  addressRepository,
+  threadRepository,
+  messageRepository,
+  mailboxRepository,
+} from './mail.repository';
 import type {
   ProvisionAddressInput,
   SendMailInput,
@@ -627,3 +633,203 @@ export const getOperationalDiagnostics = async (req: AuthRequest, res: Response,
     next(err);
   }
 };
+
+// ─── 8. Enterprise Address Management & Gateway Controller Handlers ───────────
+
+/**
+ * POST /api/v1/mail/admin/addresses
+ * Create a new email address under @pacificproduct.in or @pacific.internal
+ */
+export const createAddressAdmin = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const created = await mailAdminService.createAddress(sender.id, req.body, ipAddress);
+    sendSuccess(res, created, 'Email address created successfully', 201);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/v1/mail/admin/addresses/:id/assign
+ * Assign an address to an active application user
+ */
+export const assignAddress = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const addressId = req.params.id;
+    const { userId, reason } = req.body;
+    const updated = await mailAdminService.assignAddress(sender.id, addressId, userId, reason, ipAddress);
+    sendSuccess(res, updated, 'Email address assigned successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/v1/mail/admin/addresses/:id/unassign
+ * Unassign an address from its current user
+ */
+export const unassignAddress = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const addressId = req.params.id;
+    const reason = req.body?.reason;
+    const updated = await mailAdminService.unassignAddress(sender.id, addressId, reason, ipAddress);
+    sendSuccess(res, updated, 'Email address unassigned successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PATCH /api/v1/mail/admin/addresses/:id/quotas
+ * Update storage limit & daily send quotas
+ */
+export const updateAddressQuotas = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const addressId = req.params.id;
+    const updated = await mailAdminService.updateAddressQuotas(sender.id, addressId, req.body, ipAddress);
+    sendSuccess(res, updated, 'Address quotas updated successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/v1/mail/admin/addresses/:id/history
+ * Assignment and reassignment audit history
+ */
+export const getAssignmentHistory = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender } = getCaller(req);
+    const addressId = req.params.id;
+    const history = await mailAdminService.getAssignmentHistory(sender.id, addressId);
+    sendSuccess(res, history, 'Assignment history retrieved');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/v1/mail/admin/aliases
+ * Create an alias for an existing address
+ */
+export const createAlias = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const created = await mailAdminService.createAlias(sender.id, req.body, ipAddress);
+    sendSuccess(res, created, 'Alias created successfully', 201);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/v1/mail/admin/addresses/:id/aliases
+ * List aliases for an address
+ */
+export const listAliases = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const addressId = req.params.id;
+    const aliases = await mailAdminService.listAliases(addressId);
+    sendSuccess(res, aliases, 'Aliases retrieved successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /api/v1/mail/admin/aliases/:id
+ * Delete an alias
+ */
+export const deleteAlias = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { sender, ipAddress } = getCaller(req);
+    const aliasId = req.params.id;
+    await mailAdminService.deleteAlias(sender.id, aliasId, ipAddress);
+    sendSuccess(res, { success: true }, 'Alias deleted successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/v1/mail/admin/dns/readiness
+ * Read-only DNS inspection and proposed change plan (NOT APPLIED)
+ */
+export const getDnsReadiness = async (_req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const report = await mailAdminService.getDnsReadinessReport();
+    sendSuccess(res, report, 'DNS readiness report generated');
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/v1/mail/webhooks/inbound
+ * Inbound provider gateway webhook (signature verified)
+ */
+export const handleInboundWebhook = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { getInboundAdapter } = await import('./mail.adapters');
+    const adapter = getInboundAdapter();
+    const isValid = adapter.verifySignature(req.headers as any, req.body);
+
+    if (!isValid) {
+      res.status(401).json({ success: false, message: 'Invalid webhook signature' });
+      return;
+    }
+
+    const normalized = adapter.normalizePayload(req.body);
+
+    // Fan-out delivery to matched internal mailboxes
+    for (const recipientEmail of normalized.to) {
+      const parts = recipientEmail.split('@');
+      if (parts.length === 2) {
+        const localPart = parts[0].toLowerCase().trim();
+        const domain = parts[1].toLowerCase().trim();
+        const resolved = await addressRepository.resolveRecipientWithUserStatus(localPart, domain);
+
+        if (resolved && resolved.address.userId) {
+          // Deliver into user's INBOX
+          const thread = await threadRepository.create(
+            normalized.subject,
+            resolved.address.userId
+          );
+
+          const msg = await messageRepository.create({
+            threadId: thread.id,
+            parentId: null,
+            fromAddressId: resolved.address.id,
+            senderUserId: resolved.address.userId,
+            subject: normalized.subject,
+            bodyText: normalized.bodyText || null,
+            bodyHtml: normalized.bodyHtml || null,
+            isDraft: false,
+            sizeBytes: (normalized.bodyHtml || normalized.bodyText || '').length,
+            messageIdHeader: normalized.providerMessageId || null,
+            inReplyTo: normalized.inReplyTo || null,
+            references: normalized.references || [],
+            idempotencyKey: normalized.providerMessageId,
+          });
+
+          await mailboxRepository.createItems(
+            msg.id,
+            thread.id,
+            [resolved.address.userId],
+            'INBOX'
+          );
+        }
+      }
+    }
+
+    res.status(200).json({ success: true, message: 'Inbound message accepted and processed' });
+  } catch (err: any) {
+    console.error('⚠️ [InboundWebhook] Processing error:', err);
+    res.status(500).json({ success: false, message: 'Webhook processing fault' });
+  }
+};
+

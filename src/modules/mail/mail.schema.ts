@@ -229,3 +229,67 @@ export const FolderParamSchema = z.object({
 });
 
 export type FolderParamInput = z.infer<typeof FolderParamSchema>;
+
+// ─── 9. Administrative Address Management Schemas ─────────────────────────────
+
+export const CreateAddressAdminBodySchema = z.object({
+  localPart: localPartSchema,
+  domain: z.enum(['pacificproduct.in', 'pacific.internal']).default('pacificproduct.in'),
+  displayName: z.string().trim().max(100).optional(),
+  userId: z.string().uuid().optional(),
+  maxStorageBytes: z.number().positive().optional().default(524288000), // 500 MB
+  dailySendQuota: z.number().int().positive().optional().default(100),
+  isShared: z.boolean().optional().default(false),
+});
+
+export const CreateAddressAdminSchema = z.object({
+  body: CreateAddressAdminBodySchema,
+});
+
+export type CreateAddressAdminInput = z.infer<typeof CreateAddressAdminBodySchema>;
+
+export const AssignAddressBodySchema = z.object({
+  userId: z.string().uuid('Valid user ID required'),
+  reason: z.string().trim().max(255).optional(),
+});
+
+export const AssignAddressSchema = z.object({
+  body: AssignAddressBodySchema,
+});
+
+export type AssignAddressInput = z.infer<typeof AssignAddressBodySchema>;
+
+export const UnassignAddressBodySchema = z.object({
+  reason: z.string().trim().max(255).optional(),
+});
+
+export const UnassignAddressSchema = z.object({
+  body: UnassignAddressBodySchema.optional(),
+});
+
+export type UnassignAddressInput = z.infer<typeof UnassignAddressBodySchema>;
+
+export const UpdateAddressQuotasBodySchema = z.object({
+  maxStorageBytes: z.number().positive().optional(),
+  dailySendQuota: z.number().int().positive().optional(),
+});
+
+export const UpdateAddressQuotasSchema = z.object({
+  body: UpdateAddressQuotasBodySchema,
+});
+
+export type UpdateAddressQuotasInput = z.infer<typeof UpdateAddressQuotasBodySchema>;
+
+export const CreateAliasBodySchema = z.object({
+  addressId: z.string().uuid('Valid address ID required'),
+  aliasLocalPart: localPartSchema,
+  aliasDomain: z.string().trim().default('pacificproduct.in'),
+  displayName: z.string().trim().max(100).optional(),
+});
+
+export const CreateAliasSchema = z.object({
+  body: CreateAliasBodySchema,
+});
+
+export type CreateAliasInput = z.infer<typeof CreateAliasBodySchema>;
+

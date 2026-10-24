@@ -154,6 +154,39 @@ export class MailOutboxWorker {
         }
       }
 
+      // 3b. If there are external recipients, dispatch via OutboundMailAdapter
+      const externalRecipients = recipients.filter((r: any) => !r.user_id).map((r: any) => r.raw_email);
+      let outboundResult: any = null;
+
+      if (externalRecipients.length > 0 || job.transport === 'smtp' || job.transport === 'resend') {
+        const { getOutboundAdapter } = await import('./mail.adapters');
+        const adapter = getOutboundAdapter();
+        const msgRows = await (tx as DbClient).$queryRawUnsafe<any[]>(
+          `SELECT m.*, a.local_part, a.domain, a.display_name
+           FROM mail_messages m
+           JOIN mail_addresses a ON a.id = m.from_address_id
+           WHERE m.id = $1`,
+          messageId
+        );
+        const m = msgRows[0];
+        if (m) {
+          outboundResult = await adapter.send({
+            message: m,
+            fromAddress: m.display_name ? `"${m.display_name}" <${m.local_part}@${m.domain}>` : `${m.local_part}@${m.domain}`,
+            toRecipients: externalRecipients,
+            ccRecipients: [],
+            bccRecipients: [],
+            subject: m.subject,
+            bodyText: m.body_text,
+            bodyHtml: m.body_html,
+            attachments: [],
+            messageIdHeader: m.message_id_header,
+            inReplyTo: m.in_reply_to,
+            references: m.references,
+          });
+        }
+      }
+
       // 4. Mark job as COMPLETED / SENT
       await tx.$executeRawUnsafe(
         `UPDATE mail_outbox
@@ -171,6 +204,7 @@ export class MailOutboxWorker {
           metadata: {
             workerId: process.pid,
             deliveredRecipients: internalUserIds.length,
+            outboundResult: outboundResult || undefined,
           },
         },
         tx

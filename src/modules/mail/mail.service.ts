@@ -269,7 +269,9 @@ export const mailComposeService = {
           addressId: resolved.address.id,
         });
 
-        recipientUserIds.add(resolved.address.userId);
+        if (resolved.address.userId) {
+          recipientUserIds.add(resolved.address.userId);
+        }
       }
     };
 
@@ -1255,5 +1257,236 @@ export const mailAdminService = {
       metadata: { isActive },
     });
     return { success: true, targetUserId, isActive };
+  },
+
+  async createAddress(
+    adminUserId: string,
+    input: any,
+    ipAddress?: string
+  ): Promise<MailAddress> {
+    const domain = input.domain || 'pacificproduct.in';
+    const localPart = input.localPart.toLowerCase().trim();
+
+    // Check collision in addresses
+    const existing = await addressRepository.findByLocalPart(localPart, domain);
+    if (existing) {
+      throw new Error(`The email address ${localPart}@${domain} already exists.`);
+    }
+
+    const created = await addressRepository.createAddress({
+      localPart,
+      domain,
+      displayName: input.displayName || null,
+      userId: input.userId || null,
+      maxStorageBytes: input.maxStorageBytes,
+      dailySendQuota: input.dailySendQuota,
+      isShared: Boolean(input.isShared),
+      assignedBy: adminUserId,
+    });
+
+    await mailAuditRepository.log({
+      actorUserId: adminUserId,
+      action: 'ADMIN_CREATE_ADDRESS',
+      resourceType: 'address',
+      resourceId: created.id,
+      ipAddress,
+      metadata: { fullAddress: created.fullAddress, userId: input.userId },
+    });
+
+    return created;
+  },
+
+  async assignAddress(
+    adminUserId: string,
+    addressId: string,
+    userId: string,
+    reason?: string,
+    ipAddress?: string
+  ): Promise<MailAddress> {
+    const targetAddr = await addressRepository.findById(addressId);
+    if (!targetAddr) {
+      throw new Error('Mail address not found.');
+    }
+
+    const updated = await addressRepository.assignUser(addressId, userId, adminUserId, reason);
+
+    await mailAuditRepository.log({
+      actorUserId: adminUserId,
+      action: 'ADMIN_ASSIGN_ADDRESS',
+      resourceType: 'address',
+      resourceId: addressId,
+      ipAddress,
+      metadata: { targetUserId: userId, previousUserId: targetAddr.userId, reason },
+    });
+
+    return updated;
+  },
+
+  async unassignAddress(
+    adminUserId: string,
+    addressId: string,
+    reason?: string,
+    ipAddress?: string
+  ): Promise<MailAddress> {
+    const targetAddr = await addressRepository.findById(addressId);
+    if (!targetAddr) {
+      throw new Error('Mail address not found.');
+    }
+
+    const updated = await addressRepository.unassignUser(addressId, adminUserId, reason);
+
+    await mailAuditRepository.log({
+      actorUserId: adminUserId,
+      action: 'ADMIN_UNASSIGN_ADDRESS',
+      resourceType: 'address',
+      resourceId: addressId,
+      ipAddress,
+      metadata: { previousUserId: targetAddr.userId, reason },
+    });
+
+    return updated;
+  },
+
+  async updateAddressQuotas(
+    adminUserId: string,
+    addressId: string,
+    quotas: { maxStorageBytes?: number; dailySendQuota?: number },
+    ipAddress?: string
+  ): Promise<MailAddress> {
+    const updated = await addressRepository.updateQuotas(addressId, quotas);
+
+    await mailAuditRepository.log({
+      actorUserId: adminUserId,
+      action: 'ADMIN_UPDATE_QUOTAS',
+      resourceType: 'address',
+      resourceId: addressId,
+      ipAddress,
+      metadata: quotas,
+    });
+
+    return updated;
+  },
+
+  async getAssignmentHistory(adminUserId: string, addressId: string): Promise<any[]> {
+    return addressRepository.getAssignmentHistory(addressId);
+  },
+
+  async createAlias(
+    adminUserId: string,
+    input: any,
+    ipAddress?: string
+  ): Promise<any> {
+    const created = await addressRepository.createAlias(
+      input.addressId,
+      input.aliasLocalPart.toLowerCase().trim(),
+      input.aliasDomain || 'pacificproduct.in',
+      input.displayName
+    );
+
+    await mailAuditRepository.log({
+      actorUserId: adminUserId,
+      action: 'ADMIN_CREATE_ALIAS',
+      resourceType: 'alias',
+      resourceId: created.id,
+      ipAddress,
+      metadata: { alias: `${created.alias_local_part}@${created.alias_domain}` },
+    });
+
+    return created;
+  },
+
+  async deleteAlias(
+    adminUserId: string,
+    aliasId: string,
+    ipAddress?: string
+  ): Promise<boolean> {
+    const deleted = await addressRepository.deleteAlias(aliasId);
+
+    await mailAuditRepository.log({
+      actorUserId: adminUserId,
+      action: 'ADMIN_DELETE_ALIAS',
+      resourceType: 'alias',
+      resourceId: aliasId,
+      ipAddress,
+    });
+
+    return deleted;
+  },
+
+  async listAliases(addressId: string): Promise<any[]> {
+    return addressRepository.listAliases(addressId);
+  },
+
+  async getDnsReadinessReport(): Promise<any> {
+    const dns = await import('dns').then((d) => d.promises).catch(() => null);
+    const domain = 'pacificproduct.in';
+    let mxRecords: any[] = [];
+    let txtRecords: any[] = [];
+    let dmarcRecords: any[] = [];
+
+    if (dns) {
+      try {
+        mxRecords = await dns.resolveMx(domain);
+      } catch {}
+      try {
+        txtRecords = await dns.resolveTxt(domain);
+      } catch {}
+      try {
+        dmarcRecords = await dns.resolveTxt(`_dmarc.${domain}`);
+      } catch {}
+    }
+
+    const flatTxt = txtRecords.map((t) => (Array.isArray(t) ? t.join('') : String(t)));
+    const spfRecord = flatTxt.find((t) => t.startsWith('v=spf1')) || null;
+    const flatDmarc = dmarcRecords.map((t) => (Array.isArray(t) ? t.join('') : String(t)));
+    const dmarcRecord = flatDmarc.find((t) => t.startsWith('v=DMARC1')) || null;
+
+    const isGoogleActive = mxRecords.some((r) => r.exchange?.includes('google'));
+
+    return {
+      domain,
+      inspectedAt: new Date().toISOString(),
+      hasMx: mxRecords.length > 0,
+      currentMx: mxRecords,
+      hasSpf: Boolean(spfRecord),
+      currentSpf: spfRecord,
+      hasDmarc: Boolean(dmarcRecord),
+      currentDmarc: dmarcRecord,
+      isGoogleWorkspaceActive: isGoogleActive,
+      isExternalSendingReady: process.env.MAIL_EXTERNAL_SENDING_ENABLED === 'true',
+      isExternalReceivingReady: process.env.MAIL_EXTERNAL_RECEIVING_ENABLED === 'true',
+      proposedChangesPlan: {
+        status: 'PROPOSED_NOT_APPLIED',
+        subdomainOutbound: `mail.${domain}`,
+        subdomainInbound: `inbound.${domain}`,
+        requiredRecords: [
+          {
+            type: 'TXT',
+            host: `mail.${domain}`,
+            value: 'v=spf1 include:_spf.google.com ~all',
+            purpose: 'Authorized outbound sending for Pacific Mail without disturbing primary root SPF',
+          },
+          {
+            type: 'TXT',
+            host: `_dmarc.${domain}`,
+            value: 'v=DMARC1; p=none; rua=mailto:dmarc-reports@pacificproduct.in',
+            purpose: 'Standard monitoring DMARC policy (reports-only; zero disruption to delivery)',
+          },
+          {
+            type: 'MX',
+            host: `inbound.${domain}`,
+            value: 'inbound-gateway.pacificproduct.in',
+            priority: 10,
+            purpose: 'Dedicated inbound gateway subdomain preserving root Google Workspace MX',
+          },
+        ],
+        notes: [
+          'DO NOT replace or remove root MX: smtp.google.com priority 1 (live Google Workspace business mail).',
+          'DO NOT publish multiple SPF strings on root @.',
+          'Subdomain routing isolates Pacific Mail transactional gateway while preserving 100% of existing office mail.',
+          'All proposed changes must be reviewed and explicitly approved before any nameserver update.',
+        ],
+      },
+    };
   },
 };

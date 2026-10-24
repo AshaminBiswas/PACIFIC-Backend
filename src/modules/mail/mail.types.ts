@@ -19,21 +19,90 @@ export type MailEventType =
   | 'FAILED';
 export type MailRecipientType = 'TO' | 'CC' | 'BCC';
 export type MailContentType = 'TEXT' | 'HTML';
+export type MailAddressStatus =
+  | 'INTERNAL_ONLY'
+  | 'PENDING_VERIFICATION'
+  | 'VERIFIED'
+  | 'EXTERNAL_ROUTABLE';
 
 // ─── Database Row Shapes ──────────────────────────────────────────────────────
 
 export interface MailAddress {
   id: string;
-  userId: string;
+  userId: string | null;
   localPart: string;
   domain: string;
   displayName: string | null;
   isPrimary: boolean;
   isActive: boolean;
+  verificationStatus: MailAddressStatus;
+  maxStorageBytes: number;
+  dailySendQuota: number;
+  isShared: boolean;
+  assignedBy: string | null;
+  assignedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   /** Derived full address — not stored, computed as `${localPart}@${domain}` */
   fullAddress?: string;
+  /** Linked user details if assigned */
+  user?: {
+    email: string;
+    firstName: string;
+    lastName: string;
+  } | null;
+}
+
+export interface MailAddressAssignment {
+  id: string;
+  addressId: string;
+  userId: string;
+  assignedBy: string | null;
+  assignedAt: Date;
+  unassignedAt: Date | null;
+  reason: string | null;
+  createdAt: Date;
+  userEmail?: string;
+  assignedByEmail?: string;
+}
+
+export interface MailAlias {
+  id: string;
+  addressId: string;
+  aliasLocalPart: string;
+  aliasDomain: string;
+  displayName: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  fullAlias?: string;
+}
+
+export interface DnsReadinessReport {
+  domain: string;
+  inspectedAt: string;
+  hasMx: boolean;
+  currentMx: Array<{ exchange: string; priority: number }>;
+  hasSpf: boolean;
+  currentSpf: string | null;
+  hasDmarc: boolean;
+  currentDmarc: string | null;
+  isGoogleWorkspaceActive: boolean;
+  isExternalSendingReady: boolean;
+  isExternalReceivingReady: boolean;
+  proposedChangesPlan: {
+    status: 'PROPOSED_NOT_APPLIED';
+    subdomainOutbound: string;
+    subdomainInbound: string;
+    requiredRecords: Array<{
+      type: 'MX' | 'TXT' | 'CNAME';
+      host: string;
+      value: string;
+      purpose: string;
+      priority?: number;
+    }>;
+    notes: string[];
+  };
 }
 
 export interface MailThread {
@@ -312,17 +381,23 @@ export interface MailOutboxFailure {
 
 export interface MailAdminAddressSummary {
   id: string;
-  userId: string;
+  userId: string | null;
   localPart: string;
   domain: string;
   fullAddress: string;
   displayName: string | null;
   isActive: boolean;
   isPrimary: boolean;
-  userEmail: string;
-  userName: string;
+  userEmail?: string | null;
+  userName?: string | null;
   createdAt: Date;
   hourlyQuota: number;
+  verificationStatus?: MailAddressStatus;
+  maxStorageBytes?: number;
+  dailySendQuota?: number;
+  isShared?: boolean;
+  assignedAt?: Date | null;
+  aliasCount?: number;
 }
 
 export interface AttachmentUploadResponse {
