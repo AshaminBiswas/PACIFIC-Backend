@@ -1026,13 +1026,16 @@ export const mailboxRepository = {
 
 export const outboxRepository = {
   async create(messageId: string, transport = 'internal', client: DbClient = prisma): Promise<MailOutbox> {
+    const isInternal = transport === 'internal';
+    const initialStatus = isInternal ? 'SENT' : 'PENDING';
     const rows = await client.$queryRawUnsafe<any[]>(
       `INSERT INTO mail_outbox (message_id, transport, status, processed_at)
-       VALUES ($1, $2, 'SENT'::"MailJobStatus", NOW())
-       ON CONFLICT (message_id) DO UPDATE SET status = 'SENT'::"MailJobStatus", processed_at = NOW()
+       VALUES ($1, $2, $3::"MailJobStatus", ${isInternal ? 'NOW()' : 'NULL'})
+       ON CONFLICT (message_id) DO UPDATE SET status = $3::"MailJobStatus", updated_at = NOW()
        RETURNING *`,
       messageId,
-      transport
+      transport,
+      initialStatus
     );
     return mapOutbox(rows[0]);
   },

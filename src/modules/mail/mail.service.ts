@@ -233,45 +233,77 @@ export const mailComposeService = {
           throw Object.assign(new Error(`Invalid recipient format: "${raw}"`), { status: 400 });
         }
 
-        // Enforce internal delivery domain
-        if (parsed.domain !== 'pacific.internal' && parsed.domain !== fromAddr.domain) {
-          throw Object.assign(
-            new Error(
-              `External sending is not supported in internal mail module. Recipient "${raw}" must be @pacific.internal`
-            ),
-            { status: 400 }
+        const isInternalDomain =
+          parsed.domain === 'pacific.internal' ||
+          parsed.domain === 'pacificproduct.in' ||
+          parsed.domain === fromAddr.domain;
+
+        if (isInternalDomain) {
+          // Verify internal recipient address and active account status in DB
+          let resolved = await addressRepository.resolveRecipientWithUserStatus(
+            parsed.localPart,
+            parsed.domain
           );
+
+          // If not found in mail_addresses, auto-provision if this matches an existing system user
+          if (!resolved) {
+            const userMatch = await prisma.$queryRawUnsafe<any[]>(
+              `SELECT id, email, "firstName", "lastName", "isActive"
+               FROM users
+               WHERE LOWER(email) = $1
+                  OR LOWER(email) LIKE $2
+               LIMIT 1`,
+              `${parsed.localPart}@${parsed.domain}`,
+              `${parsed.localPart}@%`
+            );
+            if (userMatch && userMatch[0]) {
+              const u = userMatch[0];
+              const autoAddr = await addressRepository.autoProvisionIfMissing(
+                u.id,
+                u.firstName || parsed.localPart,
+                u.lastName || '',
+                u.email
+              );
+              resolved = {
+                address: autoAddr,
+                userActive: Boolean(u.isActive),
+                addressActive: true,
+              };
+            }
+          }
+
+          if (resolved) {
+            if (!resolved.addressActive) {
+              throw Object.assign(new Error(`Recipient address is inactive: "${raw}"`), { status: 400 });
+            }
+            if (!resolved.userActive) {
+              throw Object.assign(
+                new Error(`Recipient account is suspended or disabled: "${raw}"`),
+                { status: 400 }
+              );
+            }
+
+            resolvedRecipients.push({
+              type,
+              rawEmail: raw,
+              userId: resolved.address.userId,
+              addressId: resolved.address.id,
+            });
+
+            if (resolved.address.userId) {
+              recipientUserIds.add(resolved.address.userId);
+            }
+            continue;
+          }
         }
 
-        // Verify recipient address and active account status in DB
-        const resolved = await addressRepository.resolveRecipientWithUserStatus(
-          parsed.localPart,
-          parsed.domain
-        );
-
-        if (!resolved) {
-          throw Object.assign(new Error(`Recipient not found: "${raw}"`), { status: 400 });
-        }
-        if (!resolved.addressActive) {
-          throw Object.assign(new Error(`Recipient address is inactive: "${raw}"`), { status: 400 });
-        }
-        if (!resolved.userActive) {
-          throw Object.assign(
-            new Error(`Recipient account is suspended or disabled: "${raw}"`),
-            { status: 400 }
-          );
-        }
-
+        // External Recipient (gateway routed via outbox & outbound adapter)
         resolvedRecipients.push({
           type,
           rawEmail: raw,
-          userId: resolved.address.userId,
-          addressId: resolved.address.id,
+          userId: null,
+          addressId: null,
         });
-
-        if (resolved.address.userId) {
-          recipientUserIds.add(resolved.address.userId);
-        }
       }
     };
 
@@ -359,7 +391,9 @@ export const mailComposeService = {
       }
 
       // Transactional outbox entry (ready for external transport adapter in future steps)
-      const outbox = await outboxRepository.create(message.id, 'internal', tx);
+      const hasExternal = resolvedRecipients.some((r) => r.userId === null);
+      const transportType = hasExternal ? 'smtp' : 'internal';
+      const outbox = await outboxRepository.create(message.id, transportType, tx);
 
       // Record internal delivery event
       await eventRepository.record(
