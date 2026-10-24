@@ -1136,7 +1136,7 @@ export const mailAuditRepository = {
     const params: any[] = [];
     let where = '';
     if (actorUserId) {
-      where = 'WHERE actor_user_id = $1';
+      where = 'WHERE a.actor_user_id = $1';
       params.push(actorUserId);
     }
 
@@ -1145,16 +1145,50 @@ export const mailAuditRepository = {
     params.push((page - 1) * limit, limit);
 
     const rows = await client.$queryRawUnsafe<any[]>(
-      `SELECT *, COUNT(*) OVER() AS total_count
-       FROM mail_audit_logs ${where}
-       ORDER BY occurred_at DESC
+      `SELECT
+         a.id,
+         a.actor_user_id,
+         a.action,
+         a.resource_type,
+         a.resource_id,
+         a.ip_address,
+         a.user_agent,
+         a.metadata,
+         a.occurred_at,
+         COALESCE(NULLIF(TRIM(u."firstName" || ' ' || COALESCE(u."lastName", '')), ''), u.email) AS actor_name,
+         u.email AS actor_email,
+         (COUNT(*) OVER())::int AS total_count
+       FROM mail_audit_logs a
+       LEFT JOIN users u ON u.id = a.actor_user_id
+       ${where}
+       ORDER BY a.occurred_at DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       ...params
     );
 
     return {
       total: rows[0] ? Number(rows[0].total_count) : 0,
-      items: rows,
+      items: rows.map((r: any) => ({
+        id: r.id,
+        actorUserId: r.actor_user_id,
+        actor_user_id: r.actor_user_id,
+        actorName: r.actor_name ?? null,
+        actorEmail: r.actor_email ?? null,
+        action: r.action,
+        resourceType: r.resource_type,
+        resource_type: r.resource_type,
+        resourceId: r.resource_id,
+        resource_id: r.resource_id,
+        ipAddress: r.ip_address,
+        ip_address: r.ip_address,
+        userAgent: r.user_agent,
+        user_agent: r.user_agent,
+        metadata: r.metadata,
+        occurredAt: r.occurred_at,
+        occurred_at: r.occurred_at,
+        createdAt: r.occurred_at,
+        created_at: r.occurred_at,
+      })),
     };
   },
 };
