@@ -1126,7 +1126,18 @@ export class BoardInventoryService {
       boardWhere.category = category;
     }
 
-    const [allBoards, movements] = await Promise.all([
+    const movWhere: Prisma.BoardStockMovementWhereInput = {};
+    if (warehouse && warehouse !== 'ALL') {
+      movWhere.warehouse = warehouse.toUpperCase();
+    }
+    if (startDate && endDate) {
+      movWhere.movementDate = {
+        gte: new Date(startDate),
+        lte: new Date(endDate),
+      };
+    }
+
+    const [allBoards, movementSums] = await Promise.all([
       prisma.boardInventoryItem.findMany({
         where: boardWhere,
         select: {
@@ -1143,7 +1154,13 @@ export class BoardInventoryService {
           category: true,
         },
       }),
-      this.getMovements({ timeframe, startDate, endDate, warehouse, limit: 500 }),
+      prisma.boardStockMovement.groupBy({
+        by: ['movementType'],
+        where: movWhere,
+        _sum: {
+          quantity: true,
+        },
+      }),
     ]);
 
     const totalSkus = allBoards.length;
@@ -1182,13 +1199,13 @@ export class BoardInventoryService {
       boardTypeMap[b.boardType] = (boardTypeMap[b.boardType] || 0) + Number(b.currentStock);
     });
 
-    // Inward vs Outward in selected period
-    const periodInward = movements
+    // Inward vs Outward in selected period (aggregated via SQL)
+    const periodInward = movementSums
       .filter((m) => m.movementType === 'INWARD')
-      .reduce((acc, m) => acc + Number(m.quantity), 0);
-    const periodIssued = movements
+      .reduce((acc, m) => acc + Number(m._sum.quantity || 0), 0);
+    const periodIssued = movementSums
       .filter((m) => m.movementType === 'ISSUE_AUTO' || m.movementType === 'ISSUE_MANUAL')
-      .reduce((acc, m) => acc + Number(m.quantity), 0);
+      .reduce((acc, m) => acc + Number(m._sum.quantity || 0), 0);
 
     return {
       totalSkus,

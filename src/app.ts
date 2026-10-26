@@ -148,6 +148,17 @@ app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.use(cookieParser());
 
+// ─── Edge & HTTP Caching Middleware (Cached Egress & 304 Validation) ─────────
+app.use((req, res, next) => {
+  if (req.method === 'GET') {
+    // Exclude dynamic auth & session routes from edge/browser caching
+    if (!req.path.includes('/auth/') && !req.path.includes('/health')) {
+      res.set('Cache-Control', 'public, max-age=15, s-maxage=60, stale-while-revalidate=120');
+    }
+  }
+  next();
+});
+
 // ─── Health Checks ────────────────────────────────────────────────────────────
 const prefix = env.API_PREFIX;
 

@@ -250,6 +250,15 @@ export const getExpenseById = async (id: string) => {
   };
 };
 
+const sanitizeForAudit = (item: any) => {
+  if (!item) return item;
+  const copy = { ...item };
+  if (typeof copy.receiptPath === 'string' && copy.receiptPath.startsWith('data:image')) {
+    copy.receiptPath = '[BASE64_IMAGE_OMITTED]';
+  }
+  return copy;
+};
+
 export const createExpense = async (userId: string, input: CreateUpExpenseInput) => {
   // Validate category
   const cat = await prisma.$queryRawUnsafe<any[]>(
@@ -285,13 +294,13 @@ export const createExpense = async (userId: string, input: CreateUpExpenseInput)
 
   const created = await getExpenseById(expenseId);
 
-  // Write audit trail
+  // Write audit trail (sanitized to prevent database bloat)
   await prisma.$executeRawUnsafe(
     `INSERT INTO "up_expense_audit" ("id", "expense_id", "action", "changed_by", "after_json", "created_at")
      VALUES (gen_random_uuid(), $1::uuid, 'CREATE', $2::uuid, $3::jsonb, CURRENT_TIMESTAMP);`,
     expenseId,
     userId,
-    JSON.stringify(created)
+    JSON.stringify(sanitizeForAudit(created))
   );
 
   return created;
@@ -355,8 +364,8 @@ export const updateExpense = async (userId: string, id: string, input: UpdateUpE
      VALUES (gen_random_uuid(), $1::uuid, 'UPDATE', $2::uuid, $3::jsonb, $4::jsonb, CURRENT_TIMESTAMP);`,
     id,
     userId,
-    JSON.stringify(current),
-    JSON.stringify(updated)
+    JSON.stringify(sanitizeForAudit(current)),
+    JSON.stringify(sanitizeForAudit(updated))
   );
 
   return updated;
@@ -375,7 +384,7 @@ export const deleteExpense = async (userId: string, id: string) => {
      VALUES (gen_random_uuid(), $1::uuid, 'DELETE', $2::uuid, $3::jsonb, CURRENT_TIMESTAMP);`,
     id,
     userId,
-    JSON.stringify(current)
+    JSON.stringify(sanitizeForAudit(current))
   );
 
   return { success: true, message: 'Expense deleted successfully' };
@@ -405,8 +414,8 @@ export const verifyExpense = async (userId: string, id: string, verifyStatus?: b
     id,
     targetStatus ? 'VERIFY' : 'UNVERIFY',
     userId,
-    JSON.stringify(current),
-    JSON.stringify(updated)
+    JSON.stringify(sanitizeForAudit(current)),
+    JSON.stringify(sanitizeForAudit(updated))
   );
 
   return updated;

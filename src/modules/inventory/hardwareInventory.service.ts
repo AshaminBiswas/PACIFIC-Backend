@@ -656,9 +656,29 @@ export class HardwareInventoryService {
    */
   async getAnalyticsSummary(warehouse?: string) {
     const whClause = warehouse && warehouse !== 'ALL' ? `WHERE warehouse = '${warehouse.replace(/'/g, "''").toUpperCase()}'` : '';
-    const [items, movements] = await Promise.all([
-      prisma.$queryRawUnsafe<any[]>(`SELECT * FROM hardware_inventory_items ${whClause}`),
-      prisma.$queryRawUnsafe<any[]>(`SELECT * FROM hardware_stock_movements ${whClause} ORDER BY created_at DESC`),
+    const [items, movTotals, recentMovements] = await Promise.all([
+      prisma.$queryRawUnsafe<any[]>(`
+        SELECT 
+          current_stock, 
+          COALESCE(unit_cost, cost_per_unit, 0) as unit_cost, 
+          COALESCE(min_reorder_level, reorder_level, reorder_qty, 10) as reorder_level, 
+          material, 
+          warehouse, 
+          color, 
+          finish, 
+          unit
+        FROM hardware_inventory_items ${whClause}
+      `),
+      prisma.$queryRawUnsafe<any[]>(`
+        SELECT movement_type, COALESCE(SUM(quantity), 0)::numeric as total_qty
+        FROM hardware_stock_movements ${whClause}
+        GROUP BY movement_type
+      `),
+      prisma.$queryRawUnsafe<any[]>(`
+        SELECT * FROM hardware_stock_movements ${whClause} 
+        ORDER BY created_at DESC 
+        LIMIT 10
+      `),
     ]);
 
     const totalSkus = items.length;
@@ -680,7 +700,7 @@ export class HardwareInventoryService {
       totalUnits += stock;
       totalValuation += val;
 
-      const reorder = Number(item.reorder_level || item.reorder_qty) || 10;
+      const reorder = Number(item.reorder_level) || 10;
       if (stock <= 0) outOfStockCount++;
       else if (stock <= reorder) lowStockCount++;
 
@@ -703,11 +723,10 @@ export class HardwareInventoryService {
       unitDistribution[u] = (unitDistribution[u] || 0) + 1;
     });
 
-    const inwardMovements = movements.filter((m) => m.movement_type === 'INWARD');
-    const issueMovements = movements.filter((m) => m.movement_type === 'ISSUE');
-
-    const totalInwardUnits = inwardMovements.reduce((acc, m) => acc + (Number(m.quantity) || 0), 0);
-    const totalIssuedUnits = issueMovements.reduce((acc, m) => acc + (Number(m.quantity) || 0), 0);
+    const inwardRow = movTotals.find((r) => r.movement_type === 'INWARD');
+    const issueRow = movTotals.find((r) => r.movement_type === 'ISSUE');
+    const totalInwardUnits = Number(inwardRow?.total_qty || 0);
+    const totalIssuedUnits = Number(issueRow?.total_qty || 0);
 
     return {
       totalSkus,
@@ -721,7 +740,7 @@ export class HardwareInventoryService {
       branchDistribution,
       colorDistribution,
       unitDistribution,
-      recentMovements: movements.slice(0, 10).map(mapRowToMovement),
+      recentMovements: recentMovements.map(mapRowToMovement),
     };
   }
 
