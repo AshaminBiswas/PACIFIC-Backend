@@ -745,39 +745,62 @@ export const exportService = {
     const items = data.items;
     delete data.items;
 
+    const sanitizedData = { ...data };
+    if ('countryId' in sanitizedData) sanitizedData.countryId = sanitizedData.countryId || null;
+    if ('incotermId' in sanitizedData) sanitizedData.incotermId = sanitizedData.incotermId || null;
+    if ('portOfDestinationId' in sanitizedData) sanitizedData.portOfDestinationId = sanitizedData.portOfDestinationId || null;
+    if ('portOfLoadingId' in sanitizedData) sanitizedData.portOfLoadingId = sanitizedData.portOfLoadingId || null;
+    if ('companyProfileId' in sanitizedData) sanitizedData.companyProfileId = sanitizedData.companyProfileId || null;
+    if ('validUntil' in sanitizedData) {
+      if (sanitizedData.validUntil) {
+        const parsed = new Date(sanitizedData.validUntil);
+        sanitizedData.validUntil = !isNaN(parsed.getTime()) ? parsed : null;
+      } else {
+        sanitizedData.validUntil = null;
+      }
+    }
+    if ('freightCharges' in sanitizedData) sanitizedData.freightCharges = Number(sanitizedData.freightCharges) || 0;
+    if ('insuranceCharges' in sanitizedData) sanitizedData.insuranceCharges = Number(sanitizedData.insuranceCharges) || 0;
+    if ('otherCharges' in sanitizedData) sanitizedData.otherCharges = Number(sanitizedData.otherCharges) || 0;
+    if ('exchangeRate' in sanitizedData) sanitizedData.exchangeRate = Number(sanitizedData.exchangeRate) || 1;
+    if ('fobValue' in sanitizedData) sanitizedData.fobValue = Number(sanitizedData.fobValue) || 0;
+
     if (items && Array.isArray(items)) {
       await prisma.exportQuotationItem.deleteMany({ where: { quotationId: id } });
       let subtotal = 0;
       const createdItems = items.map((it: any) => {
-        const total = Number(it.unitRate) * Number(it.quantity);
+        const qty = Number(it.quantity) || 1;
+        const rate = Number(it.unitRate) || 0;
+        const total = qty * rate;
         subtotal += total;
         return {
           quotationId: id,
           productId: it.productId || null,
           hsCodeId: it.hsCodeId || null,
           itemCode: it.itemCode || 'EXP-ITEM',
-          description: it.description,
-          quantity: it.quantity,
+          description: it.description || '',
+          quantity: qty,
           unit: it.unit || 'NOS',
-          unitRate: it.unitRate,
+          unitRate: rate,
           totalAmount: total,
-          cbm: it.cbm || 0,
-          grossWeightKg: it.grossWeightKg || 0,
-          netWeightKg: it.netWeightKg || 0,
+          cbm: Number(it.cbm) || 0,
+          grossWeightKg: Number(it.grossWeightKg) || 0,
+          netWeightKg: Number(it.netWeightKg) || 0,
         };
       });
       await prisma.exportQuotationItem.createMany({ data: createdItems });
-      data.subtotal = subtotal;
-      data.totalAmount =
+      sanitizedData.subtotal = subtotal;
+      sanitizedData.fobValue = subtotal;
+      sanitizedData.totalAmount =
         subtotal +
-        Number(data.freightCharges || 0) +
-        Number(data.insuranceCharges || 0) +
-        Number(data.otherCharges || 0);
+        Number(sanitizedData.freightCharges || 0) +
+        Number(sanitizedData.insuranceCharges || 0) +
+        Number(sanitizedData.otherCharges || 0);
     }
 
     return prisma.exportQuotation.update({
       where: { id },
-      data,
+      data: sanitizedData,
       include: { items: true },
     });
   },
