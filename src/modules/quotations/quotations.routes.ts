@@ -13,6 +13,9 @@ router.post('/templates', requireAuth, requirePermission('quotation:edit'), quot
 router.get('/', quotationsController.list);
 router.get('/:id', quotationsController.getById);
 router.get('/:id/pdf', quotationsController.getPdf);
+router.get('/:id/revisions', quotationsController.getRevisions);
+router.get('/:id/revisions/:rev', quotationsController.getRevision);
+router.get('/:id/revisions/:rev/pdf', quotationsController.getRevisionPdf);
 
 router.post('/', requireAuth, requirePermission('quotation:create'), quotationsController.create);
 router.patch('/:id', requireAuth, requirePermission('quotation:edit'), quotationsController.update);

@@ -45,6 +45,8 @@ model User {
   piStatusChanges     ProformaInvoiceStatusHistory[]
   createdSalesQuotations SalesQuotation[]         @relation("QuotationCreatedBy")
   issuedSalesQuotations  SalesQuotation[]         @relation("QuotationIssuingStaff")
+  createdSalesQuotationRevisions SalesQuotationRevision[] @relation("QuotationRevisionCreatedBy")
+  createdProformaInvoiceRevisions ProformaInvoiceRevision[] @relation("PiRevisionCreatedBy")
   createdSalesOrders     SalesOrder[]             @relation("OrderCreatedBy")
   approvedSalesOrders    SalesOrder[]             @relation("OrderApprovedBy")
   createdPackingLists    PackingList[]            @relation("PackingListCreatedBy")
@@ -658,6 +660,7 @@ model PurchaseOrderStatusHistory {
 model ProformaInvoice {
   id                      String            @id @default(uuid())
   piNumber                String            @unique // e.g. PPS/PI/2026-27/0815
+  revisionNumber          Int               @default(1)
   piDate                  DateTime          @default(now())
   companyProfileId        String
   companyProfile          CompanyProfile    @relation(fields: [companyProfileId], references: [id])
@@ -721,6 +724,7 @@ model ProformaInvoice {
   followups               PaymentFollowup[]
   packingLists            PackingList[]
   hardwareIssues          HardwareIssueList[]
+  revisions               ProformaInvoiceRevision[]
 
   @@index([piNumber])
   @@index([orderId])
@@ -820,6 +824,31 @@ model ProformaInvoiceStatusHistory {
   createdAt       DateTime        @default(now())
 
   @@map("proforma_invoice_status_history")
+}
+
+model ProformaInvoiceRevision {
+  id              String          @id @default(uuid())
+  piId            String
+  proformaInvoice ProformaInvoice @relation(fields: [piId], references: [id], onDelete: Cascade)
+  revisionNumber  Int
+  status          String          @default("CURRENT") // ORIGINAL, SUPERSEDED, CURRENT
+  snapshotJson    Json
+  grandTotal      Decimal         @db.Decimal(12, 2) @default(0)
+  taxAmount       Decimal         @db.Decimal(12, 2) @default(0)
+  subtotal        Decimal         @db.Decimal(12, 2) @default(0)
+  itemCount       Int             @default(0)
+  pdfPath         String?
+  pdfFileName     String?
+  pdfUrl          String?
+  reason          String?
+  createdById     String?
+  createdBy       User?           @relation("PiRevisionCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime        @default(now())
+
+  @@unique([piId, revisionNumber])
+  @@index([piId])
+  @@index([createdAt])
+  @@map("proforma_invoice_revisions")
 }
 
 // ─── Formal Sales Quotations (Staff Letter Quotations) ────────────────────────
@@ -950,10 +979,23 @@ model SalesQuotationRevision {
   quotationId     String
   quotation       SalesQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   revisionNumber  Int
+  status          String         @default("CURRENT") // ORIGINAL, SUPERSEDED, CURRENT
   snapshotJson    Json
+  grandTotal      Decimal?       @db.Decimal(12, 2) @default(0)
+  taxAmount       Decimal?       @db.Decimal(12, 2) @default(0)
+  subtotal        Decimal?       @db.Decimal(12, 2) @default(0)
+  itemCount       Int?           @default(0)
+  pdfPath         String?
+  pdfFileName     String?
+  pdfUrl          String?
   reason          String?
+  createdById     String?
+  createdBy       User?          @relation("QuotationRevisionCreatedBy", fields: [createdById], references: [id])
   createdAt       DateTime       @default(now())
 
+  @@unique([quotationId, revisionNumber])
+  @@index([quotationId])
+  @@index([createdAt])
   @@map("sales_quotation_revisions")
 }
 

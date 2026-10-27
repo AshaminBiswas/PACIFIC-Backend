@@ -8,6 +8,7 @@ import { pdfService } from '../pdf/pdf.service';
 import { numberToWords } from '../utils/numberToWords';
 import { auditService } from '../audit/audit.service';
 import { ordersService } from '../orders/orders.service';
+import { documentRevisionService } from '../docs/documentRevision.service';
 
 async function fetchImageAsDataUri(url: string): Promise<string> {
   if (!url || url.startsWith('data:')) return url;
@@ -133,6 +134,9 @@ export const piService = {
   },
 
   async getById(id: string) {
+    // Ensure initial legacy revision exists
+    await documentRevisionService.ensureInitialPiRevision(id).catch(() => {});
+
     const pi = await prisma.proformaInvoice.findUnique({
       where: { id },
       include: {
@@ -152,6 +156,9 @@ export const piService = {
         },
         terms: {
           orderBy: { clauseNumber: 'asc' },
+        },
+        revisions: {
+          orderBy: { revisionNumber: 'desc' },
         },
         statusHistory: {
           include: { changedBy: { select: { id: true, firstName: true, lastName: true } } },
@@ -247,7 +254,7 @@ export const piService = {
       officialPiNumber = seq.number;
     }
 
-    return prisma.$transaction(async (tx) => {
+    const createdPi = await prisma.$transaction(async (tx) => {
       const sellerStateCode = (company.stateCode || '07').trim();
       const buyerGstin = (data.billTo?.gstin || customerParty?.gstin || '').trim().toUpperCase();
       const isDelhi = isDelhiGst(buyerGstin, data.placeOfSupplyStateCode, data.placeOfSupply);
@@ -439,6 +446,15 @@ export const piService = {
       maxWait: 15000,
       timeout: 45000,
     });
+
+    // Automatically snapshot Revision 1 (Original Version) and generate archived PDF
+    try {
+      await documentRevisionService.createPiRevision(createdPi.id, 1, 'Initial issuance (Rev 01)', userId);
+    } catch (revErr) {
+      console.warn(`[PIService] Warning: Failed to create initial revision for PI ${createdPi.id}:`, revErr);
+    }
+
+    return createdPi;
   },
 
   /**
@@ -460,7 +476,7 @@ export const piService = {
     const seq = await sequenceService.getNextDocumentNumber(piCheck.companyProfileId, 'PI');
     const officialPiNumber = seq.number;
 
-    return prisma.$transaction(async (tx) => {
+    const issuedPi = await prisma.$transaction(async (tx) => {
       // Re-fetch PI inside transaction for consistent state
       const pi = await tx.proformaInvoice.findUnique({
         where: { id },
@@ -536,6 +552,20 @@ export const piService = {
       maxWait: 15000,
       timeout: 45000,
     });
+
+    // Refresh revision record with official PI sequence number and PDF
+    try {
+      await documentRevisionService.createPiRevision(
+        id,
+        issuedPi.revisionNumber || 1,
+        `Officially issued with number ${officialPiNumber}`,
+        userId
+      );
+    } catch (revErr) {
+      console.warn(`[PIService] Warning: Failed to sync revision for issued PI ${id}:`, revErr);
+    }
+
+    return issuedPi;
   },
 
   async duplicate(id: string, userId: string) {
@@ -819,6 +849,11 @@ export const piService = {
   async update(id: string, data: any, userId?: string) {
     const existing = await this.getById(id);
 
+    // Ensure initial version is archived before incrementing
+    await documentRevisionService.ensureInitialPiRevision(id, userId).catch(() => {});
+
+    const nextRev = (existing.revisionNumber || 1) + 1;
+
     // Validate customerId if provided
     let customerIdToSet = existing.customerId;
     if (data.customerId) {
@@ -840,7 +875,7 @@ export const piService = {
       dbProducts.forEach((p) => validProductMap.add(p.id));
     }
 
-    return prisma.$transaction(async (tx) => {
+    const updatedPi = await prisma.$transaction(async (tx) => {
       let itemsUpdate: any = undefined;
       let taxSummaryUpdate: any = undefined;
       let subtotal = Number(existing.subtotal);
@@ -967,6 +1002,7 @@ export const piService = {
       const updated = await tx.proformaInvoice.update({
         where: { id },
         data: {
+          revisionNumber: nextRev,
           customerId: customerIdToSet,
           companyProfileId: data.companyProfileId ?? existing.companyProfileId,
           placeOfSupply: data.placeOfSupply ?? existing.placeOfSupply,
@@ -1078,6 +1114,20 @@ export const piService = {
       maxWait: 15000,
       timeout: 45000,
     });
+
+    // Automatically snapshot new revision and generate archived PDF
+    try {
+      await documentRevisionService.createPiRevision(
+        id,
+        nextRev,
+        data.revisionReason || data.reason || `Revision ${nextRev}`,
+        userId
+      );
+    } catch (revErr) {
+      console.warn(`[PIService] Warning: Failed to archive revision ${nextRev} for PI ${id}:`, revErr);
+    }
+
+    return updatedPi;
   },
 
   async delete(id: string, userId?: string) {

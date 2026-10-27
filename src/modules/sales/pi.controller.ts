@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { piService } from './pi.service';
 import { AuthRequest } from '../../middleware/auth.middleware';
+import { documentRevisionService } from '../docs/documentRevision.service';
 
 export const piController = {
   async list(req: Request, res: Response, next: NextFunction) {
@@ -141,6 +142,42 @@ export const piController = {
     try {
       const data = await piService.addFollowup(req.params.id, req.body, req.user?.id);
       res.status(201).json({ success: true, data, message: 'Follow-up touchpoint recorded successfully' });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getRevisions(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await documentRevisionService.getPiRevisions(req.params.id);
+      res.json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getRevision(req: Request, res: Response, next: NextFunction) {
+    try {
+      const revNum = parseInt(req.params.rev, 10);
+      const data = await documentRevisionService.getPiRevision(req.params.id, revNum);
+      res.json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getRevisionPdf(req: Request, res: Response, next: NextFunction) {
+    try {
+      const revNum = parseInt(req.params.rev, 10);
+      const { buffer, fileName } = await documentRevisionService.getPiRevisionPdfBuffer(req.params.id, revNum);
+      const wantsDownload = req.query.download === 'true' || req.query.dl === '1';
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `${wantsDownload ? 'attachment' : 'inline'}; filename="${fileName}"`
+      );
+      res.send(buffer);
     } catch (err) {
       next(err);
     }

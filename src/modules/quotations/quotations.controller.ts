@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { quotationsService } from './quotations.service';
 import { AuthRequest } from '../../middleware/auth.middleware';
 import { htmlToPdfBuffer } from '../../utils/htmlToPdf';
+import { documentRevisionService } from '../docs/documentRevision.service';
 
 function injectPrintableToolbar(html: string, quote: any, autoPrint = false): string {
   const ref = quote.referenceNumber || quote.quotationNumber || quote.id;
@@ -323,6 +324,42 @@ export const quotationsController = {
     try {
       const data = await quotationsService.saveTemplate(req.body);
       res.json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getRevisions(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await documentRevisionService.getQuotationRevisions(req.params.id);
+      res.json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getRevision(req: Request, res: Response, next: NextFunction) {
+    try {
+      const revNum = parseInt(req.params.rev, 10);
+      const data = await documentRevisionService.getQuotationRevision(req.params.id, revNum);
+      res.json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getRevisionPdf(req: Request, res: Response, next: NextFunction) {
+    try {
+      const revNum = parseInt(req.params.rev, 10);
+      const { buffer, fileName } = await documentRevisionService.getQuotationRevisionPdfBuffer(req.params.id, revNum);
+      const wantsDownload = req.query.download === 'true' || req.query.dl === '1';
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `${wantsDownload ? 'attachment' : 'inline'}; filename="${fileName}"`
+      );
+      res.send(buffer);
     } catch (err) {
       next(err);
     }

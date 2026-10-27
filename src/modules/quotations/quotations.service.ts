@@ -12,6 +12,7 @@ import { qrService } from '../qr/qr.service';
 import { emailService } from '../../utils/email.service';
 import { htmlToPdfBuffer } from '../../utils/htmlToPdf';
 import { v4 as uuidv4 } from 'uuid';
+import { documentRevisionService } from '../docs/documentRevision.service';
 
 /** Fetches a remote image URL and converts it to a base64 data URI for offline embedding. */
 async function fetchImageAsDataUri(url: string): Promise<string> {
@@ -193,6 +194,9 @@ export const quotationsService = {
   },
 
   async getById(id: string) {
+    // Ensure initial legacy revision exists
+    await documentRevisionService.ensureInitialQuotationRevision(id).catch(() => {});
+
     const quote = await prisma.salesQuotation.findUnique({
       where: { id },
       include: {
@@ -421,23 +425,21 @@ export const quotationsService = {
       });
     }
 
+    // Automatically snapshot Revision 1 (Original Version) and generate archived PDF
+    try {
+      await documentRevisionService.createQuotationRevision(quotation.id, 1, 'Initial issuance (Rev 01)', userId);
+    } catch (revErr) {
+      console.warn(`[QuotationsService] Warning: Failed to create initial revision for quote ${quotation.id}:`, revErr);
+    }
+
     return formatQuotationOutput(quotation);
   },
 
   async revise(id: string, updateData: any, reason?: string, userId?: string) {
     const existing = await this.getById(id);
+    await documentRevisionService.ensureInitialQuotationRevision(id, userId).catch(() => {});
 
-    // Save previous snapshot in revisions
-    await prisma.salesQuotationRevision.create({
-      data: {
-        quotationId: existing.id,
-        revisionNumber: existing.revisionNumber,
-        snapshotJson: existing as any,
-        reason: reason || 'Price or site specification revision',
-      },
-    });
-
-    const newRevNumber = existing.revisionNumber + 1;
+    const newRevNumber = (existing.revisionNumber || 1) + 1;
 
     // Recompute items if provided
     let itemsUpdate: any = undefined;
@@ -523,6 +525,17 @@ export const quotationsService = {
         entityId: id,
         newData: { revisionNumber: newRevNumber, reason },
       });
+    }
+
+    try {
+      await documentRevisionService.createQuotationRevision(
+        id,
+        newRevNumber,
+        reason || `Revision ${newRevNumber}`,
+        userId
+      );
+    } catch (revErr) {
+      console.warn(`[QuotationsService] Warning: Failed to archive revision ${newRevNumber} for quote ${id}:`, revErr);
     }
 
     return formatQuotationOutput(updated);
@@ -974,6 +987,11 @@ export const quotationsService = {
   async update(id: string, updateData: any, userId?: string) {
     const existing = await this.getById(id);
 
+    // Ensure initial version is archived before incrementing
+    await documentRevisionService.ensureInitialQuotationRevision(id, userId).catch(() => {});
+
+    const nextRev = (existing.revisionNumber || 1) + 1;
+
     let itemsUpdate: any = undefined;
     let basicPrice = updateData.basicPrice !== undefined ? Number(updateData.basicPrice) : Number(existing.basicPrice);
 
@@ -1023,6 +1041,7 @@ export const quotationsService = {
     const updated = await prisma.salesQuotation.update({
       where: { id },
       data: {
+        revisionNumber: nextRev,
         recipientSalutation: updateData.recipientSalutation ?? existing.recipientSalutation,
         recipientName: updateData.recipientName ?? existing.recipientName,
         recipientCompany: updateData.recipientCompany ?? existing.recipientCompany,
@@ -1064,8 +1083,19 @@ export const quotationsService = {
         module: 'Sales',
         entityType: 'SalesQuotation',
         entityId: id,
-        newData: { grandTotal, recipientName: updated.recipientName },
+        newData: { revisionNumber: nextRev, grandTotal, recipientName: updated.recipientName },
       });
+    }
+
+    try {
+      await documentRevisionService.createQuotationRevision(
+        id,
+        nextRev,
+        updateData.revisionReason || updateData.reason || `Revision ${nextRev}`,
+        userId
+      );
+    } catch (revErr) {
+      console.warn(`[QuotationsService] Warning: Failed to archive revision ${nextRev} for quote ${id}:`, revErr);
     }
 
     return formatQuotationOutput(updated);
