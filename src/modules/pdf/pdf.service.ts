@@ -918,16 +918,36 @@ export const pdfService = {
         data.terms.some((t) => t.toLowerCase().includes('goods once sold will not be taken back')));
 
     const termsToDisplay = [...(isOldGenericTerms ? defaultTerms : data.terms)]
-      .filter((t) => !t.startsWith('[PI_SCOPE:') && !t.startsWith('[METADATA:'))
-      .map((t) => {
+      .filter((t) => {
+        if (!t) return false;
+        const tLower = t.toLowerCase();
+        if (t.startsWith('[PI_SCOPE:') || t.startsWith('[METADATA:')) return false;
+
+        // Condition 5: Remove Standard Inclusions & Hardware Accessories
         if (
-          hasItemizedHardware &&
-          (t.toLowerCase().includes('hardware accessories') || t.toLowerCase().includes('standard inclusions')) &&
-          t.toLowerCase().includes('gravity hinges')
+          tLower.includes('standard inclusions') ||
+          tLower.includes('hardware accessories') ||
+          tLower.includes('gravity hinges') ||
+          tLower.includes('hardware scope')
         ) {
-          return 'Hardware Scope: Architectural restroom hardware accessories, channels, fasteners, and fittings are itemized as individual billable lines in the product schedule above.';
+          return false;
         }
-        return t;
+
+        // Condition 6: Remove "Installation is Not Applicable"
+        if (tLower.includes('installation') && (tLower.includes('not applicable') || tLower.includes('n/a'))) {
+          return false;
+        }
+
+        // Condition 7: Remove "Freight charges are EXTRA AS ACTUAL / TO PAY"
+        if (
+          tLower.includes('freight charges are extra as actual') ||
+          (tLower.includes('freight') && tLower.includes('extra as actual')) ||
+          (tLower.includes('freight') && tLower.includes('to pay'))
+        ) {
+          return false;
+        }
+
+        return true;
       });
 
     const installChargeNum = Number(data.installationCharge || 0);
@@ -943,37 +963,35 @@ export const pdfService = {
           : `Installation: Cubicle installation is charged at ${currSym} ${installChargeNum.toLocaleString('en-IN')}. Site readiness required prior to installation.`;
         termsToDisplay.push(installTerm);
       } else {
-        const rawOpt = (data.installationOption || 'Included').trim();
-        let optTerm = 'Installation: Cubicle installation is INCLUDED in the quoted basic price. Site readiness (finished floor level and plumb walls) required prior to installation.';
-        if (rawOpt === 'Extra to Pay') {
-          optTerm = 'Installation: Cubicle installation is EXTRA TO PAY (payable at actuals by client / site contractor). Site readiness required prior to installation.';
-        } else if (rawOpt === 'Client Scope') {
-          optTerm = "Installation: Cubicle installation is in Buyer's / Client's scope. Pacific scope covers supply only.";
-        } else if (rawOpt === 'Not Applicable') {
-          optTerm = 'Installation: Installation is Not Applicable (Supply of restroom cubicle materials only).';
+        const rawOpt = (data.installationOption || '').trim();
+        if (rawOpt === 'Included' || rawOpt.toLowerCase().includes('included')) {
+          termsToDisplay.push('Installation: Cubicle installation is INCLUDED in the quoted basic price. Site readiness (finished floor level and plumb walls) required prior to installation.');
+        } else if (rawOpt === 'Extra to Pay') {
+          termsToDisplay.push('Installation: Cubicle installation is EXTRA TO PAY (payable at actuals by client / site contractor). Site readiness required prior to installation.');
+        } else if (rawOpt === 'Client Scope' || rawOpt.toLowerCase().includes('client')) {
+          termsToDisplay.push("Installation: Cubicle installation is in Buyer's / Client's scope. Pacific scope covers supply only.");
         } else if (rawOpt === 'Custom' && data.installationCustomNote?.trim()) {
-          optTerm = `Installation: ${data.installationCustomNote.trim()} Site readiness required prior to installation.`;
+          termsToDisplay.push(`Installation: ${data.installationCustomNote.trim()} Site readiness required prior to installation.`);
         }
-        termsToDisplay.push(optTerm);
+        // When rawOpt is 'Not Applicable' or empty, DO NOT push any installation clause!
       }
     }
 
     const freightAmountNum = Number(data.freightAmount || 0);
-    const hasFreightTerm = termsToDisplay.some((t) => /(freight|transportation|dispatch transit)/i.test(t));
+    const hasFreightTerm = termsToDisplay.some((t) => /(freight|transport|transportation|dispatch transit)/i.test(t));
     if (!hasFreightTerm) {
       if (freightAmountNum > 0) {
         termsToDisplay.push(`Freight: Freight charges are fixed at ${currSym} ${freightAmountNum.toLocaleString('en-IN')}, included in the total invoice value.`);
       } else {
-        const rawFreightOpt = (data.freightTerms || 'Extra as Actual / To pay').trim();
-        let freightTermText = 'Freight: Freight charges are EXTRA AS ACTUAL / TO PAY by client/buyer at the time of site delivery.';
+        const rawFreightOpt = (data.freightTerms || '').trim();
         if (rawFreightOpt === 'Included' || rawFreightOpt.toLowerCase().includes('included')) {
-          freightTermText = 'Freight: Freight charges are INCLUDED in the basic product price (FOR site delivery).';
+          termsToDisplay.push('Freight: Freight charges are INCLUDED in the basic product price (FOR site delivery).');
         } else if (rawFreightOpt === 'Client Scope' || rawFreightOpt.toLowerCase().includes('client')) {
-          freightTermText = "Freight: Transportation & logistics is in Buyer's / Client's scope. Material to be picked up from our factory/warehouse.";
+          termsToDisplay.push("Freight: Transportation & logistics is in Buyer's / Client's scope. Material to be picked up from our factory/warehouse.");
         } else if (rawFreightOpt === 'Custom' && data.freightCustomNote?.trim()) {
-          freightTermText = `Freight: ${data.freightCustomNote.trim()}`;
+          termsToDisplay.push(`Freight: ${data.freightCustomNote.trim()}`);
         }
-        termsToDisplay.push(freightTermText);
+        // When rawFreightOpt is 'Extra as Actual / To pay' or empty, DO NOT push any freight clause!
       }
     }
 
