@@ -836,7 +836,9 @@ export const pdfService = {
       (data.terms.length <= 5 &&
         data.terms.some((t) => t.toLowerCase().includes('goods once sold will not be taken back')));
 
-    const termsToDisplay = [...(isOldGenericTerms ? defaultTerms : data.terms)];
+    const termsToDisplay = [...(isOldGenericTerms ? defaultTerms : data.terms)].filter(
+      (t) => !t.startsWith('[PI_SCOPE:') && !t.startsWith('[METADATA:')
+    );
 
     const installChargeNum = Number(data.installationCharge || 0);
     const hasInstallTerm = termsToDisplay.some((t) => t.toLowerCase().includes('installation'));
