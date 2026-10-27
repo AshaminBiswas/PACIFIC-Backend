@@ -720,7 +720,8 @@ export const pdfService = {
 
     // Helper to extract specs from description if not provided directly
     const parseItemSpecs = (desc: string) => {
-      const match = desc.match(/\((Board:.*?)\)/i) || desc.match(/\((.*?Hardware:.*?)\)/i);
+      if (!desc) return {};
+      const match = desc.match(/\(([^)]*?:[^)]*?)\)/s);
       if (!match) return {};
       const parts = match[1].split('|').map((s) => s.trim());
       const res: Record<string, string> = {};
@@ -729,20 +730,74 @@ export const pdfService = {
         if (colonIdx !== -1) {
           const k = part.substring(0, colonIdx).trim().toLowerCase();
           const v = part.substring(colonIdx + 1).trim();
+          if (k === 'model') res.customModelName = v;
+          if (k === 'make') res.make = v;
           if (k.includes('board') && !k.includes('color') && !k.includes('thick')) res.boardType = v;
           if (k.includes('thick')) res.boardThickness = v;
           if (k.includes('color')) res.boardColor = v;
           if (k.includes('size') && !k.includes('door')) res.cubicleSize = v;
           if (k.includes('door')) res.doorSize = v;
           if (k.includes('height')) res.overallHeight = v;
-          if (k.includes('hardware')) res.hardwarePackage = v;
+          if (k.includes('hardware') || k.includes('material')) res.hardwarePackage = v;
         }
       }
       return res;
     };
 
-    const cleanDescription = (desc: string) =>
-      desc.replace(/\s*\((Board:.*?)\)/gi, '').replace(/\s*\((.*?Hardware:.*?)\)/gi, '').trim();
+    const cleanDescription = (desc: string): string => {
+      if (!desc) return '';
+
+      // 1. Strip ANY specification parenthetical block e.g. (Model: ... | Type: ...)
+      let clean = desc
+        .replace(/\s*\(\s*(?:Model|Make|Board|Material|Color|Size|Door|Height|Hardware|Type|Category)\s*:[\s\S]*?\)/gi, '')
+        // Also strip any remaining multi-property parentheticals with '|' and ':'
+        .replace(/\s*\([^)]{8,}?:[^)]*?\|[^)]*?\)/gi, '')
+        // Also strip legacy (Board: ...) or (Hardware: ...)
+        .replace(/\s*\((?:Board|Hardware)\s*:.*?\)/gi, '')
+        .trim();
+
+      // 2. Remove duplicate titles like "Title — Title RestOfDescription" or "Title — Title"
+      const dashMatch = clean.match(/^(.*?)\s*(?:—|–|-)\s*(.*)$/);
+      if (dashMatch) {
+        const left = dashMatch[1].trim();
+        const right = dashMatch[2].trim();
+        const leftLower = left.toLowerCase();
+        const rightLower = right.toLowerCase();
+
+        if (leftLower === rightLower) {
+          clean = right;
+        } else if (rightLower.startsWith(leftLower)) {
+          clean = right;
+        } else if (leftLower.startsWith(rightLower)) {
+          clean = left;
+        }
+      }
+
+      // 3. Fix bare thickness titles like "12mm"
+      if (/^(\d+\s*mm)$/i.test(clean)) {
+        clean = `${clean} Compact Laminate Restroom Partition Board`;
+      }
+
+      return clean;
+    };
+
+    // Detect if this invoice has itemized hardware lines
+    const hasItemizedHardware = data.items.some((it: any) => {
+      const hsn = String(it.hsnSac || it.hsnCode || '');
+      const dLower = (it.description || '').toLowerCase();
+      return (
+        ['8302', '83021010', '7610', '3925'].some((h) => hsn.startsWith(h)) ||
+        dLower.includes('hardware set') ||
+        dLower.includes('hinge') ||
+        dLower.includes('indicator lock') ||
+        dLower.includes('u channel') ||
+        dLower.includes('f channel') ||
+        dLower.includes('top rail') ||
+        dLower.includes('screw') ||
+        (it as any).itemType === 'hardware' ||
+        (it as any).systemCategory === 'hardware'
+      );
+    });
 
     const itemRows = data.items
       .map((it, idx) => {
@@ -779,17 +834,43 @@ export const pdfService = {
         const customModel = (it as any).customModelName || (it as any).modelName || customSpecs.customModelName || (it as any).model?.title;
         const customNotes = customSpecs.notes || (it as any).notes;
 
-        const hasSpecs = Boolean(
-          customModel || it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage || customNotes
+        const descLower = (it.description || '').toLowerCase();
+        const isHardware = Boolean(
+          ['8302', '83021010', '7610', '3925'].some((h) => String(it.hsnSac || '').startsWith(h)) ||
+          (it as any).itemType === 'hardware' ||
+          (it as any).systemCategory === 'hardware' ||
+          (['SET', 'PAIR', 'NOS', 'PCS'].includes(String(it.unit).toUpperCase()) && (
+            descLower.includes('screw') ||
+            descLower.includes('channel') ||
+            descLower.includes('rail') ||
+            descLower.includes('hinge') ||
+            descLower.includes('lock') ||
+            descLower.includes('clamp') ||
+            descLower.includes('tape') ||
+            descLower.includes('hardware set')
+          ))
         );
 
-        const descLower = (it.description || '').toLowerCase();
         const isUrinal = descLower.includes('urinal') || descLower.includes('ump') || (cubicleSize && cubicleSize.includes('450mm'));
         const isLocker = descLower.includes('locker');
-        const isCubicle = !isUrinal && !isLocker && !isCustom && (descLower.includes('cubicle') || descLower.includes('restroom'));
+        const isCubicle = !isUrinal && !isLocker && !isCustom && !isHardware && (descLower.includes('cubicle') || descLower.includes('restroom'));
         const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : isCubicle ? 'Cubicle / Depth Size' : 'Dimensions';
         const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
-        const showDoor = !isCustom && doorSize && !doorSize.toLowerCase().includes('n/a') && (!isUrinal || doorSize.trim() !== 'N/A');
+        const showDoor = !isCustom && !isHardware && doorSize && !doorSize.toLowerCase().includes('n/a') && (!isUrinal || doorSize.trim() !== 'N/A');
+
+        const showCustomModel = Boolean(
+          customModel &&
+          !isHardware &&
+          customModel.trim().toLowerCase() !== displayDesc.trim().toLowerCase() &&
+          !displayDesc.trim().toLowerCase().startsWith(customModel.trim().toLowerCase())
+        );
+
+        const hasSpecs = Boolean(
+          showCustomModel ||
+          (!isHardware && (it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight)) ||
+          hardwarePackage ||
+          customNotes
+        );
 
         return `
           <tr>
@@ -798,15 +879,15 @@ export const pdfService = {
               <div style="font-weight: bold; font-size: 11px;">${displayDesc}</div>
               ${hasSpecs ? `
                 <div class="spec-box">
-                  ${customModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
-                  ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
-                  ${boardType ? `<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${boardType}</div>` : ''}
-                  ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
-                  ${boardColor ? `<div>• <strong>Color / Finish:</strong> ${boardColor}</div>` : ''}
-                  ${cubicleSize ? `<div>• <strong>${sizeLabel}:</strong> ${cubicleSize}</div>` : ''}
-                  ${showDoor ? `<div>• <strong>${doorLabel}:</strong> ${doorSize}</div>` : ''}
-                  ${overallHeight ? `<div>• <strong>Overall Height:</strong> ${overallHeight}</div>` : ''}
-                  ${hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${hardwarePackage}</div>` : ''}
+                  ${showCustomModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
+                  ${(!isHardware && it.make) ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
+                  ${(!isHardware && boardType) ? `<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${boardType}</div>` : ''}
+                  ${(!isHardware && boardThickness) ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
+                  ${(!isHardware && boardColor) ? `<div>• <strong>Color / Finish:</strong> ${boardColor}</div>` : ''}
+                  ${(!isHardware && cubicleSize) ? `<div>• <strong>${sizeLabel}:</strong> ${cubicleSize}</div>` : ''}
+                  ${(!isHardware && showDoor) ? `<div>• <strong>${doorLabel}:</strong> ${doorSize}</div>` : ''}
+                  ${(!isHardware && overallHeight) ? `<div>• <strong>Overall Height:</strong> ${overallHeight}</div>` : ''}
+                  ${hardwarePackage ? `<div>• <strong>${isHardware ? 'Material / Specs' : 'Hardware Package'}:</strong> ${hardwarePackage}</div>` : ''}
                   ${customNotes ? `<div>• <strong>Notes / Specs:</strong> ${customNotes}</div>` : ''}
                 </div>
               ` : ''}
@@ -836,9 +917,18 @@ export const pdfService = {
       (data.terms.length <= 5 &&
         data.terms.some((t) => t.toLowerCase().includes('goods once sold will not be taken back')));
 
-    const termsToDisplay = [...(isOldGenericTerms ? defaultTerms : data.terms)].filter(
-      (t) => !t.startsWith('[PI_SCOPE:') && !t.startsWith('[METADATA:')
-    );
+    const termsToDisplay = [...(isOldGenericTerms ? defaultTerms : data.terms)]
+      .filter((t) => !t.startsWith('[PI_SCOPE:') && !t.startsWith('[METADATA:'))
+      .map((t) => {
+        if (
+          hasItemizedHardware &&
+          (t.toLowerCase().includes('hardware accessories') || t.toLowerCase().includes('standard inclusions')) &&
+          t.toLowerCase().includes('gravity hinges')
+        ) {
+          return 'Hardware Scope: Architectural restroom hardware accessories, channels, fasteners, and fittings are itemized as individual billable lines in the product schedule above.';
+        }
+        return t;
+      });
 
     const installChargeNum = Number(data.installationCharge || 0);
     const hasInstallTerm = termsToDisplay.some((t) => t.toLowerCase().includes('installation'));
