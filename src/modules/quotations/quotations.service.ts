@@ -799,6 +799,10 @@ export const quotationsService = {
         : 'H-3, JR Complex, Gate No. 4, Melaram farm, Sewa Dham Rd, Mandoli, Delhi - 110093';
     }
 
+    const lockerCatalogModels = await prisma.websiteProduct.findMany({
+      where: { category: { contains: 'Locker', mode: 'insensitive' } },
+    }).catch(() => []);
+
     return pdfService.generateQuotationPdfHtml({
       referenceNumber: quote.referenceNumber,
       revisionNumber: quote.revisionNumber,
@@ -822,28 +826,99 @@ export const quotationsService = {
       issuingStaffPhone,
       issuingStaffEmail: quote.issuingStaff?.email,
       currency: quote.currency,
-      items: (quote.items || []).map((it: any) => ({
-        serialNumber: it.serialNumber,
-        description: it.description,
-        unit: it.unit,
-        quantity: Number(it.quantity),
-        rate: Number(it.rate),
-        amount: Number(it.amount),
-        cubicleSize: it.cubicleSize || undefined,
-        boardColor: it.boardColor || undefined,
-        boardThickness: it.boardThickness || undefined,
-        doorSize: it.doorSize || undefined,
-        overallHeight: it.overallHeight || undefined,
-        boardType: it.boardType || (it.customSpecsJson as any)?.boardType || (it.customSpecsJson as any)?.boardMaterial || undefined,
-        hardwarePackage: it.hardwarePackage || (it.customSpecsJson as any)?.hardwarePackage || (it.customSpecsJson as any)?.hardwareType || undefined,
-        make: it.make || (it.customSpecsJson as any)?.make || undefined,
-        modelImageUrl: it.modelImageUrl || (it.customSpecsJson as any)?.modelImageUrl || undefined,
-        modelName: (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.modelName || undefined,
-        customModelName: (it.customSpecsJson as any)?.customModelName || it.customModelName || undefined,
-        customSpecsJson: it.customSpecsJson || undefined,
-        isCustom: Boolean((it.customSpecsJson as any)?.isCustom || it.isCustom || (it.customSpecsJson as any)?.systemCategory === 'custom'),
-        hsnSac: (it.customSpecsJson as any)?.hsnSac || it.hsnSac || undefined,
-      })),
+      items: (quote.items || []).map((it: any) => {
+        const descLower = (it.description || '').toLowerCase();
+        const customSpecs = ((it.customSpecsJson as any) || {});
+        const modelName = (customSpecs.customModelName || customSpecs.modelName || it.modelName || it.customModelName || '').trim();
+        const isLocker = (
+          it.systemCategory === 'locker' ||
+          customSpecs.systemCategory === 'locker' ||
+          descLower.includes('locker') ||
+          descLower.includes('tier') ||
+          String(it.unit || '').toLowerCase().includes('tier') ||
+          (/^\d+$/.test(String(it.unit || '').trim()) && !descLower.includes('cubicle'))
+        );
+
+        const matchedLockerModel = isLocker
+          ? lockerCatalogModels.find((m) =>
+              (modelName && m.title.toLowerCase().includes(modelName.toLowerCase())) ||
+              (it.description && m.title.toLowerCase().includes(it.description.toLowerCase())) ||
+              (it.description && it.description.toLowerCase().includes(m.title.toLowerCase()))
+            )
+          : null;
+
+        let width = customSpecs.width;
+        let depth = customSpecs.depth;
+        let height = customSpecs.height;
+        let boardThickness = it.boardThickness || customSpecs.boardThickness;
+
+        if (matchedLockerModel && Array.isArray(matchedLockerModel.specifications)) {
+          const specs = matchedLockerModel.specifications as any[];
+          const findM = (p: string) => {
+            const found = specs.find((s: any) => s.label && typeof s.label === 'string' && s.label.toLowerCase().includes(p.toLowerCase()));
+            return found && typeof found.value === 'string' ? found.value.trim() : '';
+          };
+          const meta = specs.find((s: any) => s.label === '__hardware_meta')?.value || {};
+          if (!width) width = meta.width || findM('width') || '300 mm';
+          if (!depth) depth = meta.depth || findM('depth') || '450 mm';
+          if (!height) height = meta.height || findM('height') || '1800 mm';
+          if (!boardThickness) boardThickness = meta.boardThickness || findM('thickness') || '9mm';
+        }
+
+        let cubicleSize = it.cubicleSize;
+        let doorSize = it.doorSize;
+        let overallHeight = it.overallHeight;
+
+        const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
+        const cleanW = (width ? String(width).replace(/[^0-9.]/g, '') : '') || '300';
+        const cleanD = (depth ? String(depth).replace(/[^0-9.]/g, '') : '') || '450';
+        let cleanH = (height ? String(height).replace(/[^0-9.]/g, '') : '') || (overallHeight ? String(overallHeight).replace(/[^0-9.]/g, '') : '') || '1800';
+        const numH = parseInt(cleanH) || 1800;
+        const totalH = (numH < 1000 && tierRows >= 2) ? (numH * tierRows) : (numH >= 1000 ? numH : 1800);
+        const compH = Math.round(totalH / tierRows);
+
+        if (isLocker) {
+          if (!cubicleSize || /^\s*\d+\s*col/i.test(cubicleSize) || cubicleSize.toLowerCase().includes('doors') || !cubicleSize.toLowerCase().includes('w')) {
+            cubicleSize = `${cleanW}mm W × ${cleanD}mm D × ${totalH}mm H`;
+          }
+          if (!overallHeight || overallHeight === 'null' || !overallHeight.includes('mm')) {
+            overallHeight = `${totalH}mm (plus 100mm plinth base)`;
+          }
+          if (!doorSize || doorSize === 'N/A' || doorSize.includes('as per drawing') || doorSize.toLowerCase().includes('doors as per')) {
+            doorSize = `${tierRows} Tier Modular Doors (${cleanW}mm W × ${compH}mm H per door)`;
+          }
+        }
+
+        return {
+          serialNumber: it.serialNumber,
+          description: it.description,
+          unit: it.unit,
+          quantity: Number(it.quantity),
+          rate: Number(it.rate),
+          amount: Number(it.amount),
+          cubicleSize: (isLocker ? cubicleSize : it.cubicleSize) || undefined,
+          boardColor: it.boardColor || undefined,
+          boardThickness: (isLocker ? (boardThickness || it.boardThickness) : it.boardThickness) || undefined,
+          doorSize: (isLocker ? doorSize : it.doorSize) || undefined,
+          overallHeight: (isLocker ? overallHeight : it.overallHeight) || undefined,
+          boardType: it.boardType || customSpecs.boardType || customSpecs.boardMaterial || undefined,
+          hardwarePackage: it.hardwarePackage || customSpecs.hardwarePackage || customSpecs.hardwareType || undefined,
+          make: it.make || customSpecs.make || undefined,
+          modelImageUrl: it.modelImageUrl || customSpecs.modelImageUrl || undefined,
+          modelName: customSpecs.customModelName || customSpecs.modelName || it.modelName || undefined,
+          customModelName: customSpecs.customModelName || it.customModelName || undefined,
+          customSpecsJson: {
+            ...customSpecs,
+            systemCategory: isLocker ? 'locker' : customSpecs.systemCategory,
+            width: isLocker ? `${cleanW}mm` : customSpecs.width,
+            depth: isLocker ? `${cleanD}mm` : customSpecs.depth,
+            height: isLocker ? `${totalH}mm` : customSpecs.height,
+          },
+          isCustom: Boolean(customSpecs.isCustom || it.isCustom || customSpecs.systemCategory === 'custom'),
+          hsnSac: customSpecs.hsnSac || it.hsnSac || undefined,
+          systemCategory: isLocker ? 'locker' : (it.systemCategory || customSpecs.systemCategory || undefined),
+        };
+      }),
       basicPrice: Number(quote.basicPrice),
       installationCharge: installCharge,
       installationRatePerCubicle: ratePerCub,

@@ -759,64 +759,139 @@ export const piService = {
         ? billToParty.gstin.substring(2, 12)
         : pi.customer.pan || undefined);
 
-    return pdfService.generatePiHtml({
-      piNumber: pi.piNumber,
-      piDate: pi.piDate.toISOString(),
-      companyName: pi.companyProfile.companyName,
-      companyAddress,
-      companyGstin: pi.companyProfile.gstin || '07CIJPS1392A2Z9',
-      companyPan: pi.companyProfile.pan || 'CIJPS1392A',
-      companyPhone: pi.companyProfile.phone || undefined,
-      companyEmail: pi.companyProfile.email || undefined,
-      logoUrl,
-      placeOfSupply: pi.placeOfSupply,
-      placeOfSupplyStateCode: pi.placeOfSupplyStateCode,
-      reverseCharge: pi.reverseCharge,
-      modeOfTransport: pi.modeOfTransport || undefined,
-      vehicleNumber: pi.vehicleNumber || undefined,
-      grLrNumber: pi.grLrNumber || undefined,
-      linkedPoNumber: pi.linkedPoNumber || undefined,
-      linkedPoDate: pi.linkedPoDate ? pi.linkedPoDate.toISOString() : undefined,
-      billTo: {
-        name: billToParty?.partyName || pi.customer.legalName,
-        address: billToParty?.addressLine || 'Registered Address',
-        gstin: billToParty?.gstin || undefined,
-        pan: customerPan,
-        state: billToParty?.state || pi.placeOfSupply || 'Delhi',
-        stateCode: billToParty?.stateCode || pi.placeOfSupplyStateCode || '07',
-        phone: billToParty?.phone || undefined,
-        email: billToParty?.email || undefined,
-      },
-      shipTo: {
-        name: shipToParty?.partyName || billToParty?.partyName || pi.customer.legalName,
-        address: shipToParty?.addressLine || billToParty?.addressLine || 'Delivery Address',
-        gstin: shipToParty?.gstin || undefined,
-        state: shipToParty?.state || billToParty?.state || pi.placeOfSupply || 'Delhi',
-        stateCode: shipToParty?.stateCode || billToParty?.stateCode || pi.placeOfSupplyStateCode || '07',
-        phone: shipToParty?.phone || undefined,
-      },
-      items: pi.items.map((it: any) => ({
-        serialNumber: it.serialNumber,
-        description: it.description,
-        hsnSac: it.hsnSac || undefined,
-        quantity: Number(it.quantity),
-        unit: it.unit,
-        rate: Number(it.rate),
-        amount: Number(it.amount),
-        gstRate: Number(it.gstRate),
-        taxableAmount: Number(it.taxableAmount),
-        boardType: it.boardType || (it as any).customSpecsJson?.boardType || undefined,
-        boardThickness: it.boardThickness || (it as any).customSpecsJson?.boardThickness || undefined,
-        boardColor: it.boardColor || (it as any).customSpecsJson?.boardColor || undefined,
-        cubicleSize: it.cubicleSize || undefined,
-        doorSize: it.doorSize || undefined,
-        overallHeight: it.overallHeight || undefined,
-        hardwarePackage: it.hardwarePackage || (it as any).customSpecsJson?.hardwarePackage || undefined,
-        customModelName: (it as any).customModelName || (it as any).modelName || (it as any).customSpecsJson?.customModelName || undefined,
-        modelName: (it as any).modelName || (it as any).customModelName || (it as any).customSpecsJson?.modelName || undefined,
-        isCustom: Boolean((it as any).isCustom || (it as any).customSpecsJson?.isCustom || (it as any).systemCategory === 'custom'),
-        customSpecsJson: (it as any).customSpecsJson || undefined,
-      })),
+      const lockerCatalogModels = await prisma.websiteProduct.findMany({
+        where: { category: { contains: 'Locker', mode: 'insensitive' } },
+      }).catch(() => []);
+
+      return pdfService.generatePiHtml({
+        piNumber: pi.piNumber,
+        piDate: pi.piDate.toISOString(),
+        companyName: pi.companyProfile.companyName,
+        companyAddress,
+        companyGstin: pi.companyProfile.gstin || '07CIJPS1392A2Z9',
+        companyPan: pi.companyProfile.pan || 'CIJPS1392A',
+        companyPhone: pi.companyProfile.phone || undefined,
+        companyEmail: pi.companyProfile.email || undefined,
+        logoUrl,
+        placeOfSupply: pi.placeOfSupply,
+        placeOfSupplyStateCode: pi.placeOfSupplyStateCode,
+        reverseCharge: pi.reverseCharge,
+        modeOfTransport: pi.modeOfTransport || undefined,
+        vehicleNumber: pi.vehicleNumber || undefined,
+        grLrNumber: pi.grLrNumber || undefined,
+        linkedPoNumber: pi.linkedPoNumber || undefined,
+        linkedPoDate: pi.linkedPoDate ? pi.linkedPoDate.toISOString() : undefined,
+        billTo: {
+          name: billToParty?.partyName || pi.customer.legalName,
+          address: billToParty?.addressLine || 'Registered Address',
+          gstin: billToParty?.gstin || undefined,
+          pan: customerPan,
+          state: billToParty?.state || pi.placeOfSupply || 'Delhi',
+          stateCode: billToParty?.stateCode || pi.placeOfSupplyStateCode || '07',
+          phone: billToParty?.phone || undefined,
+          email: billToParty?.email || undefined,
+        },
+        shipTo: {
+          name: shipToParty?.partyName || billToParty?.partyName || pi.customer.legalName,
+          address: shipToParty?.addressLine || billToParty?.addressLine || 'Delivery Address',
+          gstin: shipToParty?.gstin || undefined,
+          state: shipToParty?.state || billToParty?.state || pi.placeOfSupply || 'Delhi',
+          stateCode: shipToParty?.stateCode || billToParty?.stateCode || pi.placeOfSupplyStateCode || '07',
+          phone: shipToParty?.phone || undefined,
+        },
+        items: pi.items.map((it: any) => {
+          const descLower = (it.description || '').toLowerCase();
+          const customSpecs = ((it as any).customSpecsJson as any) || {};
+          const modelName = ((it as any).customModelName || (it as any).modelName || customSpecs.customModelName || customSpecs.modelName || '').trim();
+          const isLocker = (
+            (it as any).systemCategory === 'locker' ||
+            customSpecs.systemCategory === 'locker' ||
+            descLower.includes('locker') ||
+            descLower.includes('tier') ||
+            String(it.unit || '').toLowerCase().includes('tier') ||
+            (/^\d+$/.test(String(it.unit || '').trim()) && !descLower.includes('cubicle'))
+          );
+
+          const matchedLockerModel = isLocker
+            ? lockerCatalogModels.find((m) =>
+                (modelName && m.title.toLowerCase().includes(modelName.toLowerCase())) ||
+                (it.description && m.title.toLowerCase().includes(it.description.toLowerCase())) ||
+                (it.description && it.description.toLowerCase().includes(m.title.toLowerCase()))
+              )
+            : null;
+
+          let width = customSpecs.width;
+          let depth = customSpecs.depth;
+          let height = customSpecs.height;
+          let boardThickness = it.boardThickness || customSpecs.boardThickness;
+
+          if (matchedLockerModel && Array.isArray(matchedLockerModel.specifications)) {
+            const specs = matchedLockerModel.specifications as any[];
+            const findM = (p: string) => {
+              const found = specs.find((s: any) => s.label && typeof s.label === 'string' && s.label.toLowerCase().includes(p.toLowerCase()));
+              return found && typeof found.value === 'string' ? found.value.trim() : '';
+            };
+            const meta = specs.find((s: any) => s.label === '__hardware_meta')?.value || {};
+            if (!width) width = meta.width || findM('width') || '300 mm';
+            if (!depth) depth = meta.depth || findM('depth') || '450 mm';
+            if (!height) height = meta.height || findM('height') || '1800 mm';
+            if (!boardThickness) boardThickness = meta.boardThickness || findM('thickness') || '9mm';
+          }
+
+          let cubicleSize = it.cubicleSize;
+          let doorSize = it.doorSize;
+          let overallHeight = it.overallHeight;
+
+          const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
+          const cleanW = (width ? String(width).replace(/[^0-9.]/g, '') : '') || '300';
+          const cleanD = (depth ? String(depth).replace(/[^0-9.]/g, '') : '') || '450';
+          let cleanH = (height ? String(height).replace(/[^0-9.]/g, '') : '') || (overallHeight ? String(overallHeight).replace(/[^0-9.]/g, '') : '') || '1800';
+          const numH = parseInt(cleanH) || 1800;
+          const totalH = (numH < 1000 && tierRows >= 2) ? (numH * tierRows) : (numH >= 1000 ? numH : 1800);
+          const compH = Math.round(totalH / tierRows);
+
+          if (isLocker) {
+            if (!cubicleSize || /^\s*\d+\s*col/i.test(cubicleSize) || cubicleSize.toLowerCase().includes('doors') || !cubicleSize.toLowerCase().includes('w')) {
+              cubicleSize = `${cleanW}mm W × ${cleanD}mm D × ${totalH}mm H`;
+            }
+            if (!overallHeight || overallHeight === 'null' || !overallHeight.includes('mm')) {
+              overallHeight = `${totalH}mm (plus 100mm plinth base)`;
+            }
+            if (!doorSize || doorSize === 'N/A' || doorSize.includes('as per drawing') || doorSize.toLowerCase().includes('doors as per')) {
+              doorSize = `${tierRows} Tier Modular Doors (${cleanW}mm W × ${compH}mm H per door)`;
+            }
+          }
+
+          return {
+            serialNumber: it.serialNumber,
+            description: it.description,
+            hsnSac: it.hsnSac || undefined,
+            quantity: Number(it.quantity),
+            unit: it.unit,
+            rate: Number(it.rate),
+            amount: Number(it.amount),
+            gstRate: Number(it.gstRate),
+            taxableAmount: Number(it.taxableAmount),
+            boardType: it.boardType || (it as any).customSpecsJson?.boardType || undefined,
+            boardThickness: (isLocker ? (boardThickness || it.boardThickness) : it.boardThickness) || (it as any).customSpecsJson?.boardThickness || undefined,
+            boardColor: it.boardColor || (it as any).customSpecsJson?.boardColor || undefined,
+            cubicleSize: (isLocker ? cubicleSize : it.cubicleSize) || undefined,
+            doorSize: (isLocker ? doorSize : it.doorSize) || undefined,
+            overallHeight: (isLocker ? overallHeight : it.overallHeight) || undefined,
+            hardwarePackage: it.hardwarePackage || (it as any).customSpecsJson?.hardwarePackage || undefined,
+            customModelName: (it as any).customModelName || (it as any).modelName || (it as any).customSpecsJson?.customModelName || undefined,
+            modelName: (it as any).modelName || (it as any).customModelName || (it as any).customSpecsJson?.modelName || undefined,
+            isCustom: Boolean((it as any).isCustom || (it as any).customSpecsJson?.isCustom || (it as any).systemCategory === 'custom'),
+            customSpecsJson: {
+              ...customSpecs,
+              systemCategory: isLocker ? 'locker' : customSpecs.systemCategory,
+              width: isLocker ? `${cleanW}mm` : customSpecs.width,
+              depth: isLocker ? `${cleanD}mm` : customSpecs.depth,
+              height: isLocker ? `${totalH}mm` : customSpecs.height,
+            },
+            systemCategory: isLocker ? 'locker' : ((it as any).systemCategory || customSpecs.systemCategory || undefined),
+          };
+        }),
       taxSummary: pi.taxSummary.map((ts) => ({
         gstRate: Number(ts.gstRate),
         taxableAmount: Number(ts.taxableAmount),

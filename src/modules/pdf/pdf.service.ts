@@ -817,39 +817,68 @@ export const pdfService = {
         const customSpecs = ((it as any).customSpecsJson as any) || {};
         const isCustom = Boolean((it as any).isCustom || customSpecs.isCustom || customSpecs.systemCategory === 'custom');
         const descLower = (it.description || '').toLowerCase();
-        const isUrinal = descLower.includes('urinal') || descLower.includes('ump') || (it.cubicleSize && it.cubicleSize.includes('450mm'));
-        const isLocker = descLower.includes('locker') || (it as any).systemCategory === 'locker' || customSpecs.systemCategory === 'locker';
+        const customModel = (it as any).customModelName || (it as any).modelName || customSpecs.customModelName || (it as any).model?.title;
+
+        const isLocker = Boolean(
+          (it as any).systemCategory === 'locker' ||
+          customSpecs.systemCategory === 'locker' ||
+          descLower.includes('locker') ||
+          descLower.includes('tier') ||
+          String(it.unit || '').toLowerCase().includes('tier') ||
+          (/^\d+$/.test(String(it.unit || '').trim()) && !descLower.includes('cubicle')) ||
+          String(customModel || '').toLowerCase().includes('locker')
+        );
+        const isUrinal = !isLocker && Boolean(
+          (it as any).systemCategory === 'ump' ||
+          customSpecs.systemCategory === 'ump' ||
+          descLower.includes('urinal') ||
+          descLower.includes('ump') ||
+          descLower.includes('modesty')
+        );
         const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
         const isCubicle = !isUrinal && !isLocker && !isCustom && (descLower.includes('cubicle') || descLower.includes('restroom'));
 
-        const customDims = (customSpecs.width || customSpecs.depth || customSpecs.height)
-          ? [
-              customSpecs.width ? formatDimPart(customSpecs.width, 'W') : '',
-              customSpecs.depth ? formatDimPart(customSpecs.depth, 'D') : '',
-              customSpecs.height ? formatDimPart(customSpecs.height, 'H') : '',
-            ].filter(Boolean).join(' × ')
-          : '';
+        let widthStr = '';
+        let depthStr = '';
+        let heightStr = '';
+        let cubicleSize = it.cubicleSize || fallbackSpecs.cubicleSize || '';
+        let doorSize = it.doorSize || fallbackSpecs.doorSize;
+        let overallHeight = it.overallHeight || fallbackSpecs.overallHeight;
+
+        if (isLocker) {
+          const cleanW = (customSpecs.width ? String(customSpecs.width).replace(/[^0-9.]/g, '') : '') ||
+            (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*w/i)?.[1]) || '300';
+          const cleanD = (customSpecs.depth ? String(customSpecs.depth).replace(/[^0-9.]/g, '') : '') ||
+            (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*d/i)?.[1]) || '450';
+          let cleanH = (overallHeight ? String(overallHeight).replace(/[^0-9.]/g, '') : '') ||
+            (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') ||
+            (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*h/i)?.[1]) || '1800';
+
+          const numH = parseInt(cleanH) || 1800;
+          const totalH = (numH < 1000 && tierRows >= 2) ? (numH * tierRows) : (numH >= 1000 ? numH : 1800);
+          const compH = Math.round(totalH / tierRows);
+
+          widthStr = `${cleanW}mm`;
+          depthStr = `${cleanD}mm`;
+          heightStr = `${totalH}mm`;
+
+          cubicleSize = `${widthStr} W × ${depthStr} D × ${heightStr} H`;
+          doorSize = `${tierRows} Tier Modular Doors (${widthStr} W × ${compH}mm H per door)`;
+          overallHeight = `${heightStr} (plus 100mm plinth base)`;
+        } else {
+          const customDims = (customSpecs.width || customSpecs.depth || customSpecs.height)
+            ? [
+                customSpecs.width ? formatDimPart(customSpecs.width, 'W') : '',
+                customSpecs.depth ? formatDimPart(customSpecs.depth, 'D') : '',
+                customSpecs.height ? formatDimPart(customSpecs.height, 'H') : '',
+              ].filter(Boolean).join(' × ')
+            : '';
+          cubicleSize = it.cubicleSize || customDims || fallbackSpecs.cubicleSize;
+        }
 
         const boardType = it.boardType || customSpecs.boardType || customSpecs.boardMaterial || fallbackSpecs.boardType;
         const boardThickness = it.boardThickness || customSpecs.boardThickness || fallbackSpecs.boardThickness;
         const boardColor = it.boardColor || customSpecs.boardColor || customSpecs.colorFinish || fallbackSpecs.boardColor;
-        let cubicleSize = it.cubicleSize || customDims || fallbackSpecs.cubicleSize;
-        let doorSize = it.doorSize || fallbackSpecs.doorSize;
-        let overallHeight = it.overallHeight || fallbackSpecs.overallHeight;
-
-        // If locker and cubicleSize is missing or only has depth e.g. "450 mm", reconstruct full 3D dimension
-        if (isLocker) {
-          if (!cubicleSize || (!cubicleSize.includes('×') && !cubicleSize.includes('x') && !cubicleSize.toLowerCase().includes('w'))) {
-            const depthVal = (cubicleSize ? cubicleSize.replace(/[^0-9.]/g, '') : '') || (customSpecs.depth ? String(customSpecs.depth).replace(/[^0-9.]/g, '') : '') || '450';
-            const heightVal = (overallHeight ? overallHeight.replace(/[^0-9.]/g, '') : '') || (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') || '1800';
-            const widthVal = (customSpecs.width ? String(customSpecs.width).replace(/[^0-9.]/g, '') : '') || '300';
-            cubicleSize = `${widthVal}mm W × ${depthVal}mm D × ${heightVal}mm H`;
-          }
-          if (!doorSize || doorSize === 'N/A' || doorSize.includes('as per drawing')) {
-            const wPart = cubicleSize ? cubicleSize.split('×')[0]?.trim() : '300mm W';
-            doorSize = `${tierRows} Tier Modular Doors (${wPart})`;
-          }
-        }
 
         const rawHardware = it.hardwarePackage || customSpecs.hardwarePackage || customSpecs.hardwareType || fallbackSpecs.hardwarePackage;
         const showHardware = Boolean(
@@ -863,8 +892,6 @@ export const pdfService = {
         );
         const hardwarePackage = showHardware ? rawHardware : undefined;
         const displayDesc = cleanDescription(it.description);
-
-        const customModel = (it as any).customModelName || (it as any).modelName || customSpecs.customModelName || (it as any).model?.title;
         const customNotes = customSpecs.notes || (it as any).notes;
 
         const isHardware = Boolean(
@@ -895,6 +922,7 @@ export const pdfService = {
         );
 
         const hasSpecs = Boolean(
+          isLocker ||
           showCustomModel ||
           (!isHardware && (it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight)) ||
           hardwarePackage ||
@@ -908,17 +936,32 @@ export const pdfService = {
               <div style="font-weight: bold; font-size: 11px;">${displayDesc}</div>
               ${hasSpecs ? `
                 <div class="spec-box">
-                  ${isLocker ? `<div>• <strong>Configuration:</strong> ${it.quantity} Column(s) × ${tierRows} Tier(s) (${it.quantity * tierRows} Total Doors)</div>` : ''}
-                  ${showCustomModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
-                  ${(!isHardware && it.make) ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
-                  ${(!isHardware && boardType) ? `<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${boardType}</div>` : ''}
-                  ${(!isHardware && boardThickness) ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
-                  ${(!isHardware && boardColor) ? `<div>• <strong>Color / Finish:</strong> ${boardColor}</div>` : ''}
-                  ${(!isHardware && cubicleSize) ? `<div>• <strong>${sizeLabel}:</strong> ${cubicleSize}</div>` : ''}
-                  ${(!isHardware && showDoor) ? `<div>• <strong>${doorLabel}:</strong> ${doorSize}</div>` : ''}
-                  ${(!isHardware && overallHeight) ? `<div>• <strong>Overall Height:</strong> ${overallHeight}</div>` : ''}
-                  ${hardwarePackage ? `<div>• <strong>${isHardware ? 'Material / Specs' : 'Hardware Package'}:</strong> ${hardwarePackage}</div>` : ''}
-                  ${customNotes ? `<div>• <strong>Notes / Specs:</strong> ${customNotes}</div>` : ''}
+                  ${isLocker ? `
+                    <div>• <strong>Configuration:</strong> ${it.quantity} Column(s) × ${tierRows} Tier(s) (${it.quantity * tierRows} Total Doors)</div>
+                    ${showCustomModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
+                    ${(!isHardware && it.make) ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
+                    <div>• <strong>Locker Dimension:</strong> ${cubicleSize}</div>
+                    <div>• <strong>Height:</strong> ${heightStr} (plus 100mm plinth base)</div>
+                    <div>• <strong>Width:</strong> ${widthStr} (Per Column)</div>
+                    <div>• <strong>Depth:</strong> ${depthStr} (Standard Depth)</div>
+                    <div>• <strong>Board Type:</strong> ${boardType || 'HPL Solid Compact Laminate'}</div>
+                    <div>• <strong>Board Thickness:</strong> ${boardThickness || '12mm'}</div>
+                    ${boardColor ? `<div>• <strong>Color / Finish:</strong> ${boardColor}</div>` : ''}
+                    <div>• <strong>Compartment / Door Size:</strong> ${doorSize}</div>
+                    ${hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${hardwarePackage}</div>` : ''}
+                    ${customNotes ? `<div>• <strong>Notes / Specs:</strong> ${customNotes}</div>` : ''}
+                  ` : `
+                    ${showCustomModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
+                    ${(!isHardware && it.make) ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
+                    ${(!isHardware && boardType) ? `<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${boardType}</div>` : ''}
+                    ${(!isHardware && boardThickness) ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
+                    ${(!isHardware && boardColor) ? `<div>• <strong>Color / Finish:</strong> ${boardColor}</div>` : ''}
+                    ${(!isHardware && cubicleSize) ? `<div>• <strong>${sizeLabel}:</strong> ${cubicleSize}</div>` : ''}
+                    ${(!isHardware && showDoor) ? `<div>• <strong>${doorLabel}:</strong> ${doorSize}</div>` : ''}
+                    ${(!isHardware && overallHeight) ? `<div>• <strong>Overall Height:</strong> ${overallHeight}</div>` : ''}
+                    ${hardwarePackage ? `<div>• <strong>${isHardware ? 'Material / Specs' : 'Hardware Package'}:</strong> ${hardwarePackage}</div>` : ''}
+                    ${customNotes ? `<div>• <strong>Notes / Specs:</strong> ${customNotes}</div>` : ''}
+                  `}
                 </div>
               ` : ''}
             </td>
@@ -2103,37 +2146,65 @@ export const pdfService = {
         <tbody>
           ${data.items.map((item, idx) => {
             const descLower = (item.description || '').toLowerCase();
-            const isUrinal = descLower.includes('urinal') || descLower.includes('ump') || (item.cubicleSize && item.cubicleSize.includes('450mm'));
-            const isLocker = descLower.includes('locker') || (item as any).systemCategory === 'locker' || ((item as any).customSpecsJson as any)?.systemCategory === 'locker';
-            const tierRows = isLocker ? (parseFloat(String(item.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
-            const isCustom = Boolean((item as any).isCustom || ((item as any).customSpecsJson as any)?.isCustom || ((item as any).customSpecsJson as any)?.systemCategory === 'custom');
-            const isCubicle = !isUrinal && !isLocker && !isCustom && (descLower.includes('cubicle') || descLower.includes('restroom') || descLower.includes('toilet'));
-
             const customSpecs = ((item as any).customSpecsJson as any) || {};
             const customModel = (item as any).customModelName || (item as any).modelName || customSpecs.customModelName || customSpecs.modelName;
 
-            const customDims = (customSpecs.width || customSpecs.depth || customSpecs.height)
-              ? [
-                  customSpecs.width ? formatDimPart(customSpecs.width, 'W') : '',
-                  customSpecs.depth ? formatDimPart(customSpecs.depth, 'D') : '',
-                  customSpecs.height ? formatDimPart(customSpecs.height, 'H') : '',
-                ].filter(Boolean).join(' × ')
-              : '';
-            let displaySize = item.cubicleSize || customDims;
+            const isLocker = Boolean(
+              (item as any).systemCategory === 'locker' ||
+              customSpecs.systemCategory === 'locker' ||
+              descLower.includes('locker') ||
+              descLower.includes('tier') ||
+              String(item.unit || '').toLowerCase().includes('tier') ||
+              (/^\d+$/.test(String(item.unit || '').trim()) && !descLower.includes('cubicle')) ||
+              String(customModel || '').toLowerCase().includes('locker')
+            );
+            const isUrinal = !isLocker && Boolean(
+              (item as any).systemCategory === 'ump' ||
+              customSpecs.systemCategory === 'ump' ||
+              descLower.includes('urinal') ||
+              descLower.includes('ump') ||
+              descLower.includes('modesty')
+            );
+            const tierRows = isLocker ? (parseFloat(String(item.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
+            const isCustom = Boolean((item as any).isCustom || customSpecs.isCustom || customSpecs.systemCategory === 'custom');
+            const isCubicle = !isUrinal && !isLocker && !isCustom && (descLower.includes('cubicle') || descLower.includes('restroom') || descLower.includes('toilet'));
+
+            let widthStr = '';
+            let depthStr = '';
+            let heightStr = '';
+            let displaySize = item.cubicleSize || '';
             let displayDoor = item.doorSize;
             let displayHeight = item.overallHeight;
 
             if (isLocker) {
-              if (!displaySize || (!displaySize.includes('×') && !displaySize.includes('x') && !displaySize.toLowerCase().includes('w'))) {
-                const depthVal = (displaySize ? displaySize.replace(/[^0-9.]/g, '') : '') || (customSpecs.depth ? String(customSpecs.depth).replace(/[^0-9.]/g, '') : '') || '450';
-                const heightVal = (displayHeight ? displayHeight.replace(/[^0-9.]/g, '') : '') || (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') || '1800';
-                const widthVal = (customSpecs.width ? String(customSpecs.width).replace(/[^0-9.]/g, '') : '') || '300';
-                displaySize = `${widthVal}mm W × ${depthVal}mm D × ${heightVal}mm H`;
-              }
-              if (!displayDoor || displayDoor === 'N/A' || displayDoor.includes('as per drawing')) {
-                const wPart = displaySize ? displaySize.split('×')[0]?.trim() : '300mm W';
-                displayDoor = `${tierRows} Tier Modular Doors (${wPart})`;
-              }
+              const cleanW = (customSpecs.width ? String(customSpecs.width).replace(/[^0-9.]/g, '') : '') ||
+                (displaySize && displaySize.match(/(\d+)\s*(?:mm)?\s*w/i)?.[1]) || '300';
+              const cleanD = (customSpecs.depth ? String(customSpecs.depth).replace(/[^0-9.]/g, '') : '') ||
+                (displaySize && displaySize.match(/(\d+)\s*(?:mm)?\s*d/i)?.[1]) || '450';
+              let cleanH = (displayHeight ? String(displayHeight).replace(/[^0-9.]/g, '') : '') ||
+                (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') ||
+                (displaySize && displaySize.match(/(\d+)\s*(?:mm)?\s*h/i)?.[1]) || '1800';
+
+              const numH = parseInt(cleanH) || 1800;
+              const totalH = (numH < 1000 && tierRows >= 2) ? (numH * tierRows) : (numH >= 1000 ? numH : 1800);
+              const compH = Math.round(totalH / tierRows);
+
+              widthStr = `${cleanW}mm`;
+              depthStr = `${cleanD}mm`;
+              heightStr = `${totalH}mm`;
+
+              displaySize = `${widthStr} W × ${depthStr} D × ${heightStr} H`;
+              displayDoor = `${tierRows} Tier Modular Doors (${widthStr} W × ${compH}mm H per door)`;
+              displayHeight = `${heightStr} (plus 100mm plinth base)`;
+            } else {
+              const customDims = (customSpecs.width || customSpecs.depth || customSpecs.height)
+                ? [
+                    customSpecs.width ? formatDimPart(customSpecs.width, 'W') : '',
+                    customSpecs.depth ? formatDimPart(customSpecs.depth, 'D') : '',
+                    customSpecs.height ? formatDimPart(customSpecs.height, 'H') : '',
+                  ].filter(Boolean).join(' × ')
+                : '';
+              displaySize = item.cubicleSize || customDims;
             }
 
             const displayBoardType = item.boardType || customSpecs.boardMaterial || customSpecs.boardType;
@@ -2161,20 +2232,36 @@ export const pdfService = {
               <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
               <td>
                 <div style="font-weight: bold; font-size: 11px;">${item.description}</div>
-                ${customModel || item.make || displayBoardType || displaySize || displayBoardColor || displayBoardThickness || showDoor || displayHeight || showHardware || displayHsn || displayNotes ? `
+                ${isLocker || customModel || item.make || displayBoardType || displaySize || displayBoardColor || displayBoardThickness || showDoor || displayHeight || showHardware || displayHsn || displayNotes ? `
                   <div class="spec-box">
-                    ${isLocker ? `<div>• <strong>Configuration:</strong> ${item.quantity} Column(s) × ${tierRows} Tier(s) (${item.quantity * tierRows} Total Doors)</div>` : ''}
-                    ${customModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
-                    ${item.make ? `<div>• <strong>Make:</strong> ${item.make}</div>` : ''}
-                    ${displayBoardType ? `<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${displayBoardType}</div>` : ''}
-                    ${displayBoardThickness ? `<div>• <strong>Board Thickness:</strong> ${displayBoardThickness}</div>` : ''}
-                    ${displayBoardColor ? `<div>• <strong>Color / Finish:</strong> ${displayBoardColor}</div>` : ''}
-                    ${displaySize ? `<div>• <strong>${sizeLabel}:</strong> ${displaySize}</div>` : ''}
-                    ${showDoor ? `<div>• <strong>${doorLabel}:</strong> ${displayDoor}</div>` : ''}
-                    ${displayHeight ? `<div>• <strong>Overall Height:</strong> ${displayHeight}</div>` : ''}
-                    ${showHardware ? `<div>• <strong>Hardware / Fittings:</strong> ${displayHardware}</div>` : ''}
-                    ${displayHsn ? `<div>• <strong>HSN/SAC:</strong> ${displayHsn}</div>` : ''}
-                    ${displayNotes ? `<div>• <strong>Fabrication Notes:</strong> ${displayNotes}</div>` : ''}
+                    ${isLocker ? `
+                      <div>• <strong>Configuration:</strong> ${item.quantity} Column(s) × ${tierRows} Tier(s) (${item.quantity * tierRows} Total Doors)</div>
+                      ${customModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
+                      ${item.make ? `<div>• <strong>Make:</strong> ${item.make}</div>` : ''}
+                      <div>• <strong>Locker Dimension:</strong> ${displaySize}</div>
+                      <div>• <strong>Height:</strong> ${heightStr} (plus 100mm plinth base)</div>
+                      <div>• <strong>Width:</strong> ${widthStr} (Per Column)</div>
+                      <div>• <strong>Depth:</strong> ${depthStr} (Standard Depth)</div>
+                      <div>• <strong>Board Type:</strong> ${displayBoardType || 'HPL Solid Compact Laminate'}</div>
+                      <div>• <strong>Board Thickness:</strong> ${displayBoardThickness || '12mm'}</div>
+                      ${displayBoardColor ? `<div>• <strong>Color / Finish:</strong> ${displayBoardColor}</div>` : ''}
+                      <div>• <strong>Compartment / Door Size:</strong> ${displayDoor}</div>
+                      ${showHardware ? `<div>• <strong>Hardware / Fittings:</strong> ${displayHardware}</div>` : ''}
+                      ${displayHsn ? `<div>• <strong>HSN/SAC:</strong> ${displayHsn}</div>` : ''}
+                      ${displayNotes ? `<div>• <strong>Fabrication Notes:</strong> ${displayNotes}</div>` : ''}
+                    ` : `
+                      ${customModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
+                      ${item.make ? `<div>• <strong>Make:</strong> ${item.make}</div>` : ''}
+                      ${displayBoardType ? `<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${displayBoardType}</div>` : ''}
+                      ${displayBoardThickness ? `<div>• <strong>Board Thickness:</strong> ${displayBoardThickness}</div>` : ''}
+                      ${displayBoardColor ? `<div>• <strong>Color / Finish:</strong> ${displayBoardColor}</div>` : ''}
+                      ${displaySize ? `<div>• <strong>${sizeLabel}:</strong> ${displaySize}</div>` : ''}
+                      ${showDoor ? `<div>• <strong>${doorLabel}:</strong> ${displayDoor}</div>` : ''}
+                      ${displayHeight ? `<div>• <strong>Overall Height:</strong> ${displayHeight}</div>` : ''}
+                      ${showHardware ? `<div>• <strong>Hardware / Fittings:</strong> ${displayHardware}</div>` : ''}
+                      ${displayHsn ? `<div>• <strong>HSN/SAC:</strong> ${displayHsn}</div>` : ''}
+                      ${displayNotes ? `<div>• <strong>Fabrication Notes:</strong> ${displayNotes}</div>` : ''}
+                    `}
                   </div>
                 ` : ''}
               </td>
@@ -2955,38 +3042,68 @@ export const pdfService = {
         const customSpecs = ((it as any).specsJson as any) || ((it as any).customSpecsJson as any) || {};
         const isCustom = Boolean((it as any).isCustom || customSpecs.isCustom || customSpecs.systemCategory === 'custom');
         const descLower = (it.description || '').toLowerCase();
-        const isUrinal = descLower.includes('urinal') || descLower.includes('ump') || (it.cubicleSize && it.cubicleSize.includes('450mm'));
-        const isLocker = descLower.includes('locker') || (it as any).systemCategory === 'locker' || customSpecs.systemCategory === 'locker';
+        const customModel = (it as any).customModelName || (it as any).modelName || customSpecs.customModelName || (it as any).model?.title;
+
+        const isLocker = Boolean(
+          (it as any).systemCategory === 'locker' ||
+          customSpecs.systemCategory === 'locker' ||
+          descLower.includes('locker') ||
+          descLower.includes('tier') ||
+          String(it.unit || '').toLowerCase().includes('tier') ||
+          (/^\d+$/.test(String(it.unit || '').trim()) && !descLower.includes('cubicle')) ||
+          String(customModel || '').toLowerCase().includes('locker')
+        );
+        const isUrinal = !isLocker && Boolean(
+          (it as any).systemCategory === 'ump' ||
+          customSpecs.systemCategory === 'ump' ||
+          descLower.includes('urinal') ||
+          descLower.includes('ump') ||
+          descLower.includes('modesty')
+        );
         const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
         const isCubicle = !isUrinal && !isLocker && !isCustom && (descLower.includes('cubicle') || descLower.includes('restroom'));
 
-        const customDims = (customSpecs.width || customSpecs.depth || customSpecs.height)
-          ? [
-              customSpecs.width ? formatDimPart(customSpecs.width, 'W') : '',
-              customSpecs.depth ? formatDimPart(customSpecs.depth, 'D') : '',
-              customSpecs.height ? formatDimPart(customSpecs.height, 'H') : '',
-            ].filter(Boolean).join(' × ')
-          : '';
-
-        const boardType = it.boardType || customSpecs.boardType || customSpecs.boardMaterial || fallbackSpecs.boardType;
-        const boardThickness = it.boardThickness || customSpecs.boardThickness || fallbackSpecs.boardThickness;
-        const boardColor = it.boardColor || customSpecs.boardColor || customSpecs.colorFinish || fallbackSpecs.boardColor;
-        let cubicleSize = it.cubicleSize || customDims || fallbackSpecs.cubicleSize;
+        let widthStr = '';
+        let depthStr = '';
+        let heightStr = '';
+        let cubicleSize = it.cubicleSize || fallbackSpecs.cubicleSize || '';
         let doorSize = it.doorSize || fallbackSpecs.doorSize;
         let overallHeight = it.overallHeight || fallbackSpecs.overallHeight;
 
         if (isLocker) {
-          if (!cubicleSize || (!cubicleSize.includes('×') && !cubicleSize.includes('x') && !cubicleSize.toLowerCase().includes('w'))) {
-            const depthVal = (cubicleSize ? cubicleSize.replace(/[^0-9.]/g, '') : '') || (customSpecs.depth ? String(customSpecs.depth).replace(/[^0-9.]/g, '') : '') || '450';
-            const heightVal = (overallHeight ? overallHeight.replace(/[^0-9.]/g, '') : '') || (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') || '1800';
-            const widthVal = (customSpecs.width ? String(customSpecs.width).replace(/[^0-9.]/g, '') : '') || '300';
-            cubicleSize = `${widthVal}mm W × ${depthVal}mm D × ${heightVal}mm H`;
-          }
-          if (!doorSize || doorSize === 'N/A' || doorSize.includes('as per drawing')) {
-            const wPart = cubicleSize ? cubicleSize.split('×')[0]?.trim() : '300mm W';
-            doorSize = `${tierRows} Tier Modular Doors (${wPart})`;
-          }
+          const cleanW = (customSpecs.width ? String(customSpecs.width).replace(/[^0-9.]/g, '') : '') ||
+            (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*w/i)?.[1]) || '300';
+          const cleanD = (customSpecs.depth ? String(customSpecs.depth).replace(/[^0-9.]/g, '') : '') ||
+            (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*d/i)?.[1]) || '450';
+          let cleanH = (overallHeight ? String(overallHeight).replace(/[^0-9.]/g, '') : '') ||
+            (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') ||
+            (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*h/i)?.[1]) || '1800';
+
+          const numH = parseInt(cleanH) || 1800;
+          const totalH = (numH < 1000 && tierRows >= 2) ? (numH * tierRows) : (numH >= 1000 ? numH : 1800);
+          const compH = Math.round(totalH / tierRows);
+
+          widthStr = `${cleanW}mm`;
+          depthStr = `${cleanD}mm`;
+          heightStr = `${totalH}mm`;
+
+          cubicleSize = `${widthStr} W × ${depthStr} D × ${heightStr} H`;
+          doorSize = `${tierRows} Tier Modular Doors (${widthStr} W × ${compH}mm H per door)`;
+          overallHeight = `${heightStr} (plus 100mm plinth base)`;
+        } else {
+          const customDims = (customSpecs.width || customSpecs.depth || customSpecs.height)
+            ? [
+                customSpecs.width ? formatDimPart(customSpecs.width, 'W') : '',
+                customSpecs.depth ? formatDimPart(customSpecs.depth, 'D') : '',
+                customSpecs.height ? formatDimPart(customSpecs.height, 'H') : '',
+              ].filter(Boolean).join(' × ')
+            : '';
+          cubicleSize = it.cubicleSize || customDims || fallbackSpecs.cubicleSize;
         }
+
+        const boardType = it.boardType || customSpecs.boardType || customSpecs.boardMaterial || fallbackSpecs.boardType;
+        const boardThickness = it.boardThickness || customSpecs.boardThickness || fallbackSpecs.boardThickness;
+        const boardColor = it.boardColor || customSpecs.boardColor || customSpecs.colorFinish || fallbackSpecs.boardColor;
 
         const rawHardware = it.hardwarePackage || customSpecs.hardwarePackage || customSpecs.hardwareType || fallbackSpecs.hardwarePackage;
         const showHardware = Boolean(
@@ -3016,15 +3133,28 @@ export const pdfService = {
               <div style="font-weight: bold; font-size: 11px;">${displayDesc}</div>
               ${hasSpecs ? `
                 <div class="spec-box">
-                  ${isLocker ? `<div>• <strong>Configuration:</strong> ${it.quantity} Column(s) × ${tierRows} Tier(s) (${it.quantity * tierRows} Total Doors)</div>` : ''}
-                  ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
-                  ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
-                  ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
-                  ${boardColor ? `<div>• <strong>Board Color:</strong> ${boardColor}</div>` : ''}
-                  ${cubicleSize ? `<div>• <strong>${sizeLabel}:</strong> ${cubicleSize}</div>` : ''}
-                  ${showDoor ? `<div>• <strong>${doorLabel}:</strong> ${doorSize}</div>` : ''}
-                  ${overallHeight ? `<div>• <strong>Overall Height:</strong> ${overallHeight}</div>` : ''}
-                  ${hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${hardwarePackage}</div>` : ''}
+                  ${isLocker ? `
+                    <div>• <strong>Configuration:</strong> ${it.quantity} Column(s) × ${tierRows} Tier(s) (${it.quantity * tierRows} Total Doors)</div>
+                    ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
+                    <div>• <strong>Locker Dimension:</strong> ${cubicleSize}</div>
+                    <div>• <strong>Height:</strong> ${heightStr} (plus 100mm plinth base)</div>
+                    <div>• <strong>Width:</strong> ${widthStr} (Per Column)</div>
+                    <div>• <strong>Depth:</strong> ${depthStr} (Standard Depth)</div>
+                    ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
+                    ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
+                    ${boardColor ? `<div>• <strong>Board Color:</strong> ${boardColor}</div>` : ''}
+                    <div>• <strong>Compartment / Door Size:</strong> ${doorSize}</div>
+                    ${hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${hardwarePackage}</div>` : ''}
+                  ` : `
+                    ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
+                    ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
+                    ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
+                    ${boardColor ? `<div>• <strong>Board Color:</strong> ${boardColor}</div>` : ''}
+                    ${cubicleSize ? `<div>• <strong>${sizeLabel}:</strong> ${cubicleSize}</div>` : ''}
+                    ${showDoor ? `<div>• <strong>${doorLabel}:</strong> ${doorSize}</div>` : ''}
+                    ${overallHeight ? `<div>• <strong>Overall Height:</strong> ${overallHeight}</div>` : ''}
+                    ${hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${hardwarePackage}</div>` : ''}
+                  `}
                 </div>
               ` : ''}
             </td>
