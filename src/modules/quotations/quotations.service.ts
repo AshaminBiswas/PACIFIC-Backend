@@ -38,11 +38,86 @@ async function fetchImageAsDataUri(url: string): Promise<string> {
 }
 
 
+function determineQuotationScopeAndType(q: any): { quotationScope: 'CUBICLE' | 'BOARD' | 'HARDWARE' | 'CUSTOM_ITEM'; quotationType: 'cubicle' | 'custom_board' | 'custom_hardware' | 'custom_item' } {
+  const allTerms = `${q?.generalTerms || ''}\n${q?.otherTerms || ''}`;
+  const rawScopeMatch = allTerms.match(/\[(?:QUOTATION_SCOPE|QUOTATION_TYPE|PI_SCOPE|SCOPE):([A-Z_a-z]+)\]/i);
+  const explicitTerm = rawScopeMatch ? rawScopeMatch[1].trim().toUpperCase() : null;
+
+  if (explicitTerm) {
+    if (explicitTerm.includes('HARDWARE')) return { quotationScope: 'HARDWARE', quotationType: 'custom_hardware' };
+    if (explicitTerm.includes('BOARD')) return { quotationScope: 'BOARD', quotationType: 'custom_board' };
+    if (explicitTerm.includes('CUSTOM')) return { quotationScope: 'CUSTOM_ITEM', quotationType: 'custom_item' };
+    return { quotationScope: 'CUBICLE', quotationType: 'cubicle' };
+  }
+
+  const items = Array.isArray(q?.items) ? q.items : [];
+  for (const it of items) {
+    const s = it?.customSpecsJson?.quotationScope || it?.quotationScope;
+    if (s) {
+      const upper = String(s).toUpperCase();
+      if (upper === 'HARDWARE' || upper === 'CUSTOM_HARDWARE') return { quotationScope: 'HARDWARE', quotationType: 'custom_hardware' };
+      if (upper === 'BOARD' || upper === 'CUSTOM_BOARD') return { quotationScope: 'BOARD', quotationType: 'custom_board' };
+      if (upper === 'CUSTOM_ITEM' || upper === 'CUSTOM') return { quotationScope: 'CUSTOM_ITEM', quotationType: 'custom_item' };
+      if (upper === 'CUBICLE') return { quotationScope: 'CUBICLE', quotationType: 'cubicle' };
+    }
+    const t = it?.customSpecsJson?.quotationType || it?.quotationType;
+    if (t) {
+      const lower = String(t).toLowerCase();
+      if (lower === 'custom_hardware') return { quotationScope: 'HARDWARE', quotationType: 'custom_hardware' };
+      if (lower === 'custom_board') return { quotationScope: 'BOARD', quotationType: 'custom_board' };
+      if (lower === 'custom_item') return { quotationScope: 'CUSTOM_ITEM', quotationType: 'custom_item' };
+      if (lower === 'cubicle') return { quotationScope: 'CUBICLE', quotationType: 'cubicle' };
+    }
+  }
+
+  // Legacy item-level heuristic fallback
+  if (items.length > 0) {
+    const hasCubicleSpecs = items.some((it: any) => {
+      const d = (it.description || '').toLowerCase();
+      return (it.cubicleSize && !it.cubicleSize.includes('4ft × 8ft') && !it.cubicleSize.includes('1220mm')) ||
+        it.doorSize ||
+        it.overallHeight ||
+        d.includes('cubicle') ||
+        d.includes('restroom') ||
+        d.includes('urinal') ||
+        d.includes('locker');
+    });
+
+    const allHardware = items.every((it: any) => {
+      const d = (it.description || '').toLowerCase();
+      const cat = (it.customSpecsJson?.systemCategory || it.systemCategory || '').toLowerCase();
+      const u = (it.unit || '').toUpperCase();
+      return cat === 'hardware' || u === 'PAIR' || u === 'SET' || it.hsnSac === '8302' ||
+        (/hinge|indicator lock|leg|handle|hook|u-channel|screw|fastener/i.test(d) && !d.includes('cubicle'));
+    });
+    if (allHardware && !hasCubicleSpecs) return { quotationScope: 'HARDWARE', quotationType: 'custom_hardware' };
+
+    const allBoard = items.every((it: any) => {
+      const d = (it.description || '').toLowerCase();
+      const cat = (it.customSpecsJson?.systemCategory || it.systemCategory || '').toLowerCase();
+      const u = (it.unit || '').toUpperCase();
+      return cat === 'board' || u === 'SQFT' || u === 'SQM' || (/board|sheet|compact laminate/i.test(d) && !d.includes('cubicle') && !hasCubicleSpecs);
+    });
+    if (allBoard && !hasCubicleSpecs) return { quotationScope: 'BOARD', quotationType: 'custom_board' };
+
+    const allCustom = items.every((it: any) => {
+      const cat = (it.customSpecsJson?.systemCategory || it.systemCategory || '').toLowerCase();
+      return it.isCustom || it.customSpecsJson?.isCustom || cat === 'custom' || it.modelId === 'CUSTOM';
+    });
+    if (allCustom && !hasCubicleSpecs) return { quotationScope: 'CUSTOM_ITEM', quotationType: 'custom_item' };
+  }
+
+  return { quotationScope: 'CUBICLE', quotationType: 'cubicle' };
+}
+
 function formatQuotationOutput(q: any) {
   if (!q) return q;
+  const { quotationScope, quotationType } = determineQuotationScopeAndType(q);
   return {
     ...q,
     quotationNumber: q.referenceNumber,
+    quotationScope,
+    quotationType,
     basicPrice: Number(q.basicPrice || 0),
     installationCharge: Number(q.installationCharge || 0),
     freightAmount: Number(q.freightAmount || 0),
@@ -379,7 +454,16 @@ export const quotationsService = {
         accessoriesText: data.accessoriesText || null,
         warrantyText: data.warrantyText || 'We provide ten (10) years of warranty for partitions against any moisture-related defects and one (1) year warranty for workmanship and hardware against manufacturing defects.',
         generalTerms: data.generalTerms || null,
-        otherTerms: data.otherTerms || null,
+        otherTerms: (() => {
+          const s = (data.quotationScope || (data.quotationType === 'custom_hardware' ? 'HARDWARE' : data.quotationType === 'custom_board' ? 'BOARD' : data.quotationType === 'custom_item' ? 'CUSTOM_ITEM' : 'CUBICLE')) as string;
+          let ot = data.otherTerms || null;
+          if (s && s !== 'CUBICLE') {
+            const tag = `[QUOTATION_SCOPE:${s}]`;
+            if (!ot) ot = tag;
+            else if (!ot.includes('[QUOTATION_SCOPE:')) ot = `${ot}\n${tag}`;
+          }
+          return ot;
+        })(),
         paymentTerms: data.paymentTerms || '50% Advance along with confirmed Purchase Order. Balance 50% prior to dispatch.',
         deliveryTerms: data.deliveryTerms || '2-3 weeks from receipt of advance, approved shop drawings, and color confirmation.',
         statutoryComplianceTerms: data.statutoryComplianceTerms || null,
@@ -443,6 +527,7 @@ export const quotationsService = {
     await documentRevisionService.ensureInitialQuotationRevision(id, userId).catch(() => {});
 
     const newRevNumber = (existing.revisionNumber || 1) + 1;
+    const updateScope = (updateData.quotationScope || (updateData.quotationType === 'custom_hardware' ? 'HARDWARE' : updateData.quotationType === 'custom_board' ? 'BOARD' : updateData.quotationType === 'custom_item' ? 'CUSTOM_ITEM' : undefined));
 
     // Recompute items if provided
     let itemsUpdate: any = undefined;
@@ -508,7 +593,18 @@ export const quotationsService = {
         accessoriesText: updateData.accessoriesText ?? existing.accessoriesText,
         warrantyText: updateData.warrantyText ?? existing.warrantyText,
         generalTerms: updateData.generalTerms ?? existing.generalTerms,
-        otherTerms: updateData.otherTerms ?? existing.otherTerms,
+        otherTerms: (() => {
+          let ot = updateData.otherTerms !== undefined ? updateData.otherTerms : existing.otherTerms;
+          if (updateScope) {
+            const cleanOt = (ot || '').replace(/\s*\[(?:QUOTATION_SCOPE|QUOTATION_TYPE|PI_SCOPE|SCOPE):[^\]]+\]/gi, '').trim();
+            if (updateScope !== 'CUBICLE') {
+              ot = cleanOt ? `${cleanOt}\n[QUOTATION_SCOPE:${updateScope}]` : `[QUOTATION_SCOPE:${updateScope}]`;
+            } else {
+              ot = cleanOt || null;
+            }
+          }
+          return ot;
+        })(),
         paymentTerms: updateData.paymentTerms ?? existing.paymentTerms,
         deliveryTerms: updateData.deliveryTerms ?? existing.deliveryTerms,
         drawingUrl: updateData.drawingUrl !== undefined ? updateData.drawingUrl : existing.drawingUrl,
@@ -1073,6 +1169,8 @@ export const quotationsService = {
     let itemsUpdate: any = undefined;
     let basicPrice = updateData.basicPrice !== undefined ? Number(updateData.basicPrice) : Number(existing.basicPrice);
 
+    const updateScope = (updateData.quotationScope || (updateData.quotationType === 'custom_hardware' ? 'HARDWARE' : updateData.quotationType === 'custom_board' ? 'BOARD' : updateData.quotationType === 'custom_item' ? 'CUSTOM_ITEM' : undefined));
+
     if (updateData.items && Array.isArray(updateData.items)) {
       await prisma.salesQuotationItem.deleteMany({ where: { quotationId: id } });
       const itemsList = updateData.items.map((it: any, idx: number) => {
@@ -1082,6 +1180,17 @@ export const quotationsService = {
         const rate = Number(it.rate ?? it.unitPrice ?? 0);
         const calculatedAmount = isLocker ? (tierRows * qty * rate) : (qty * rate);
         const amount = Number(it.amount ?? calculatedAmount);
+        const rawSpecs = (typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}) || {};
+        const mergedCustomSpecs = {
+          hardwarePackage: it.hardwarePackage || rawSpecs.hardwarePackage || null,
+          boardType: it.boardType || rawSpecs.boardType || null,
+          make: it.make || rawSpecs.make || null,
+          ...rawSpecs,
+          ...(updateScope ? {
+            quotationScope: updateScope,
+            quotationType: updateScope === 'HARDWARE' ? 'custom_hardware' : updateScope === 'BOARD' ? 'custom_board' : updateScope === 'CUSTOM_ITEM' ? 'custom_item' : 'cubicle'
+          } : {})
+        };
         return {
           serialNumber: idx + 1,
           productId: it.productId || null,
@@ -1095,14 +1204,7 @@ export const quotationsService = {
           boardThickness: it.boardThickness || null,
           doorSize: it.doorSize || null,
           overallHeight: it.overallHeight || null,
-          customSpecsJson: (it.hardwarePackage || it.boardType || it.make)
-            ? {
-                hardwarePackage: it.hardwarePackage || null,
-                boardType: it.boardType || null,
-                make: it.make || null,
-                ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
-              }
-            : (it.customSpecsJson || null),
+          customSpecsJson: mergedCustomSpecs,
         };
       });
 
@@ -1146,7 +1248,18 @@ export const quotationsService = {
         accessoriesText: updateData.accessoriesText ?? existing.accessoriesText,
         warrantyText: updateData.warrantyText ?? existing.warrantyText,
         generalTerms: updateData.generalTerms ?? existing.generalTerms,
-        otherTerms: updateData.otherTerms ?? existing.otherTerms,
+        otherTerms: (() => {
+          let ot = updateData.otherTerms !== undefined ? updateData.otherTerms : existing.otherTerms;
+          if (updateScope) {
+            const cleanOt = (ot || '').replace(/\s*\[(?:QUOTATION_SCOPE|QUOTATION_TYPE|PI_SCOPE|SCOPE):[^\]]+\]/gi, '').trim();
+            if (updateScope !== 'CUBICLE') {
+              ot = cleanOt ? `${cleanOt}\n[QUOTATION_SCOPE:${updateScope}]` : `[QUOTATION_SCOPE:${updateScope}]`;
+            } else {
+              ot = cleanOt || null;
+            }
+          }
+          return ot;
+        })(),
         paymentTerms: updateData.paymentTerms ?? existing.paymentTerms,
         deliveryTerms: updateData.deliveryTerms ?? existing.deliveryTerms,
         statutoryComplianceTerms: updateData.statutoryComplianceTerms ?? existing.statutoryComplianceTerms,

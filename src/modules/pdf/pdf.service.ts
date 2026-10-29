@@ -940,15 +940,12 @@ export const pdfService = {
                     <div>• <strong>Configuration:</strong> ${it.quantity} Column(s) × ${tierRows} Tier(s) (${it.quantity * tierRows} Total Doors)</div>
                     ${showCustomModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
                     ${(!isHardware && it.make) ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
-                    <div>• <strong>Locker Dimension:</strong> ${cubicleSize}</div>
-                    <div>• <strong>Height:</strong> ${heightStr} (plus 100mm plinth base)</div>
-                    <div>• <strong>Width:</strong> ${widthStr} (Per Column)</div>
-                    <div>• <strong>Depth:</strong> ${depthStr} (Standard Depth)</div>
-                    <div>• <strong>Board Type:</strong> ${boardType || 'HPL Solid Compact Laminate'}</div>
+                    <div>• <strong>Board Type:</strong> ${boardType || 'HPL'}</div>
                     <div>• <strong>Board Thickness:</strong> ${boardThickness || '12mm'}</div>
                     ${boardColor ? `<div>• <strong>Color / Finish:</strong> ${boardColor}</div>` : ''}
+                    <div>• <strong>Locker Dimension:</strong> ${cubicleSize}</div>
                     <div>• <strong>Compartment / Door Size:</strong> ${doorSize}</div>
-                    ${hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${hardwarePackage}</div>` : ''}
+                    ${hardwarePackage ? `<div>• <strong>Hardware / Fittings:</strong> ${hardwarePackage}</div>` : ''}
                     ${customNotes ? `<div>• <strong>Notes / Specs:</strong> ${customNotes}</div>` : ''}
                   ` : `
                     ${showCustomModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
@@ -2238,13 +2235,10 @@ export const pdfService = {
                       <div>• <strong>Configuration:</strong> ${item.quantity} Column(s) × ${tierRows} Tier(s) (${item.quantity * tierRows} Total Doors)</div>
                       ${customModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
                       ${item.make ? `<div>• <strong>Make:</strong> ${item.make}</div>` : ''}
-                      <div>• <strong>Locker Dimension:</strong> ${displaySize}</div>
-                      <div>• <strong>Height:</strong> ${heightStr} (plus 100mm plinth base)</div>
-                      <div>• <strong>Width:</strong> ${widthStr} (Per Column)</div>
-                      <div>• <strong>Depth:</strong> ${depthStr} (Standard Depth)</div>
-                      <div>• <strong>Board Type:</strong> ${displayBoardType || 'HPL Solid Compact Laminate'}</div>
+                      <div>• <strong>Board Type:</strong> ${displayBoardType || 'HPL'}</div>
                       <div>• <strong>Board Thickness:</strong> ${displayBoardThickness || '12mm'}</div>
                       ${displayBoardColor ? `<div>• <strong>Color / Finish:</strong> ${displayBoardColor}</div>` : ''}
+                      <div>• <strong>Locker Dimension:</strong> ${displaySize}</div>
                       <div>• <strong>Compartment / Door Size:</strong> ${displayDoor}</div>
                       ${showHardware ? `<div>• <strong>Hardware / Fittings:</strong> ${displayHardware}</div>` : ''}
                       ${displayHsn ? `<div>• <strong>HSN/SAC:</strong> ${displayHsn}</div>` : ''}
@@ -3136,13 +3130,10 @@ export const pdfService = {
                   ${isLocker ? `
                     <div>• <strong>Configuration:</strong> ${it.quantity} Column(s) × ${tierRows} Tier(s) (${it.quantity * tierRows} Total Doors)</div>
                     ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
-                    <div>• <strong>Locker Dimension:</strong> ${cubicleSize}</div>
-                    <div>• <strong>Height:</strong> ${heightStr} (plus 100mm plinth base)</div>
-                    <div>• <strong>Width:</strong> ${widthStr} (Per Column)</div>
-                    <div>• <strong>Depth:</strong> ${depthStr} (Standard Depth)</div>
-                    ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
-                    ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
+                    <div>• <strong>Board Type:</strong> ${boardType || 'HPL'}</div>
+                    <div>• <strong>Board Thickness:</strong> ${boardThickness || '12mm'}</div>
                     ${boardColor ? `<div>• <strong>Board Color:</strong> ${boardColor}</div>` : ''}
+                    <div>• <strong>Locker Dimension:</strong> ${cubicleSize}</div>
                     <div>• <strong>Compartment / Door Size:</strong> ${doorSize}</div>
                     ${hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${hardwarePackage}</div>` : ''}
                   ` : `
