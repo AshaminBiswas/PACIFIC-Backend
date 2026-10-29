@@ -853,6 +853,7 @@ export const pdfService = {
 
         const isUrinal = descLower.includes('urinal') || descLower.includes('ump') || (cubicleSize && cubicleSize.includes('450mm'));
         const isLocker = descLower.includes('locker');
+        const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
         const isCubicle = !isUrinal && !isLocker && !isCustom && !isHardware && (descLower.includes('cubicle') || descLower.includes('restroom'));
         const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : isCubicle ? 'Cubicle / Depth Size' : 'Dimensions';
         const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
@@ -879,6 +880,7 @@ export const pdfService = {
               <div style="font-weight: bold; font-size: 11px;">${displayDesc}</div>
               ${hasSpecs ? `
                 <div class="spec-box">
+                  ${isLocker ? `<div>• <strong>Configuration:</strong> ${it.quantity} Column(s) × ${tierRows} Tier(s) (${it.quantity * tierRows} Total Doors)</div>` : ''}
                   ${showCustomModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
                   ${(!isHardware && it.make) ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
                   ${(!isHardware && boardType) ? `<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${boardType}</div>` : ''}
@@ -893,8 +895,8 @@ export const pdfService = {
               ` : ''}
             </td>
             <td style="text-align: center; font-family: monospace; font-size: 9.5px; white-space: nowrap;">${it.hsnSac || '9403'}</td>
-            <td style="text-align: center;">${it.unit}</td>
-            <td style="text-align: right;">${it.quantity}</td>
+            <td style="text-align: center;">${isLocker ? `${tierRows} Tier` : it.unit}</td>
+            <td style="text-align: right;">${isLocker ? `${it.quantity} Col` : it.quantity}</td>
             <td style="text-align: right;">${it.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
             <td style="text-align: right;">${it.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           </tr>
@@ -2075,6 +2077,7 @@ export const pdfService = {
             const descLower = (item.description || '').toLowerCase();
             const isUrinal = descLower.includes('urinal') || descLower.includes('ump') || (item.cubicleSize && item.cubicleSize.includes('450mm'));
             const isLocker = descLower.includes('locker');
+            const tierRows = isLocker ? (parseFloat(String(item.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
             const isCustom = Boolean((item as any).isCustom || ((item as any).customSpecsJson as any)?.isCustom || ((item as any).customSpecsJson as any)?.systemCategory === 'custom');
             const isCubicle = !isUrinal && !isLocker && !isCustom && (descLower.includes('cubicle') || descLower.includes('restroom') || descLower.includes('toilet'));
 
@@ -2116,6 +2119,7 @@ export const pdfService = {
                 <div style="font-weight: bold; font-size: 11px;">${item.description}</div>
                 ${customModel || item.make || displayBoardType || displaySize || displayBoardColor || displayBoardThickness || showDoor || item.overallHeight || showHardware || displayHsn || displayNotes ? `
                   <div class="spec-box">
+                    ${isLocker ? `<div>• <strong>Configuration:</strong> ${item.quantity} Column(s) × ${tierRows} Tier(s) (${item.quantity * tierRows} Total Doors)</div>` : ''}
                     ${customModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
                     ${item.make ? `<div>• <strong>Make:</strong> ${item.make}</div>` : ''}
                     ${displayBoardType ? `<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${displayBoardType}</div>` : ''}
@@ -2130,8 +2134,8 @@ export const pdfService = {
                   </div>
                 ` : ''}
               </td>
-              <td style="text-align: center;">${item.unit}</td>
-              <td style="text-align: right;">${item.quantity}</td>
+              <td style="text-align: center;">${isLocker ? `${tierRows} Tier` : item.unit}</td>
+              <td style="text-align: right;">${isLocker ? `${item.quantity} Col` : item.quantity}</td>
               <td style="text-align: right;">${item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
               <td style="text-align: right; font-weight: bold;">${item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
             </tr>
@@ -2922,9 +2926,12 @@ export const pdfService = {
         );
         const hardwarePackage = showHardware ? rawHardware : undefined;
         const displayDesc = cleanDescription(it.description);
+        const descLower = (it.description || '').toLowerCase();
+        const isLocker = descLower.includes('locker');
+        const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
 
         const hasSpecs = Boolean(
-          it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage
+          isLocker || it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage
         );
 
         return `
@@ -2934,6 +2941,7 @@ export const pdfService = {
               <div style="font-weight: bold; font-size: 11px;">${displayDesc}</div>
               ${hasSpecs ? `
                 <div class="spec-box">
+                  ${isLocker ? `<div>• <strong>Configuration:</strong> ${it.quantity} Column(s) × ${tierRows} Tier(s) (${it.quantity * tierRows} Total Doors)</div>` : ''}
                   ${it.make ? `<div>• <strong>Make:</strong> ${it.make}</div>` : ''}
                   ${boardType ? `<div>• <strong>Board Type:</strong> ${boardType}</div>` : ''}
                   ${boardThickness ? `<div>• <strong>Board Thickness:</strong> ${boardThickness}</div>` : ''}
@@ -2946,8 +2954,8 @@ export const pdfService = {
               ` : ''}
             </td>
             <td style="text-align: center;">${it.hsnSac || '9403'}</td>
-            <td style="text-align: center;">${it.unit}</td>
-            <td style="text-align: right;">${it.quantity}</td>
+            <td style="text-align: center;">${isLocker ? `${tierRows} Tier` : it.unit}</td>
+            <td style="text-align: right;">${isLocker ? `${it.quantity} Col` : it.quantity}</td>
             <td style="text-align: right;">${it.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
             <td style="text-align: right;">${it.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           </tr>
@@ -3373,16 +3381,20 @@ export const pdfService = {
 
     const itemRows = data.items
       .map(
-        (it) => `
+        (it) => {
+          const isLocker = (it.description || '').toLowerCase().includes('locker');
+          const qtyDisplay = isLocker ? `${it.quantity} Col` : it.quantity;
+          return `
         <tr>
           <td style="text-align: center; border: 1px solid #000; padding: 4px;">${it.serialNumber}</td>
           <td style="border: 1px solid #000; padding: 4px;"><strong>${it.description}</strong></td>
           <td style="text-align: center; border: 1px solid #000; padding: 4px;">${it.hsnSac || '73089090'}</td>
-          <td style="text-align: right; border: 1px solid #000; padding: 4px;">${it.quantity}</td>
+          <td style="text-align: right; border: 1px solid #000; padding: 4px;">${qtyDisplay}</td>
           <td style="text-align: right; border: 1px solid #000; padding: 4px;">${currSym} ${Number(it.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           <td style="text-align: right; border: 1px solid #000; padding: 4px; font-weight: bold;">${currSym} ${Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           <td style="text-align: center; border: 1px solid #000; padding: 4px;">${it.gstRate || 18}%</td>
-        </tr>`
+        </tr>`;
+        }
       )
       .join('');
 

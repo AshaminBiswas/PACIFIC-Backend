@@ -9,6 +9,7 @@ export interface TaxLineItemInput {
   description: string;
   quantity: number;
   rate: number;
+  amount?: number;
   gstRate: number; // e.g. 18, 12, 5, 0
 }
 
@@ -103,7 +104,7 @@ export function calculateGstTax(params: TaxCalculationParams): TaxCalculationRes
   const calculatedItems: CalculatedLineItem[] = params.items.map((item) => {
     const qty = Math.max(0, Number(item.quantity) || 0);
     const rate = Math.max(0, Number(item.rate) || 0);
-    const amount = round2(qty * rate);
+    const amount = item.amount !== undefined ? round2(Number(item.amount)) : round2(qty * rate);
     const taxableAmount = amount;
     const gstRate = Number(item.gstRate) || 0;
 

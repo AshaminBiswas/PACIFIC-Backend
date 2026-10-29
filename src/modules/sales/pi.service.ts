@@ -281,13 +281,22 @@ export const piService = {
         sellerStateCode,
         placeOfSupplyStateCode: posStateCode,
         buyerGstin,
-        items: rawItems.map((it: any) => ({
-          productId: (it.productId && validProductMap.has(it.productId)) ? it.productId : null,
-          description: it.description,
-          quantity: Number(it.quantity) || 1,
-          rate: Number(it.rate) || 0,
-          gstRate: Number(it.gstRate ?? 18),
-        })),
+        items: rawItems.map((it: any) => {
+          const isLocker = (it.systemCategory === 'locker') || ((it.description || '').toLowerCase().includes('locker'));
+          const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
+          const qty = Number(it.quantity) || 1;
+          const rate = Number(it.rate) || 0;
+          const calculatedAmount = isLocker ? (tierRows * qty * rate) : (qty * rate);
+          const amount = it.amount !== undefined ? Number(it.amount) : calculatedAmount;
+          return {
+            productId: (it.productId && validProductMap.has(it.productId)) ? it.productId : null,
+            description: it.description,
+            quantity: qty,
+            rate: rate,
+            amount: amount,
+            gstRate: Number(it.gstRate ?? 18),
+          };
+        }),
         freightAmount: Number(data.freightAmount) || 0,
         installationCharge: Number(data.installationCharge) || 0,
         installationGstRate: Number(data.installationGstRate ?? 18),
@@ -920,20 +929,38 @@ export const piService = {
         }
 
         const itemsToCalculate = hasNewItems
-          ? rawItems.map((it: any) => ({
-              productId: (it.productId && validProductMap.has(it.productId)) ? it.productId : null,
-              description: it.description,
-              quantity: Number(it.quantity) || 1,
-              rate: Number(it.rate) || 0,
-              gstRate: Number(it.gstRate ?? 18),
-            }))
-          : existing.items.map((it: any) => ({
-              productId: it.productId,
-              description: it.description,
-              quantity: Number(it.quantity) || 1,
-              rate: Number(it.rate) || 0,
-              gstRate: Number(it.gstRate ?? 18),
-            }));
+          ? rawItems.map((it: any) => {
+              const isLocker = (it.systemCategory === 'locker') || ((it.description || '').toLowerCase().includes('locker'));
+              const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
+              const qty = Number(it.quantity) || 1;
+              const rate = Number(it.rate) || 0;
+              const calculatedAmount = isLocker ? (tierRows * qty * rate) : (qty * rate);
+              const amount = it.amount !== undefined ? Number(it.amount) : calculatedAmount;
+              return {
+                productId: (it.productId && validProductMap.has(it.productId)) ? it.productId : null,
+                description: it.description,
+                quantity: qty,
+                rate: rate,
+                amount: amount,
+                gstRate: Number(it.gstRate ?? 18),
+              };
+            })
+          : existing.items.map((it: any) => {
+              const isLocker = (it.systemCategory === 'locker') || ((it.description || '').toLowerCase().includes('locker'));
+              const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
+              const qty = Number(it.quantity) || 1;
+              const rate = Number(it.rate) || 0;
+              const calculatedAmount = isLocker ? (tierRows * qty * rate) : (qty * rate);
+              const amount = it.amount !== undefined ? Number(it.amount) : (it.taxableAmount !== undefined ? Number(it.taxableAmount) : calculatedAmount);
+              return {
+                productId: it.productId,
+                description: it.description,
+                quantity: qty,
+                rate: rate,
+                amount: amount,
+                gstRate: Number(it.gstRate ?? 18),
+              };
+            });
 
         const taxCalc = calculateGstTax({
           sellerStateCode: originStateCode,

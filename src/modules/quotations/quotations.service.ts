@@ -295,15 +295,18 @@ export const quotationsService = {
 
     // Calculations
     const itemsData = (data.items || []).map((it: any, idx: number) => {
+      const isLocker = (it.systemCategory === 'locker') || ((it.description || '').toLowerCase().includes('locker'));
+      const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
       const qty = Number(it.quantity) || 1;
       const rate = Number(it.rate ?? it.unitPrice ?? 0);
-      const amount = Number(it.amount ?? (qty * rate));
+      const calculatedAmount = isLocker ? (tierRows * qty * rate) : (qty * rate);
+      const amount = Number(it.amount ?? calculatedAmount);
       const description = it.description || it.itemDescription || 'Pacific Restroom Cubicle Partition';
       return {
         serialNumber: idx + 1,
         productId: it.productId || null,
         description,
-        unit: it.unit || 'NOS',
+        unit: it.unit || (isLocker ? '4' : 'NOS'),
         quantity: qty,
         rate,
         amount,
@@ -998,16 +1001,20 @@ export const quotationsService = {
     if (updateData.items && Array.isArray(updateData.items)) {
       await prisma.salesQuotationItem.deleteMany({ where: { quotationId: id } });
       const itemsList = updateData.items.map((it: any, idx: number) => {
+        const isLocker = (it.systemCategory === 'locker') || ((it.description || '').toLowerCase().includes('locker'));
+        const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
         const qty = Number(it.quantity) || 1;
         const rate = Number(it.rate ?? it.unitPrice ?? 0);
+        const calculatedAmount = isLocker ? (tierRows * qty * rate) : (qty * rate);
+        const amount = Number(it.amount ?? calculatedAmount);
         return {
           serialNumber: idx + 1,
           productId: it.productId || null,
           description: it.description || it.itemDescription || 'Pacific Restroom Cubicle Partition',
-          unit: it.unit || 'NOS',
+          unit: it.unit || (isLocker ? '4' : 'NOS'),
           quantity: qty,
           rate,
-          amount: Number(it.amount ?? (qty * rate)),
+          amount,
           cubicleSize: it.cubicleSize || it.specifications || null,
           boardColor: it.boardColor || null,
           boardThickness: it.boardThickness || null,
