@@ -269,9 +269,6 @@ export const quotationsService = {
   },
 
   async getById(id: string) {
-    // Ensure initial legacy revision exists
-    await documentRevisionService.ensureInitialQuotationRevision(id).catch(() => {});
-
     const quote = await prisma.salesQuotation.findUnique({
       where: { id },
       include: {
@@ -758,14 +755,52 @@ export const quotationsService = {
       ? await fetchImageAsDataUri(rawSignatureUrl)
       : rawSignatureUrl;
 
+    const lockerCatalogModels = await prisma.websiteProduct.findMany({
+      where: { category: { contains: 'Locker', mode: 'insensitive' } },
+    }).catch(() => []);
+
     // Collect unique model images from line items (only clean model name, no unnecessary descriptions)
     const rawModelImages = (quote.items || [])
       .map((it: any) => {
-        let imgUrl = it.modelImageUrl || (it.customSpecsJson as any)?.modelImageUrl || (it.customSpecsJson as any)?.imageUrl;
-        let cleanModelName = (it.customSpecsJson as any)?.customModelName || (it.customSpecsJson as any)?.modelName || it.modelName;
         const desc = String(it.description || '').trim();
         const descLower = desc.toLowerCase();
-        const isUrinal = it.systemCategory === 'ump' || descLower.includes('urinal') || descLower.includes('ump') || (it.cubicleSize && it.cubicleSize.includes('450mm'));
+        const customSpecs = ((it.customSpecsJson as any) || {});
+        const isLocker = (
+          it.systemCategory === 'locker' ||
+          customSpecs.systemCategory === 'locker' ||
+          descLower.includes('locker') ||
+          descLower.includes('tier') ||
+          String(it.unit || '').toLowerCase().includes('tier') ||
+          (/^\d+$/.test(String(it.unit || '').trim()) && !descLower.includes('cubicle'))
+        );
+        const isUrinal = !isLocker && (
+          it.systemCategory === 'ump' ||
+          customSpecs.systemCategory === 'ump' ||
+          descLower.includes('urinal') ||
+          descLower.includes('ump') ||
+          descLower.includes('modesty')
+        );
+
+        const matchedLocker = isLocker
+          ? lockerCatalogModels.find((m: any) =>
+              (it.modelId && (m.id === it.modelId || m.slug === it.modelId)) ||
+              (customSpecs.customModelName && m.title.toLowerCase().includes(String(customSpecs.customModelName).toLowerCase())) ||
+              (customSpecs.modelName && m.title.toLowerCase().includes(String(customSpecs.modelName).toLowerCase())) ||
+              (it.modelName && m.title.toLowerCase().includes(String(it.modelName).toLowerCase())) ||
+              (it.description && m.title.toLowerCase().includes(it.description.toLowerCase())) ||
+              (it.description && it.description.toLowerCase().includes(m.title.toLowerCase()))
+            )
+          : null;
+
+        let imgUrl = it.modelImageUrl ||
+          customSpecs.modelImageUrl ||
+          customSpecs.imageUrl ||
+          matchedLocker?.imageUrl;
+
+        let cleanModelName = matchedLocker?.title ||
+          customSpecs.customModelName ||
+          customSpecs.modelName ||
+          it.modelName;
 
         if (!cleanModelName && desc) {
           const match = desc.match(/(?:Model|Series|System)[:\s]+([^,\n\r]+)/i);
@@ -778,10 +813,15 @@ export const quotationsService = {
           }
         }
 
-        cleanModelName = (cleanModelName || (isUrinal ? 'Model A' : 'Model Visual'))
+        cleanModelName = (cleanModelName || (isUrinal ? 'Model A' : isLocker ? (matchedLocker?.title || 'Modular Locker') : 'Model Visual'))
           .replace(/^(?:Model\s*Name|System)\s*:\s*/i, '')
           .replace(/[\(\[\{].*?[\)\]\}]/g, '')
+          .replace(/^Pacific\s+/i, '')
           .trim();
+
+        if (matchedLocker?.title) {
+          cleanModelName = matchedLocker.title;
+        }
 
         // Special handling for Urinal Partitions: Ensure image and format title as Model "A"
         if (isUrinal) {
@@ -798,7 +838,7 @@ export const quotationsService = {
           }
 
           const upper = cleanModelName.toUpperCase();
-          if (upper === 'A' || upper === 'MODEL A' || upper === 'MODE A' || descLower.includes('model a') || descLower.includes('mode a') || (!descLower.includes('model b') && !descLower.includes('model c') && !descLower.includes('model d'))) {
+          if (upper === 'A' || upper === 'MODEL A' || upper === 'MODE A' || descLower.includes('model a') || descLower.includes('mode a')) {
             cleanModelName = 'Model "A"';
           } else if (upper === 'B' || upper === 'MODEL B' || upper === 'MODE B' || descLower.includes('model b')) {
             cleanModelName = 'Model "B"';
@@ -895,10 +935,6 @@ export const quotationsService = {
         : 'H-3, JR Complex, Gate No. 4, Melaram farm, Sewa Dham Rd, Mandoli, Delhi - 110093';
     }
 
-    const lockerCatalogModels = await prisma.websiteProduct.findMany({
-      where: { category: { contains: 'Locker', mode: 'insensitive' } },
-    }).catch(() => []);
-
     return pdfService.generateQuotationPdfHtml({
       referenceNumber: quote.referenceNumber,
       revisionNumber: quote.revisionNumber,
@@ -936,7 +972,8 @@ export const quotationsService = {
         );
 
         const matchedLockerModel = isLocker
-          ? lockerCatalogModels.find((m) =>
+          ? lockerCatalogModels.find((m: any) =>
+              (it.modelId && (m.id === it.modelId || m.slug === it.modelId)) ||
               (modelName && m.title.toLowerCase().includes(modelName.toLowerCase())) ||
               (it.description && m.title.toLowerCase().includes(it.description.toLowerCase())) ||
               (it.description && it.description.toLowerCase().includes(m.title.toLowerCase()))
@@ -955,34 +992,38 @@ export const quotationsService = {
             return found && typeof found.value === 'string' ? found.value.trim() : '';
           };
           const meta = specs.find((s: any) => s.label === '__hardware_meta')?.value || {};
-          if (!width) width = meta.width || findM('width') || '300 mm';
-          if (!depth) depth = meta.depth || findM('depth') || '450 mm';
-          if (!height) height = meta.height || findM('height') || '1800 mm';
-          if (!boardThickness) boardThickness = meta.boardThickness || findM('thickness') || '9mm';
+          const modelW = (matchedLockerModel as any).width || meta.width || findM('unit / column width') || findM('standard width') || findM('width');
+          const modelD = (matchedLockerModel as any).depth || meta.depth || findM('standard depth') || findM('depth');
+          const modelH = (matchedLockerModel as any).height || meta.height || findM('standard height') || findM('height');
+          const modelThick = (matchedLockerModel as any).boardThickness || meta.boardThickness || findM('board thickness') || findM('thickness');
+
+          if (modelW) width = modelW;
+          if (modelD) depth = modelD;
+          if (modelH) height = modelH;
+          if (modelThick) boardThickness = modelThick;
         }
+
+        const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
+        const cleanW = (width ? String(width).replace(/[^0-9.]/g, '') : '') || '300';
+        const cleanD = (depth ? String(depth).replace(/[^0-9.]/g, '') : '') || '450';
+        const cleanH = (height ? String(height).replace(/[^0-9.]/g, '') : '') ||
+          (it.cubicleSize && it.cubicleSize.match(/(\d+)\s*(?:mm)?\s*h/i)?.[1]) ||
+          (it.overallHeight ? String(it.overallHeight).match(/^\s*(\d+)/)?.[1] : '') || '600';
+        const numH = parseInt(cleanH) || 600;
+
+        const compH = numH < 1000 ? numH : (tierRows > 1 ? Math.round(numH / tierRows) : numH);
+        const totalH = numH < 1000 ? (tierRows > 1 ? compH * tierRows : compH) : numH;
 
         let cubicleSize = it.cubicleSize;
         let doorSize = it.doorSize;
         let overallHeight = it.overallHeight;
 
-        const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
-        const cleanW = (width ? String(width).replace(/[^0-9.]/g, '') : '') || '300';
-        const cleanD = (depth ? String(depth).replace(/[^0-9.]/g, '') : '') || '450';
-        let cleanH = (height ? String(height).replace(/[^0-9.]/g, '') : '') || (overallHeight ? String(overallHeight).replace(/[^0-9.]/g, '') : '') || '1800';
-        const numH = parseInt(cleanH) || 1800;
-        const totalH = (numH < 1000 && tierRows >= 2) ? (numH * tierRows) : (numH >= 1000 ? numH : 1800);
-        const compH = Math.round(totalH / tierRows);
-
         if (isLocker) {
-          if (!cubicleSize || /^\s*\d+\s*col/i.test(cubicleSize) || cubicleSize.toLowerCase().includes('doors') || !cubicleSize.toLowerCase().includes('w')) {
-            cubicleSize = `${cleanW}mm W × ${cleanD}mm D × ${totalH}mm H`;
-          }
-          if (!overallHeight || overallHeight === 'null' || !overallHeight.includes('mm')) {
-            overallHeight = `${totalH}mm (plus 100mm plinth base)`;
-          }
-          if (!doorSize || doorSize === 'N/A' || doorSize.includes('as per drawing') || doorSize.toLowerCase().includes('doors as per')) {
-            doorSize = `${tierRows} Tier Modular Doors (${cleanW}mm W × ${compH}mm H per door)`;
-          }
+          cubicleSize = `${cleanW}mm W × ${cleanD}mm D × ${totalH}mm H`;
+          overallHeight = `${totalH}mm`;
+          doorSize = tierRows > 1
+            ? `${tierRows} Tier Modular Doors (${cleanW}mm W × ${compH}mm H per door)`
+            : `1 Tier Modular Door (${cleanW}mm W × ${compH}mm H)`;
         }
 
         return {
@@ -1000,15 +1041,20 @@ export const quotationsService = {
           boardType: it.boardType || customSpecs.boardType || customSpecs.boardMaterial || undefined,
           hardwarePackage: it.hardwarePackage || customSpecs.hardwarePackage || customSpecs.hardwareType || undefined,
           make: it.make || customSpecs.make || undefined,
-          modelImageUrl: it.modelImageUrl || customSpecs.modelImageUrl || undefined,
-          modelName: customSpecs.customModelName || customSpecs.modelName || it.modelName || undefined,
-          customModelName: customSpecs.customModelName || it.customModelName || undefined,
+          modelImageUrl: isLocker ? (it.modelImageUrl || customSpecs.modelImageUrl || matchedLockerModel?.imageUrl || undefined) : (it.modelImageUrl || customSpecs.modelImageUrl || undefined),
+          modelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : (customSpecs.customModelName || customSpecs.modelName || it.modelName || undefined),
+          customModelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : (customSpecs.customModelName || it.customModelName || undefined),
           customSpecsJson: {
             ...customSpecs,
             systemCategory: isLocker ? 'locker' : customSpecs.systemCategory,
             width: isLocker ? `${cleanW}mm` : customSpecs.width,
             depth: isLocker ? `${cleanD}mm` : customSpecs.depth,
-            height: isLocker ? `${totalH}mm` : customSpecs.height,
+            height: isLocker ? `${compH}mm` : customSpecs.height,
+            overallHeight: isLocker ? `${totalH}mm` : customSpecs.overallHeight,
+            compartmentDimension: isLocker ? `${cleanW}mm W × ${cleanD}mm D × ${compH}mm H` : customSpecs.compartmentDimension,
+            overallLockerDimension: isLocker ? `${cleanW}mm W × ${cleanD}mm D × ${totalH}mm H` : customSpecs.overallLockerDimension,
+            customModelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : customSpecs.customModelName,
+            modelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : customSpecs.modelName,
           },
           isCustom: Boolean(customSpecs.isCustom || it.isCustom || customSpecs.systemCategory === 'custom'),
           hsnSac: customSpecs.hsnSac || it.hsnSac || undefined,

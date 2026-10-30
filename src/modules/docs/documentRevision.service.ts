@@ -34,6 +34,9 @@ export function formatRevisionCode(revNum: number): string {
   return `REV-${String(revNum || 1).padStart(2, '0')}`;
 }
 
+const inFlightQuotationEnsures = new Set<string>();
+const inFlightPiEnsures = new Set<string>();
+
 export const documentRevisionService = {
   // ─────────────────────────────────────────────────────────────────────────────
   // SALES QUOTATION REVISIONS
@@ -134,18 +137,6 @@ export const documentRevisionService = {
     ensureDirExists(targetDir);
     const pdfPath = path.join(targetDir, fileName);
 
-    // Generate PDF buffer from snapshot
-    let pdfGenerated = false;
-    try {
-      const { quotationsService } = await import('../quotations/quotations.service');
-      const html = await quotationsService.getPdfHtml(quote.id);
-      const pdfBuffer = await htmlToPdfBuffer(html);
-      await fs.promises.writeFile(pdfPath, pdfBuffer);
-      pdfGenerated = true;
-    } catch (pdfErr) {
-      console.warn(`[DocumentRevision] Warning: Failed to generate pre-rendered PDF for quote ${quote.id} Rev ${revisionNumber}:`, pdfErr);
-    }
-
     const grandTotal = Number(quote.grandTotal || 0);
     const taxAmount = Number(quote.gstAmount || 0);
     const subtotal = Number(quote.basicPrice || 0) + Number(quote.installationCharge || 0) + Number(quote.freightAmount || 0);
@@ -154,7 +145,7 @@ export const documentRevisionService = {
 
     // Database transaction:
     // Mark prior revisions as SUPERSEDED (or ORIGINAL for rev 1)
-    return prisma.$transaction(async (tx) => {
+    const revisionRecord = await prisma.$transaction(async (tx) => {
       await tx.salesQuotationRevision.updateMany({
         where: { quotationId: quote.id },
         data: {
@@ -163,7 +154,7 @@ export const documentRevisionService = {
       });
 
       // Upsert current revision record
-      const revisionRecord = await tx.salesQuotationRevision.upsert({
+      return tx.salesQuotationRevision.upsert({
         where: {
           quotationId_revisionNumber: {
             quotationId: quote.id,
@@ -179,7 +170,7 @@ export const documentRevisionService = {
           taxAmount,
           subtotal,
           itemCount,
-          pdfPath: pdfGenerated ? pdfPath : null,
+          pdfPath: null,
           pdfFileName: fileName,
           pdfUrl,
           reason: reason || (revisionNumber === 1 ? 'Initial issuance (Rev 01)' : `Revision ${revisionNumber}`),
@@ -192,15 +183,29 @@ export const documentRevisionService = {
           taxAmount,
           subtotal,
           itemCount,
-          pdfPath: pdfGenerated ? pdfPath : undefined,
           pdfFileName: fileName,
           pdfUrl,
           reason: reason || undefined,
         },
       });
-
-      return revisionRecord;
     });
+
+    // Asynchronously warm PDF cache in background (non-blocking) using snapshot renderer
+    setImmediate(async () => {
+      try {
+        const html = await this.renderQuotationSnapshotHtml(snapshot);
+        const pdfBuffer = await htmlToPdfBuffer(html);
+        await fs.promises.writeFile(pdfPath, pdfBuffer);
+        await prisma.salesQuotationRevision.updateMany({
+          where: { quotationId: quote.id, revisionNumber },
+          data: { pdfPath },
+        });
+      } catch (pdfErr) {
+        console.warn(`[DocumentRevision] Background PDF cache deferred for quote ${quote.id} Rev ${revisionNumber}:`, pdfErr);
+      }
+    });
+
+    return revisionRecord;
   },
 
   /**
@@ -344,16 +349,20 @@ export const documentRevisionService = {
    * Helper to ensure existing legacy quotations have at least Revision 1 archived.
    */
   async ensureInitialQuotationRevision(quotationId: string, userId?: string) {
-    const count = await prisma.salesQuotationRevision.count({
-      where: { quotationId },
-    });
+    if (inFlightQuotationEnsures.has(quotationId)) return;
+    inFlightQuotationEnsures.add(quotationId);
+    try {
+      const count = await prisma.salesQuotationRevision.count({
+        where: { quotationId },
+      });
 
-    if (count === 0) {
-      try {
+      if (count === 0) {
         await this.createQuotationRevision(quotationId, 1, 'Initial issuance (Rev 01)', userId);
-      } catch (err) {
-        console.warn(`[DocumentRevision] Note: Could not backfill initial revision for quote ${quotationId}:`, err);
       }
+    } catch (err) {
+      console.warn(`[DocumentRevision] Note: Could not backfill initial revision for quote ${quotationId}:`, err);
+    } finally {
+      inFlightQuotationEnsures.delete(quotationId);
     }
   },
 
@@ -476,25 +485,13 @@ export const documentRevisionService = {
     ensureDirExists(targetDir);
     const pdfPath = path.join(targetDir, fileName);
 
-    // Generate PDF buffer from snapshot
-    let pdfGenerated = false;
-    try {
-      const { piService } = await import('../sales/pi.service');
-      const html = await piService.getPdfHtml(pi.id);
-      const pdfBuffer = await htmlToPdfBuffer(html);
-      await fs.promises.writeFile(pdfPath, pdfBuffer);
-      pdfGenerated = true;
-    } catch (pdfErr) {
-      console.warn(`[DocumentRevision] Warning: Failed to generate pre-rendered PDF for PI ${pi.id} Rev ${revisionNumber}:`, pdfErr);
-    }
-
     const grandTotal = Number(pi.grandTotal || 0);
     const taxAmount = Number(pi.totalTaxAmount || 0);
     const subtotal = Number(pi.subtotal || 0);
     const itemCount = pi.items?.length || 0;
     const pdfUrl = `/api/v1/sales/pi/${pi.id}/revisions/${revisionNumber}/pdf`;
 
-    return prisma.$transaction(async (tx) => {
+    const revisionRecord = await prisma.$transaction(async (tx) => {
       // Mark prior revisions as SUPERSEDED
       await tx.proformaInvoiceRevision.updateMany({
         where: { piId: pi.id },
@@ -504,7 +501,7 @@ export const documentRevisionService = {
       });
 
       // Upsert current revision record
-      const revisionRecord = await tx.proformaInvoiceRevision.upsert({
+      return tx.proformaInvoiceRevision.upsert({
         where: {
           piId_revisionNumber: {
             piId: pi.id,
@@ -520,7 +517,7 @@ export const documentRevisionService = {
           taxAmount,
           subtotal,
           itemCount,
-          pdfPath: pdfGenerated ? pdfPath : null,
+          pdfPath: null,
           pdfFileName: fileName,
           pdfUrl,
           reason: reason || (revisionNumber === 1 ? 'Initial issuance (Rev 01)' : `Revision ${revisionNumber}`),
@@ -533,15 +530,29 @@ export const documentRevisionService = {
           taxAmount,
           subtotal,
           itemCount,
-          pdfPath: pdfGenerated ? pdfPath : undefined,
           pdfFileName: fileName,
           pdfUrl,
           reason: reason || undefined,
         },
       });
-
-      return revisionRecord;
     });
+
+    // Asynchronously warm PDF cache in background (non-blocking) using snapshot renderer
+    setImmediate(async () => {
+      try {
+        const html = await this.renderPiSnapshotHtml(snapshot);
+        const pdfBuffer = await htmlToPdfBuffer(html);
+        await fs.promises.writeFile(pdfPath, pdfBuffer);
+        await prisma.proformaInvoiceRevision.updateMany({
+          where: { piId: pi.id, revisionNumber },
+          data: { pdfPath },
+        });
+      } catch (pdfErr) {
+        console.warn(`[DocumentRevision] Background PDF cache deferred for PI ${pi.id} Rev ${revisionNumber}:`, pdfErr);
+      }
+    });
+
+    return revisionRecord;
   },
 
   /**
@@ -683,16 +694,20 @@ export const documentRevisionService = {
    * Helper to ensure existing legacy Proforma Invoices have at least Revision 1 archived.
    */
   async ensureInitialPiRevision(piId: string, userId?: string) {
-    const count = await prisma.proformaInvoiceRevision.count({
-      where: { piId },
-    });
+    if (inFlightPiEnsures.has(piId)) return;
+    inFlightPiEnsures.add(piId);
+    try {
+      const count = await prisma.proformaInvoiceRevision.count({
+        where: { piId },
+      });
 
-    if (count === 0) {
-      try {
+      if (count === 0) {
         await this.createPiRevision(piId, 1, 'Initial issuance (Rev 01)', userId);
-      } catch (err) {
-        console.warn(`[DocumentRevision] Note: Could not backfill initial revision for PI ${piId}:`, err);
       }
+    } catch (err) {
+      console.warn(`[DocumentRevision] Note: Could not backfill initial revision for PI ${piId}:`, err);
+    } finally {
+      inFlightPiEnsures.delete(piId);
     }
   },
 

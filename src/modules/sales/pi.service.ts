@@ -134,9 +134,6 @@ export const piService = {
   },
 
   async getById(id: string) {
-    // Ensure initial legacy revision exists
-    await documentRevisionService.ensureInitialPiRevision(id).catch(() => {});
-
     const pi = await prisma.proformaInvoice.findUnique({
       where: { id },
       include: {
@@ -814,6 +811,7 @@ export const piService = {
 
           const matchedLockerModel = isLocker
             ? lockerCatalogModels.find((m) =>
+                (it.modelId && (m.id === it.modelId || m.slug === it.modelId)) ||
                 (modelName && m.title.toLowerCase().includes(modelName.toLowerCase())) ||
                 (it.description && m.title.toLowerCase().includes(it.description.toLowerCase())) ||
                 (it.description && it.description.toLowerCase().includes(m.title.toLowerCase()))
@@ -832,34 +830,38 @@ export const piService = {
               return found && typeof found.value === 'string' ? found.value.trim() : '';
             };
             const meta = specs.find((s: any) => s.label === '__hardware_meta')?.value || {};
-            if (!width) width = meta.width || findM('width') || '300 mm';
-            if (!depth) depth = meta.depth || findM('depth') || '450 mm';
-            if (!height) height = meta.height || findM('height') || '1800 mm';
-            if (!boardThickness) boardThickness = meta.boardThickness || findM('thickness') || '9mm';
+            const modelW = (matchedLockerModel as any).width || meta.width || findM('unit / column width') || findM('standard width') || findM('width');
+            const modelD = (matchedLockerModel as any).depth || meta.depth || findM('standard depth') || findM('depth');
+            const modelH = (matchedLockerModel as any).height || meta.height || findM('standard height') || findM('height');
+            const modelThick = (matchedLockerModel as any).boardThickness || meta.boardThickness || findM('board thickness') || findM('thickness');
+
+            if (modelW) width = modelW;
+            if (modelD) depth = modelD;
+            if (modelH) height = modelH;
+            if (modelThick) boardThickness = modelThick;
           }
+
+          const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
+          const cleanW = (width ? String(width).replace(/[^0-9.]/g, '') : '') || '300';
+          const cleanD = (depth ? String(depth).replace(/[^0-9.]/g, '') : '') || '450';
+          const cleanH = (height ? String(height).replace(/[^0-9.]/g, '') : '') ||
+            (it.cubicleSize && it.cubicleSize.match(/(\d+)\s*(?:mm)?\s*h/i)?.[1]) ||
+            (it.overallHeight ? String(it.overallHeight).match(/^\s*(\d+)/)?.[1] : '') || '600';
+          const numH = parseInt(cleanH) || 600;
+
+          const compH = numH < 1000 ? numH : (tierRows > 1 ? Math.round(numH / tierRows) : numH);
+          const totalH = numH < 1000 ? (tierRows > 1 ? compH * tierRows : compH) : numH;
 
           let cubicleSize = it.cubicleSize;
           let doorSize = it.doorSize;
           let overallHeight = it.overallHeight;
 
-          const tierRows = isLocker ? (parseFloat(String(it.unit).replace(/[^0-9.]/g, '')) || 1) : 1;
-          const cleanW = (width ? String(width).replace(/[^0-9.]/g, '') : '') || '300';
-          const cleanD = (depth ? String(depth).replace(/[^0-9.]/g, '') : '') || '450';
-          let cleanH = (height ? String(height).replace(/[^0-9.]/g, '') : '') || (overallHeight ? String(overallHeight).replace(/[^0-9.]/g, '') : '') || '1800';
-          const numH = parseInt(cleanH) || 1800;
-          const totalH = (numH < 1000 && tierRows >= 2) ? (numH * tierRows) : (numH >= 1000 ? numH : 1800);
-          const compH = Math.round(totalH / tierRows);
-
           if (isLocker) {
-            if (!cubicleSize || /^\s*\d+\s*col/i.test(cubicleSize) || cubicleSize.toLowerCase().includes('doors') || !cubicleSize.toLowerCase().includes('w')) {
-              cubicleSize = `${cleanW}mm W × ${cleanD}mm D × ${totalH}mm H`;
-            }
-            if (!overallHeight || overallHeight === 'null' || !overallHeight.includes('mm')) {
-              overallHeight = `${totalH}mm (plus 100mm plinth base)`;
-            }
-            if (!doorSize || doorSize === 'N/A' || doorSize.includes('as per drawing') || doorSize.toLowerCase().includes('doors as per')) {
-              doorSize = `${tierRows} Tier Modular Doors (${cleanW}mm W × ${compH}mm H per door)`;
-            }
+            cubicleSize = `${cleanW}mm W × ${cleanD}mm D × ${totalH}mm H`;
+            overallHeight = `${totalH}mm`;
+            doorSize = tierRows > 1
+              ? `${tierRows} Tier Modular Doors (${cleanW}mm W × ${compH}mm H per door)`
+              : `1 Tier Modular Door (${cleanW}mm W × ${compH}mm H)`;
           }
 
           return {
@@ -879,15 +881,20 @@ export const piService = {
             doorSize: (isLocker ? doorSize : it.doorSize) || undefined,
             overallHeight: (isLocker ? overallHeight : it.overallHeight) || undefined,
             hardwarePackage: it.hardwarePackage || (it as any).customSpecsJson?.hardwarePackage || undefined,
-            customModelName: (it as any).customModelName || (it as any).modelName || (it as any).customSpecsJson?.customModelName || undefined,
-            modelName: (it as any).modelName || (it as any).customModelName || (it as any).customSpecsJson?.modelName || undefined,
+            customModelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : ((it as any).customModelName || (it as any).modelName || (it as any).customSpecsJson?.customModelName || undefined),
+            modelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : ((it as any).modelName || (it as any).customModelName || (it as any).customSpecsJson?.modelName || undefined),
             isCustom: Boolean((it as any).isCustom || (it as any).customSpecsJson?.isCustom || (it as any).systemCategory === 'custom'),
             customSpecsJson: {
               ...customSpecs,
               systemCategory: isLocker ? 'locker' : customSpecs.systemCategory,
               width: isLocker ? `${cleanW}mm` : customSpecs.width,
               depth: isLocker ? `${cleanD}mm` : customSpecs.depth,
-              height: isLocker ? `${totalH}mm` : customSpecs.height,
+              height: isLocker ? `${compH}mm` : customSpecs.height,
+              overallHeight: isLocker ? `${totalH}mm` : customSpecs.overallHeight,
+              compartmentDimension: isLocker ? `${cleanW}mm W × ${cleanD}mm D × ${compH}mm H` : customSpecs.compartmentDimension,
+              overallLockerDimension: isLocker ? `${cleanW}mm W × ${cleanD}mm D × ${totalH}mm H` : customSpecs.overallLockerDimension,
+              customModelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : customSpecs.customModelName,
+              modelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : customSpecs.modelName,
             },
             systemCategory: isLocker ? 'locker' : ((it as any).systemCategory || customSpecs.systemCategory || undefined),
           };

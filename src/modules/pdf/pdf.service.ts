@@ -845,26 +845,33 @@ export const pdfService = {
         let doorSize = it.doorSize || fallbackSpecs.doorSize;
         let overallHeight = it.overallHeight || fallbackSpecs.overallHeight;
 
+        let displayOverallSize = '';
+        let displayCompSize = '';
+
         if (isLocker) {
           const cleanW = (customSpecs.width ? String(customSpecs.width).replace(/[^0-9.]/g, '') : '') ||
             (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*w/i)?.[1]) || '300';
           const cleanD = (customSpecs.depth ? String(customSpecs.depth).replace(/[^0-9.]/g, '') : '') ||
             (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*d/i)?.[1]) || '450';
-          let cleanH = (overallHeight ? String(overallHeight).replace(/[^0-9.]/g, '') : '') ||
-            (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') ||
-            (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*h/i)?.[1]) || '1800';
+          const cleanH = (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') ||
+            (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*h/i)?.[1]) ||
+            (overallHeight ? String(overallHeight).match(/^\s*(\d+)/)?.[1] : '') || '600';
 
-          const numH = parseInt(cleanH) || 1800;
-          const totalH = (numH < 1000 && tierRows >= 2) ? (numH * tierRows) : (numH >= 1000 ? numH : 1800);
-          const compH = Math.round(totalH / tierRows);
+          const numH = parseInt(cleanH) || 600;
+          const compH = numH < 1000 ? numH : (tierRows > 1 ? Math.round(numH / tierRows) : numH);
+          const totalH = numH < 1000 ? (tierRows > 1 ? compH * tierRows : compH) : numH;
 
           widthStr = `${cleanW}mm`;
           depthStr = `${cleanD}mm`;
           heightStr = `${totalH}mm`;
 
-          cubicleSize = `${widthStr} W × ${depthStr} D × ${heightStr} H`;
-          doorSize = `${tierRows} Tier Modular Doors (${widthStr} W × ${compH}mm H per door)`;
-          overallHeight = `${heightStr} (plus 100mm plinth base)`;
+          displayOverallSize = `${widthStr} W × ${depthStr} D × ${heightStr} H`;
+          displayCompSize = `${widthStr} W × ${depthStr} D × ${compH}mm H`;
+          doorSize = tierRows > 1
+            ? `${tierRows} Tier Modular Doors (${widthStr} W × ${compH}mm H per door)`
+            : `1 Tier Modular Door (${widthStr} W × ${compH}mm H)`;
+          overallHeight = `${heightStr}`;
+          cubicleSize = displayOverallSize;
         } else {
           const customDims = (customSpecs.width || customSpecs.depth || customSpecs.height)
             ? [
@@ -943,7 +950,8 @@ export const pdfService = {
                     <div>• <strong>Board Type:</strong> ${boardType || 'HPL'}</div>
                     <div>• <strong>Board Thickness:</strong> ${boardThickness || '12mm'}</div>
                     ${boardColor ? `<div>• <strong>Color / Finish:</strong> ${boardColor}</div>` : ''}
-                    <div>• <strong>Locker Dimension:</strong> ${cubicleSize}</div>
+                    ${tierRows > 1 ? `<div>• <strong>Overall Locker Dimension:</strong> ${displayOverallSize}</div>` : ''}
+                    <div>• <strong>${tierRows > 1 ? 'Compartment Dimension' : 'Locker Dimension'}:</strong> ${displayCompSize}</div>
                     <div>• <strong>Compartment / Door Size:</strong> ${doorSize}</div>
                     ${hardwarePackage ? `<div>• <strong>Hardware / Fittings:</strong> ${hardwarePackage}</div>` : ''}
                     ${customNotes ? `<div>• <strong>Notes / Specs:</strong> ${customNotes}</div>` : ''}
@@ -2169,6 +2177,8 @@ export const pdfService = {
             let widthStr = '';
             let depthStr = '';
             let heightStr = '';
+            let displayOverallSize = '';
+            let displayCompSize = '';
             let displaySize = item.cubicleSize || '';
             let displayDoor = item.doorSize;
             let displayHeight = item.overallHeight;
@@ -2178,21 +2188,25 @@ export const pdfService = {
                 (displaySize && displaySize.match(/(\d+)\s*(?:mm)?\s*w/i)?.[1]) || '300';
               const cleanD = (customSpecs.depth ? String(customSpecs.depth).replace(/[^0-9.]/g, '') : '') ||
                 (displaySize && displaySize.match(/(\d+)\s*(?:mm)?\s*d/i)?.[1]) || '450';
-              let cleanH = (displayHeight ? String(displayHeight).replace(/[^0-9.]/g, '') : '') ||
-                (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') ||
-                (displaySize && displaySize.match(/(\d+)\s*(?:mm)?\s*h/i)?.[1]) || '1800';
+              const cleanH = (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') ||
+                (displaySize && displaySize.match(/(\d+)\s*(?:mm)?\s*h/i)?.[1]) ||
+                (displayHeight ? String(displayHeight).match(/^\s*(\d+)/)?.[1] : '') || '600';
 
-              const numH = parseInt(cleanH) || 1800;
-              const totalH = (numH < 1000 && tierRows >= 2) ? (numH * tierRows) : (numH >= 1000 ? numH : 1800);
-              const compH = Math.round(totalH / tierRows);
+              const numH = parseInt(cleanH) || 600;
+              const compH = numH < 1000 ? numH : (tierRows > 1 ? Math.round(numH / tierRows) : numH);
+              const totalH = numH < 1000 ? (tierRows > 1 ? compH * tierRows : compH) : numH;
 
               widthStr = `${cleanW}mm`;
               depthStr = `${cleanD}mm`;
               heightStr = `${totalH}mm`;
 
-              displaySize = `${widthStr} W × ${depthStr} D × ${heightStr} H`;
-              displayDoor = `${tierRows} Tier Modular Doors (${widthStr} W × ${compH}mm H per door)`;
-              displayHeight = `${heightStr} (plus 100mm plinth base)`;
+              displayOverallSize = `${widthStr} W × ${depthStr} D × ${heightStr} H`;
+              displayCompSize = `${widthStr} W × ${depthStr} D × ${compH}mm H`;
+              displayDoor = tierRows > 1
+                ? `${tierRows} Tier Modular Doors (${widthStr} W × ${compH}mm H per door)`
+                : `1 Tier Modular Door (${widthStr} W × ${compH}mm H)`;
+              displayHeight = `${heightStr}`;
+              displaySize = displayOverallSize;
             } else {
               const customDims = (customSpecs.width || customSpecs.depth || customSpecs.height)
                 ? [
@@ -2238,7 +2252,8 @@ export const pdfService = {
                       <div>• <strong>Board Type:</strong> ${displayBoardType || 'HPL'}</div>
                       <div>• <strong>Board Thickness:</strong> ${displayBoardThickness || '12mm'}</div>
                       ${displayBoardColor ? `<div>• <strong>Color / Finish:</strong> ${displayBoardColor}</div>` : ''}
-                      <div>• <strong>Locker Dimension:</strong> ${displaySize}</div>
+                      ${tierRows > 1 ? `<div>• <strong>Overall Locker Dimension:</strong> ${displayOverallSize}</div>` : ''}
+                      <div>• <strong>${tierRows > 1 ? 'Compartment Dimension' : 'Locker Dimension'}:</strong> ${displayCompSize}</div>
                       <div>• <strong>Compartment / Door Size:</strong> ${displayDoor}</div>
                       ${showHardware ? `<div>• <strong>Hardware / Fittings:</strong> ${displayHardware}</div>` : ''}
                       ${displayHsn ? `<div>• <strong>HSN/SAC:</strong> ${displayHsn}</div>` : ''}
@@ -2415,7 +2430,7 @@ export const pdfService = {
           ${hasModelImages ? `
           <td style="width: 35%; vertical-align: bottom; text-align: right;">
             <div class="section-title-p2" style="margin: 6px 0 2px 0; border-bottom: 1.5px solid #7FB706; text-align: right; color: #000000;">
-              System Model Visual${modelImages.length > 1 ? 's' : ''}
+              ${modelImages.length === 1 && modelImages[0].modelName ? modelImages[0].modelName : `System Model Visual${modelImages.length > 1 ? 's' : ''}`}
             </div>
           </td>
           ` : ''}
@@ -3064,26 +3079,33 @@ export const pdfService = {
         let doorSize = it.doorSize || fallbackSpecs.doorSize;
         let overallHeight = it.overallHeight || fallbackSpecs.overallHeight;
 
+        let displayOverallSize = '';
+        let displayCompSize = '';
+
         if (isLocker) {
           const cleanW = (customSpecs.width ? String(customSpecs.width).replace(/[^0-9.]/g, '') : '') ||
             (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*w/i)?.[1]) || '300';
           const cleanD = (customSpecs.depth ? String(customSpecs.depth).replace(/[^0-9.]/g, '') : '') ||
             (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*d/i)?.[1]) || '450';
-          let cleanH = (overallHeight ? String(overallHeight).replace(/[^0-9.]/g, '') : '') ||
-            (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') ||
-            (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*h/i)?.[1]) || '1800';
+          const cleanH = (customSpecs.height ? String(customSpecs.height).replace(/[^0-9.]/g, '') : '') ||
+            (cubicleSize && cubicleSize.match(/(\d+)\s*(?:mm)?\s*h/i)?.[1]) ||
+            (overallHeight ? String(overallHeight).match(/^\s*(\d+)/)?.[1] : '') || '600';
 
-          const numH = parseInt(cleanH) || 1800;
-          const totalH = (numH < 1000 && tierRows >= 2) ? (numH * tierRows) : (numH >= 1000 ? numH : 1800);
-          const compH = Math.round(totalH / tierRows);
+          const numH = parseInt(cleanH) || 600;
+          const compH = numH < 1000 ? numH : (tierRows > 1 ? Math.round(numH / tierRows) : numH);
+          const totalH = numH < 1000 ? (tierRows > 1 ? compH * tierRows : compH) : numH;
 
           widthStr = `${cleanW}mm`;
           depthStr = `${cleanD}mm`;
           heightStr = `${totalH}mm`;
 
-          cubicleSize = `${widthStr} W × ${depthStr} D × ${heightStr} H`;
-          doorSize = `${tierRows} Tier Modular Doors (${widthStr} W × ${compH}mm H per door)`;
-          overallHeight = `${heightStr} (plus 100mm plinth base)`;
+          displayOverallSize = `${widthStr} W × ${depthStr} D × ${heightStr} H`;
+          displayCompSize = `${widthStr} W × ${depthStr} D × ${compH}mm H`;
+          doorSize = tierRows > 1
+            ? `${tierRows} Tier Modular Doors (${widthStr} W × ${compH}mm H per door)`
+            : `1 Tier Modular Door (${widthStr} W × ${compH}mm H)`;
+          overallHeight = `${heightStr}`;
+          cubicleSize = displayOverallSize;
         } else {
           const customDims = (customSpecs.width || customSpecs.depth || customSpecs.height)
             ? [
@@ -3133,7 +3155,8 @@ export const pdfService = {
                     <div>• <strong>Board Type:</strong> ${boardType || 'HPL'}</div>
                     <div>• <strong>Board Thickness:</strong> ${boardThickness || '12mm'}</div>
                     ${boardColor ? `<div>• <strong>Board Color:</strong> ${boardColor}</div>` : ''}
-                    <div>• <strong>Locker Dimension:</strong> ${cubicleSize}</div>
+                    ${tierRows > 1 ? `<div>• <strong>Overall Locker Dimension:</strong> ${displayOverallSize}</div>` : ''}
+                    <div>• <strong>${tierRows > 1 ? 'Compartment Dimension' : 'Locker Dimension'}:</strong> ${displayCompSize}</div>
                     <div>• <strong>Compartment / Door Size:</strong> ${doorSize}</div>
                     ${hardwarePackage ? `<div>• <strong>Hardware Package:</strong> ${hardwarePackage}</div>` : ''}
                   ` : `
