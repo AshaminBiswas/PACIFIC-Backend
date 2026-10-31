@@ -2,8 +2,47 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
 import { sendSuccess } from '../../utils/response';
 import { dailySalesPurchasesService } from './dailySalesPurchases.service';
+import { dailySalesPurchasesPdfService } from './dailySalesPurchasesPdf.service';
+import { htmlToPdfBuffer } from '../../utils/htmlToPdf';
 
 export const dailySalesPurchasesController = {
+  async getPdf(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const html = await dailySalesPurchasesPdfService.generateDailyReportHtml({
+        startDate: (req.query.startDate as string) || new Date().toISOString().slice(0, 10),
+        endDate: (req.query.endDate as string) || new Date().toISOString().slice(0, 10),
+        date: req.query.date as string,
+        companyProfileId: req.query.companyProfileId as string,
+      });
+
+      const wantsDownload = req.query.download === 'true' || req.query.dl === '1';
+
+      if (wantsDownload) {
+        try {
+          const pdfBuffer = await htmlToPdfBuffer(html);
+          const dateStr = (req.query.date as string) || (req.query.startDate as string) || 'Report';
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader(
+            'Content-Disposition',
+            `attachment; filename="Daily_Sales_Purchase_Report_${dateStr}.pdf"`
+          );
+          res.send(pdfBuffer);
+          return;
+        } catch (pdfErr: any) {
+          console.warn(
+            '[Daily Report PDF] Headless browser generation failed, serving printable HTML fallback:',
+            pdfErr?.message
+          );
+        }
+      }
+
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async create(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const result = await dailySalesPurchasesService.createEntry(

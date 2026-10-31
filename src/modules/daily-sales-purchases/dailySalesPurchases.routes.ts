@@ -10,6 +10,7 @@ router.use(requireAuth);
 router.post('/', dailySalesPurchasesController.create);
 router.get('/', dailySalesPurchasesController.list);
 router.get('/summary', dailySalesPurchasesController.summary);
+router.get('/pdf', dailySalesPurchasesController.getPdf);
 router.get('/:id', dailySalesPurchasesController.getById);
 router.put('/:id', dailySalesPurchasesController.update);
 router.patch('/:id', dailySalesPurchasesController.update);
