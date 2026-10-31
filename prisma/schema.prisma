@@ -3341,3 +3341,58 @@ model DailySalesPurchase {
   @@map("daily_sales_purchases")
 }
 
+model Branch {
+  id               String              @id
+  code             String              @unique
+  name             String
+  city             String
+  state            String
+  address          String?
+  phone            String?
+  email            String?
+  contactPerson    String?             @map("contact_person")
+  openingBalance   Decimal             @default(0) @map("opening_balance") @db.Decimal(14, 2)
+  currentBalance   Decimal             @default(0) @map("current_balance") @db.Decimal(14, 2)
+  isDefault        Boolean             @default(false) @map("is_default")
+  isActive         Boolean             @default(true) @map("is_active")
+  companyProfileId String?             @map("company_profile_id")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at")
+  transactions     BranchTransaction[]
+
+  @@map("branches")
+}
+
+model BranchTransaction {
+  id               String    @id @default(uuid())
+  branchId         String    @map("branch_id")
+  branch           Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  entryDate        DateTime  @map("entry_date") @db.Date
+  type             String    // 'CREDIT' or 'DEBIT'
+  amount           Decimal   @db.Decimal(14, 2)
+  runningBalance   Decimal   @default(0) @map("running_balance") @db.Decimal(14, 2)
+  category         String
+  partyName        String    @map("party_name")
+  partyType        String?   @map("party_type")
+  referenceNo      String?   @map("reference_no")
+  paymentMode      String    @default("BANK_TRANSFER") @map("payment_mode")
+  paymentStatus    String    @default("CLEARED") @map("payment_status")
+  description      String?
+  voucherUrl       String?   @map("voucher_url")
+  companyProfileId String?   @map("company_profile_id")
+  createdBy        String?   @map("created_by")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  @@index([branchId])
+  @@index([entryDate])
+  @@index([branchId, entryDate])
+  @@index([type])
+  @@index([branchId, type])
+  @@index([category])
+  @@index([deletedAt])
+  @@map("branch_transactions")
+}
+
+
