@@ -5,6 +5,9 @@
  * and background report queue processing without blocking main ERP threads.
  */
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { analyticsService } from '../modules/analytics/analytics.service';
 import { analyticsCache } from '../modules/analytics/analytics.cache';
 import { reportQueueService } from '../modules/analytics/reportQueue.service';

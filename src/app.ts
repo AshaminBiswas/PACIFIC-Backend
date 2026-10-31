@@ -51,6 +51,7 @@ import upRoutes from './modules/up/up.routes';
 import wacrmRoutes from './modules/wacrm/wacrm.routes';
 import mailRoutes from './modules/mail/mail.routes';
 import analyticsRoutes from './modules/analytics/analytics.routes';
+import dailySalesPurchasesRoutes from './modules/daily-sales-purchases/dailySalesPurchases.routes';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 const app = express();
@@ -234,6 +235,7 @@ app.use(`${prefix}/users`, usersRoutes);
 app.use(`${prefix}/up`, upRoutes);
 app.use(`${prefix}/wacrm`, wacrmRoutes);
 app.use(`${prefix}/mail`, mailRoutes);
+app.use(`${prefix}/daily-sales-purchases`, dailySalesPurchasesRoutes);
 
 // ─── Initialize Roles & Permissions ──────────────────────────────────────────
 rolesService.seedDefaultRolesAndPermissions().catch((err) => {

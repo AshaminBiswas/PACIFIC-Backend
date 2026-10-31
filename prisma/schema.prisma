@@ -362,7 +362,8 @@ model CustomerProfile {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
-  receivableEntries ReceivableEntry[]
+  receivableEntries   ReceivableEntry[]
+  dailySalesPurchases DailySalesPurchase[]
 
   @@map("customer_profiles")
 }
@@ -377,8 +378,9 @@ model VendorProfile {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
-  payableEntries   PayableEntry[]
-  boardItems       BoardInventoryItem[]
+  payableEntries      PayableEntry[]
+  boardItems          BoardInventoryItem[]
+  dailySalesPurchases DailySalesPurchase[]
 
   @@map("vendor_profiles")
 }
@@ -3305,3 +3307,37 @@ model UpCashDay {
   @@index([cashDate])
   @@map("up_cash_days")
 }
+
+model DailySalesPurchase {
+  id               String           @id @default(uuid())
+  entryDate        DateTime         @map("entry_date") @db.Date
+  type             String           // 'SALES' or 'PURCHASE'
+  amount           Decimal          @db.Decimal(14, 2)
+  taxAmount        Decimal          @default(0) @map("tax_amount") @db.Decimal(14, 2)
+  totalAmount      Decimal          @map("total_amount") @db.Decimal(14, 2)
+  referenceNo      String?          @map("reference_no")
+  partyName        String?          @map("party_name")
+  customerId       String?          @map("customer_id")
+  customer         CustomerProfile? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  vendorId         String?          @map("vendor_id")
+  vendor           VendorProfile?   @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  category         String?
+  description      String?
+  paymentMode      String           @default("CASH") @map("payment_mode")
+  paymentStatus    String           @default("PAID") @map("payment_status")
+  companyProfileId String?          @map("company_profile_id")
+  createdBy        String?          @map("created_by")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at")
+  deletedAt        DateTime?        @map("deleted_at")
+
+  @@index([entryDate])
+  @@index([type])
+  @@index([entryDate, type])
+  @@index([customerId])
+  @@index([vendorId])
+  @@index([companyProfileId])
+  @@index([deletedAt])
+  @@map("daily_sales_purchases")
+}
+

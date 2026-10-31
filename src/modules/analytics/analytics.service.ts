@@ -102,67 +102,33 @@ export const analyticsService = {
     const prevStart = resolvedRange.previousStartDate ? new Date(resolvedRange.previousStartDate) : null;
     const prevEnd = resolvedRange.previousEndDate ? new Date(resolvedRange.previousEndDate) : null;
 
-    // 2. Parallel High-Speed Database Aggregations
+    // 2. High-Speed Database Aggregations in managed concurrency sub-pools
+    // Batch 1A: Core Sales & Purchases (Delinked from PI — Directly from DailySalesPurchase)
     const [
       currSalesAgg,
       prevSalesAgg,
       currPoAgg,
       prevPoAgg,
-      currPaymentAgg,
-      prevPaymentAgg,
-      currQuoteAgg,
-      currQuoteConvertedAgg,
-      prevQuoteAgg,
-      prevQuoteConvertedAgg,
-      currOrderAgg,
-      prevOrderAgg,
-      receivablesData,
-      payablesData,
-      currPiItems,
-      topCustomersAgg,
-      topSuppliersAgg,
     ] = await Promise.all([
-      // A. Current Period Sales (Proforma Invoices)
-      prisma.proformaInvoice.aggregate({
+      // A. Current Period Sales (Directly from Daily Sales Entries)
+      prisma.dailySalesPurchase.aggregate({
         where: {
-          piDate: { gte: curStart, lte: curEnd },
-          status: { not: 'CANCELLED' },
-          ...companyFilter,
-        },
-        _sum: { grandTotal: true },
-        _count: { id: true },
-      }),
-
-      // B. Previous Period Sales
-      prevStart && prevEnd
-        ? prisma.proformaInvoice.aggregate({
-            where: {
-              piDate: { gte: prevStart, lte: prevEnd },
-              status: { not: 'CANCELLED' },
-              ...companyFilter,
-            },
-            _sum: { grandTotal: true },
-            _count: { id: true },
-          })
-        : Promise.resolve({ _sum: { grandTotal: null }, _count: { id: 0 } }),
-
-      // C. Current Period Purchases (Purchase Orders)
-      prisma.purchaseOrder.aggregate({
-        where: {
-          poDate: { gte: curStart, lte: curEnd },
-          status: { not: 'CANCELLED' },
+          entryDate: { gte: curStart, lte: curEnd },
+          type: 'SALES',
+          deletedAt: null,
           ...companyFilter,
         },
         _sum: { totalAmount: true },
         _count: { id: true },
       }),
 
-      // D. Previous Period Purchases
+      // B. Previous Period Sales (Directly from Daily Sales Entries)
       prevStart && prevEnd
-        ? prisma.purchaseOrder.aggregate({
+        ? prisma.dailySalesPurchase.aggregate({
             where: {
-              poDate: { gte: prevStart, lte: prevEnd },
-              status: { not: 'CANCELLED' },
+              entryDate: { gte: prevStart, lte: prevEnd },
+              type: 'SALES',
+              deletedAt: null,
               ...companyFilter,
             },
             _sum: { totalAmount: true },
@@ -170,6 +136,42 @@ export const analyticsService = {
           })
         : Promise.resolve({ _sum: { totalAmount: null }, _count: { id: 0 } }),
 
+      // C. Current Period Purchases (Directly from Daily Purchase Entries)
+      prisma.dailySalesPurchase.aggregate({
+        where: {
+          entryDate: { gte: curStart, lte: curEnd },
+          type: 'PURCHASE',
+          deletedAt: null,
+          ...companyFilter,
+        },
+        _sum: { totalAmount: true },
+        _count: { id: true },
+      }),
+
+      // D. Previous Period Purchases (Directly from Daily Purchase Entries)
+      prevStart && prevEnd
+        ? prisma.dailySalesPurchase.aggregate({
+            where: {
+              entryDate: { gte: prevStart, lte: prevEnd },
+              type: 'PURCHASE',
+              deletedAt: null,
+              ...companyFilter,
+            },
+            _sum: { totalAmount: true },
+            _count: { id: true },
+          })
+        : Promise.resolve({ _sum: { totalAmount: null }, _count: { id: 0 } }),
+    ]);
+
+    // Batch 1B: Collections & Quotations (PgBouncer-safe sub-pool)
+    const [
+      currPaymentAgg,
+      prevPaymentAgg,
+      currQuoteAgg,
+      currQuoteConvertedAgg,
+      prevQuoteAgg,
+      prevQuoteConvertedAgg,
+    ] = await Promise.all([
       // E. Current Period Collections
       prisma.payment.aggregate({
         where: {
@@ -233,7 +235,15 @@ export const analyticsService = {
             },
           })
         : Promise.resolve(0),
+    ]);
 
+    // Batch 2: Orders, Receivables & Payables (I - L: 4 queries)
+    const [
+      currOrderAgg,
+      prevOrderAgg,
+      receivablesData,
+      payablesData,
+    ] = await Promise.all([
       // I. Current Orders
       prisma.salesOrder.aggregate({
         where: {
@@ -283,45 +293,53 @@ export const analyticsService = {
         },
         take: 5000,
       }),
+    ]);
 
-      // M. Product Category Breakdown from Line Items in this period
-      prisma.proformaInvoiceItem.findMany({
+    // Batch 3: Category items & Top Entity Groupings (M - O: 3 queries, sourced from DailySalesPurchase)
+    const [
+      currSalesEntries,
+      topCustomersAgg,
+      topSuppliersAgg,
+    ] = await Promise.all([
+      // M. Product Category Breakdown from Daily Sales entries
+      prisma.dailySalesPurchase.findMany({
         where: {
-          proformaInvoice: {
-            piDate: { gte: curStart, lte: curEnd },
-            status: { not: 'CANCELLED' },
-            ...companyFilter,
-          },
+          entryDate: { gte: curStart, lte: curEnd },
+          type: 'SALES',
+          deletedAt: null,
+          ...companyFilter,
         },
         select: {
+          category: true,
           description: true,
           amount: true,
-          rate: true,
-          quantity: true,
+          totalAmount: true,
         },
         take: 5000,
       }),
 
-      // N. Top 10 Customers in Period
-      prisma.proformaInvoice.groupBy({
-        by: ['customerId'],
+      // N. Top 10 Customers in Period (Delinked from PI — Directly from DailySalesPurchase)
+      prisma.dailySalesPurchase.groupBy({
+        by: ['customerId', 'partyName'],
         where: {
-          piDate: { gte: curStart, lte: curEnd },
-          status: { not: 'CANCELLED' },
+          entryDate: { gte: curStart, lte: curEnd },
+          type: 'SALES',
+          deletedAt: null,
           ...companyFilter,
         },
-        _sum: { grandTotal: true },
+        _sum: { totalAmount: true },
         _count: { id: true },
-        orderBy: { _sum: { grandTotal: 'desc' } },
+        orderBy: { _sum: { totalAmount: 'desc' } },
         take: 10,
       }),
 
-      // O. Top 10 Suppliers in Period
-      prisma.purchaseOrder.groupBy({
-        by: ['vendorId'],
+      // O. Top 10 Suppliers in Period (From Daily Purchases)
+      prisma.dailySalesPurchase.groupBy({
+        by: ['vendorId', 'partyName'],
         where: {
-          poDate: { gte: curStart, lte: curEnd },
-          status: { not: 'CANCELLED' },
+          entryDate: { gte: curStart, lte: curEnd },
+          type: 'PURCHASE',
+          deletedAt: null,
           ...companyFilter,
         },
         _sum: { totalAmount: true },
@@ -337,39 +355,39 @@ export const analyticsService = {
 
     const [customerParties, vendorParties] = await Promise.all([
       customerIds.length > 0
-        ? prisma.businessParty.findMany({
+        ? prisma.customerProfile.findMany({
             where: { id: { in: customerIds } },
-            select: { id: true, legalName: true, tradeName: true },
+            include: { party: true },
           })
         : [],
       vendorIds.length > 0
-        ? prisma.businessParty.findMany({
+        ? prisma.vendorProfile.findMany({
             where: { id: { in: vendorIds } },
-            select: { id: true, legalName: true, tradeName: true },
+            include: { party: true },
           })
         : [],
     ]);
 
-    const customerMap = new Map(customerParties.map((c) => [c.id, c.tradeName || c.legalName]));
-    const vendorMap = new Map(vendorParties.map((v) => [v.id, v.tradeName || v.legalName]));
+    const customerMap = new Map(customerParties.map((c) => [c.id, c.party?.tradeName || c.party?.legalName]));
+    const vendorMap = new Map(vendorParties.map((v) => [v.id, v.party?.tradeName || v.party?.legalName]));
 
     const topCustomers = topCustomersAgg.map((c) => ({
       id: c.customerId || '',
-      name: (c.customerId && customerMap.get(c.customerId)) || 'B2B Client',
-      revenue: Number(c._sum?.grandTotal || 0),
+      name: c.partyName || (c.customerId && customerMap.get(c.customerId)) || 'B2B Client',
+      revenue: Number(c._sum?.totalAmount || 0),
       ordersCount: (c._count as any)?.id || 0,
     }));
 
     const topSuppliers = topSuppliersAgg.map((v) => ({
       id: v.vendorId || '',
-      name: (v.vendorId && vendorMap.get(v.vendorId)) || 'Supplier',
+      name: v.partyName || (v.vendorId && vendorMap.get(v.vendorId)) || 'Supplier',
       spend: Number(v._sum?.totalAmount || 0),
       ordersCount: (v._count as any)?.id || 0,
     }));
 
     // 4. Calculate Mathematical Comparisons
-    const curRev = Number(currSalesAgg._sum?.grandTotal || 0);
-    const prevRev = Number(prevSalesAgg._sum?.grandTotal || 0);
+    const curRev = Number(currSalesAgg._sum?.totalAmount || 0);
+    const prevRev = Number(prevSalesAgg._sum?.totalAmount || 0);
     const revenueComp = calculateComparison(curRev, prevRev);
 
     const curPurch = Number(currPoAgg._sum?.totalAmount || 0);
@@ -438,14 +456,16 @@ export const analyticsService = {
     let hardwareRev = 0;
     let otherRev = 0;
 
-    currPiItems.forEach((it) => {
-      const amt = Number(it.amount || 0) || Number(it.rate || 0) * Number(it.quantity || 1);
+    currSalesEntries.forEach((it) => {
+      const amt = Number(it.totalAmount || 0) || Number(it.amount || 0);
+      const cat = (it.category || '').toLowerCase();
       const d = (it.description || '').toLowerCase();
-      if (d.includes('urinal') || d.includes('ump') || d.includes('modesty')) {
+      if (cat.includes('urinal') || d.includes('urinal') || d.includes('ump') || d.includes('modesty')) {
         urinalRev += amt;
-      } else if (d.includes('locker') || d.includes('tier')) {
+      } else if (cat.includes('locker') || d.includes('locker') || d.includes('tier')) {
         lockerRev += amt;
       } else if (
+        cat.includes('hardware') ||
         d.includes('hinge') ||
         d.includes('lock') ||
         d.includes('clamp') ||
@@ -454,7 +474,7 @@ export const analyticsService = {
         d.includes('hardware')
       ) {
         hardwareRev += amt;
-      } else if (d.includes('cubicle') || d.includes('partition') || d.includes('hpl') || d.includes('board')) {
+      } else if (cat.includes('cubicle') || d.includes('cubicle') || d.includes('partition') || d.includes('hpl') || d.includes('board')) {
         cubicleRev += amt;
       } else {
         otherRev += amt;
@@ -471,24 +491,26 @@ export const analyticsService = {
     ];
 
     // 7. Time-Series Trend Buckets (Parallel Sub-Period Aggregation)
-    // Fetch transaction dates for granular mapping
-    const [subPis, subPos, subPayments] = await Promise.all([
-      prisma.proformaInvoice.findMany({
+    // Sourced from Daily Sales & Purchases (Delinked from PI)
+    const [subSales, subPurchases, subPayments] = await Promise.all([
+      prisma.dailySalesPurchase.findMany({
         where: {
-          piDate: { gte: curStart, lte: curEnd },
-          status: { not: 'CANCELLED' },
+          entryDate: { gte: curStart, lte: curEnd },
+          type: 'SALES',
+          deletedAt: null,
           ...companyFilter,
         },
-        select: { piDate: true, grandTotal: true },
+        select: { entryDate: true, totalAmount: true },
         take: 5000,
       }),
-      prisma.purchaseOrder.findMany({
+      prisma.dailySalesPurchase.findMany({
         where: {
-          poDate: { gte: curStart, lte: curEnd },
-          status: { not: 'CANCELLED' },
+          entryDate: { gte: curStart, lte: curEnd },
+          type: 'PURCHASE',
+          deletedAt: null,
           ...companyFilter,
         },
-        select: { poDate: true, totalAmount: true },
+        select: { entryDate: true, totalAmount: true },
         take: 5000,
       }),
       prisma.payment.findMany({
@@ -510,17 +532,17 @@ export const analyticsService = {
       let bPurch = 0;
       let bCol = 0;
 
-      subPis.forEach((p) => {
-        if (!p.piDate) return;
-        const t = new Date(p.piDate).getTime();
+      subSales.forEach((p) => {
+        if (!p.entryDate) return;
+        const t = new Date(p.entryDate).getTime();
         if (t >= bStart && t <= bEnd) {
-          bRev += Number(p.grandTotal || 0);
+          bRev += Number(p.totalAmount || 0);
         }
       });
 
-      subPos.forEach((po) => {
-        if (!po.poDate) return;
-        const t = new Date(po.poDate).getTime();
+      subPurchases.forEach((po) => {
+        if (!po.entryDate) return;
+        const t = new Date(po.entryDate).getTime();
         if (t >= bStart && t <= bEnd) {
           bPurch += Number(po.totalAmount || 0);
         }
@@ -615,23 +637,27 @@ export const analyticsService = {
     const end = new Date(params.endDate);
     const companyFilter = params.companyProfileId ? { companyProfileId: params.companyProfileId } : {};
 
-    const [pis, pos, payments] = await Promise.all([
-      prisma.proformaInvoice.findMany({
+    const [dailySales, dailyPurchases, payments] = await Promise.all([
+      prisma.dailySalesPurchase.findMany({
         where: {
-          piDate: { gte: start, lte: end },
+          entryDate: { gte: start, lte: end },
+          type: 'SALES',
+          deletedAt: null,
           ...companyFilter,
         },
-        include: { customer: true },
-        orderBy: { piDate: 'desc' },
+        include: { customer: { include: { party: true } } },
+        orderBy: { entryDate: 'desc' },
         take: 500,
       }),
-      prisma.purchaseOrder.findMany({
+      prisma.dailySalesPurchase.findMany({
         where: {
-          poDate: { gte: start, lte: end },
+          entryDate: { gte: start, lte: end },
+          type: 'PURCHASE',
+          deletedAt: null,
           ...companyFilter,
         },
-        include: { vendor: true },
-        orderBy: { poDate: 'desc' },
+        include: { vendor: { include: { party: true } } },
+        orderBy: { entryDate: 'desc' },
         take: 500,
       }),
       prisma.payment.findMany({
@@ -657,31 +683,31 @@ export const analyticsService = {
       status: string;
     }> = [];
 
-    pis.forEach((p) => {
+    dailySales.forEach((p) => {
       combined.push({
         id: p.id,
-        docNumber: p.piNumber,
+        docNumber: p.referenceNo || `SALE-${p.id.slice(0, 8).toUpperCase()}`,
         type: 'SALES',
-        date: p.piDate ? new Date(p.piDate).toISOString() : '',
-        partyName: p.customer?.tradeName || p.customer?.legalName || 'Valued Customer',
-        amount: Number(p.subtotal || 0),
-        taxAmount: Number(p.totalTaxAmount || 0),
-        grandTotal: Number(p.grandTotal || 0),
-        status: p.status,
+        date: p.entryDate ? new Date(p.entryDate).toISOString() : '',
+        partyName: p.partyName || p.customer?.party?.tradeName || p.customer?.party?.legalName || 'Direct Customer',
+        amount: Number(p.amount || 0),
+        taxAmount: Number(p.taxAmount || 0),
+        grandTotal: Number(p.totalAmount || 0),
+        status: p.paymentStatus,
       });
     });
 
-    pos.forEach((po) => {
+    dailyPurchases.forEach((po) => {
       combined.push({
         id: po.id,
-        docNumber: po.poNumber,
+        docNumber: po.referenceNo || `PUR-${po.id.slice(0, 8).toUpperCase()}`,
         type: 'PURCHASE',
-        date: po.poDate ? new Date(po.poDate).toISOString() : '',
-        partyName: po.vendor?.tradeName || po.vendor?.legalName || 'Supplier',
-        amount: Number(po.subtotal || 0),
-        taxAmount: Number(po.gstAmount || 0),
+        date: po.entryDate ? new Date(po.entryDate).toISOString() : '',
+        partyName: po.partyName || po.vendor?.party?.tradeName || po.vendor?.party?.legalName || 'Direct Supplier',
+        amount: Number(po.amount || 0),
+        taxAmount: Number(po.taxAmount || 0),
         grandTotal: Number(po.totalAmount || 0),
-        status: po.status,
+        status: po.paymentStatus,
       });
     });
 

@@ -191,25 +191,29 @@ class ReportQueueService {
 
     job.progress = 25;
 
-    // Fetch transactions based on reportType
+    // Fetch transactions based on reportType (Delinked from PI — directly from DailySalesPurchase)
     if (job.reportType === 'TRANSACTIONS' || job.reportType === 'SALES_SUMMARY') {
-      const [pis, pos, payments] = await Promise.all([
-        prisma.proformaInvoice.findMany({
+      const [dailySales, dailyPurchases, payments] = await Promise.all([
+        prisma.dailySalesPurchase.findMany({
           where: {
-            piDate: { gte: start, lte: end },
+            entryDate: { gte: start, lte: end },
+            type: 'SALES',
+            deletedAt: null,
             ...companyFilter,
           },
-          include: { customer: true, companyProfile: true },
-          orderBy: { piDate: 'desc' },
+          include: { customer: { include: { party: true } } },
+          orderBy: { entryDate: 'desc' },
           take: 5000,
         }),
-        prisma.purchaseOrder.findMany({
+        prisma.dailySalesPurchase.findMany({
           where: {
-            poDate: { gte: start, lte: end },
+            entryDate: { gte: start, lte: end },
+            type: 'PURCHASE',
+            deletedAt: null,
             ...companyFilter,
           },
-          include: { vendor: true, companyProfile: true },
-          orderBy: { poDate: 'desc' },
+          include: { vendor: { include: { party: true } } },
+          orderBy: { entryDate: 'desc' },
           take: 5000,
         }),
         prisma.payment.findMany({
@@ -226,9 +230,9 @@ class ReportQueueService {
       job.progress = 65;
 
       if (job.format === 'csv') {
-        await this.writeTransactionsCsv(filePath, pis, pos, payments);
+        await this.writeTransactionsCsv(filePath, dailySales, dailyPurchases, payments);
       } else {
-        await this.writeTransactionsExcel(filePath, pis, pos, payments, job.startDate, job.endDate);
+        await this.writeTransactionsExcel(filePath, dailySales, dailyPurchases, payments, job.startDate, job.endDate);
       }
     } else {
       // Default summary workbook
@@ -242,8 +246,8 @@ class ReportQueueService {
 
   private async writeTransactionsExcel(
     filePath: string,
-    pis: any[],
-    pos: any[],
+    dailySales: any[],
+    dailyPurchases: any[],
     payments: any[],
     startStr: string,
     endStr: string
@@ -252,56 +256,64 @@ class ReportQueueService {
     workbook.creator = 'Pacific Restroom Cubicle Enterprise ERP';
     workbook.created = new Date();
 
-    // 1. Sales Sheet (PIs)
-    const salesSheet = workbook.addWorksheet('Sales (Proforma Invoices)');
+    // 1. Sales Sheet (Daily Sales Entries)
+    const salesSheet = workbook.addWorksheet('Daily Sales Report');
     salesSheet.columns = [
-      { header: 'PI Number', key: 'piNumber', width: 20 },
+      { header: 'Ref / Invoice No', key: 'refNo', width: 22 },
       { header: 'Date', key: 'date', width: 14 },
-      { header: 'Customer', key: 'customer', width: 32 },
-      { header: 'Place of Supply', key: 'pos', width: 18 },
+      { header: 'Customer Name', key: 'customer', width: 32 },
+      { header: 'Category', key: 'category', width: 20 },
+      { header: 'Description', key: 'description', width: 28 },
+      { header: 'Payment Mode', key: 'mode', width: 16 },
       { header: 'Status', key: 'status', width: 14 },
-      { header: 'Taxable Amt (₹)', key: 'taxable', width: 18 },
-      { header: 'GST Total (₹)', key: 'gst', width: 16 },
-      { header: 'Grand Total (₹)', key: 'total', width: 20 },
-      { header: 'Advance Required', key: 'advance', width: 18 },
+      { header: 'Taxable Amt (₹)', key: 'amount', width: 18 },
+      { header: 'Tax Total (₹)', key: 'tax', width: 16 },
+      { header: 'Total Revenue (₹)', key: 'total', width: 20 },
     ];
     salesSheet.getRow(1).font = { bold: true };
 
-    pis.forEach((p) => {
+    dailySales.forEach((p) => {
       salesSheet.addRow({
-        piNumber: p.piNumber,
-        date: p.piDate ? new Date(p.piDate).toISOString().slice(0, 10) : '',
-        customer: p.customer?.tradeName || p.customer?.legalName || '—',
-        pos: p.placeOfSupply || '—',
-        status: p.status,
-        taxable: Number(p.subtotal || 0),
-        gst: Number(p.totalTaxAmount || 0),
-        total: Number(p.grandTotal || 0),
-        advance: Number(p.advanceRequiredAmount || 0),
+        refNo: p.referenceNo || `SALE-${p.id.slice(0, 8).toUpperCase()}`,
+        date: p.entryDate ? new Date(p.entryDate).toISOString().slice(0, 10) : '',
+        customer: p.partyName || p.customer?.party?.tradeName || p.customer?.party?.legalName || 'Direct Customer',
+        category: p.category || 'General',
+        description: p.description || '—',
+        mode: p.paymentMode || 'CASH',
+        status: p.paymentStatus || 'PAID',
+        amount: Number(p.amount || 0),
+        tax: Number(p.taxAmount || 0),
+        total: Number(p.totalAmount || 0),
       });
     });
 
-    // 2. Purchases Sheet (POs)
-    const poSheet = workbook.addWorksheet('Procurement (POs)');
+    // 2. Purchases Sheet (Daily Purchase Entries)
+    const poSheet = workbook.addWorksheet('Daily Purchases Report');
     poSheet.columns = [
-      { header: 'PO Number', key: 'poNumber', width: 20 },
+      { header: 'Bill / Ref No', key: 'refNo', width: 22 },
       { header: 'Date', key: 'date', width: 14 },
       { header: 'Vendor / Supplier', key: 'vendor', width: 32 },
+      { header: 'Category', key: 'category', width: 20 },
+      { header: 'Description', key: 'description', width: 28 },
+      { header: 'Payment Mode', key: 'mode', width: 16 },
       { header: 'Status', key: 'status', width: 14 },
-      { header: 'Subtotal (₹)', key: 'subtotal', width: 18 },
+      { header: 'Amount (₹)', key: 'amount', width: 18 },
       { header: 'Tax Total (₹)', key: 'tax', width: 16 },
-      { header: 'Grand Total (₹)', key: 'total', width: 20 },
+      { header: 'Total Spend (₹)', key: 'total', width: 20 },
     ];
     poSheet.getRow(1).font = { bold: true };
 
-    pos.forEach((po) => {
+    dailyPurchases.forEach((po) => {
       poSheet.addRow({
-        poNumber: po.poNumber,
-        date: po.poDate ? new Date(po.poDate).toISOString().slice(0, 10) : '',
-        vendor: po.vendor?.tradeName || po.vendor?.legalName || '—',
-        status: po.status,
-        subtotal: Number(po.subtotal || 0),
-        tax: Number(po.gstAmount || 0),
+        refNo: po.referenceNo || `PUR-${po.id.slice(0, 8).toUpperCase()}`,
+        date: po.entryDate ? new Date(po.entryDate).toISOString().slice(0, 10) : '',
+        vendor: po.partyName || po.vendor?.party?.tradeName || po.vendor?.party?.legalName || 'Direct Supplier',
+        category: po.category || 'General',
+        description: po.description || '—',
+        mode: po.paymentMode || 'CASH',
+        status: po.paymentStatus || 'PAID',
+        amount: Number(po.amount || 0),
+        tax: Number(po.taxAmount || 0),
         total: Number(po.totalAmount || 0),
       });
     });
@@ -334,26 +346,53 @@ class ReportQueueService {
     await workbook.xlsx.writeFile(filePath);
   }
 
-  private async writeTransactionsCsv(filePath: string, pis: any[], pos: any[], payments: any[]): Promise<void> {
+  private async writeTransactionsCsv(filePath: string, dailySales: any[], dailyPurchases: any[], payments: any[]): Promise<void> {
     const lines: string[] = [];
     lines.push('Category,DocumentNumber,Date,PartyName,Status,Amount,TaxAmount,GrandTotal');
 
-    pis.forEach((p) => {
-      const dt = p.piDate ? new Date(p.piDate).toISOString().slice(0, 10) : '';
-      const party = (p.customer?.tradeName || p.customer?.legalName || '').replace(/,/g, ' ');
-      lines.push(`SALES_PI,${p.piNumber},${dt},"${party}",${p.status},${p.subtotal || 0},${p.totalTaxAmount || 0},${p.grandTotal || 0}`);
+    dailySales.forEach((s) => {
+      lines.push(
+        [
+          'DAILY_SALES',
+          `"${s.referenceNo || s.id}"`,
+          s.entryDate ? new Date(s.entryDate).toISOString().slice(0, 10) : '',
+          `"${(s.partyName || s.customer?.party?.tradeName || s.customer?.party?.legalName || 'Customer').replace(/"/g, '""')}"`,
+          s.paymentStatus || 'PAID',
+          Number(s.amount || 0),
+          Number(s.taxAmount || 0),
+          Number(s.totalAmount || 0),
+        ].join(',')
+      );
     });
 
-    pos.forEach((po) => {
-      const dt = po.poDate ? new Date(po.poDate).toISOString().slice(0, 10) : '';
-      const party = (po.vendor?.tradeName || po.vendor?.legalName || '').replace(/,/g, ' ');
-      lines.push(`PROCUREMENT_PO,${po.poNumber},${dt},"${party}",${po.status},${po.subtotal || 0},${po.gstAmount || 0},${po.totalAmount || 0}`);
+    dailyPurchases.forEach((p) => {
+      lines.push(
+        [
+          'DAILY_PURCHASE',
+          `"${p.referenceNo || p.id}"`,
+          p.entryDate ? new Date(p.entryDate).toISOString().slice(0, 10) : '',
+          `"${(p.partyName || p.vendor?.party?.tradeName || p.vendor?.party?.legalName || 'Supplier').replace(/"/g, '""')}"`,
+          p.paymentStatus || 'PAID',
+          Number(p.amount || 0),
+          Number(p.taxAmount || 0),
+          Number(p.totalAmount || 0),
+        ].join(',')
+      );
     });
 
     payments.forEach((py) => {
-      const dt = py.paymentDate ? new Date(py.paymentDate).toISOString().slice(0, 10) : '';
-      const party = (py.party?.tradeName || py.party?.legalName || '').replace(/,/g, ' ');
-      lines.push(`PAYMENT,${py.referenceNumber || 'PAY'},${dt},"${party}",${py.status},${py.amount || 0},0,${py.amount || 0}`);
+      lines.push(
+        [
+          'PAYMENT',
+          `"${py.referenceNumber || py.id}"`,
+          py.paymentDate ? new Date(py.paymentDate).toISOString().slice(0, 10) : '',
+          `"${(py.party?.tradeName || py.party?.legalName || 'Party').replace(/"/g, '""')}"`,
+          py.status,
+          Number(py.amount || 0),
+          0,
+          Number(py.amount || 0),
+        ].join(',')
+      );
     });
 
     fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
