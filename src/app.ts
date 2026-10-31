@@ -50,6 +50,7 @@ import employeeManagementRoutes from './modules/employee-management/employee-man
 import upRoutes from './modules/up/up.routes';
 import wacrmRoutes from './modules/wacrm/wacrm.routes';
 import mailRoutes from './modules/mail/mail.routes';
+import analyticsRoutes from './modules/analytics/analytics.routes';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 const app = express();
@@ -205,6 +206,7 @@ app.use(`${prefix}/projects`, projectsRoutes);
 app.use(`${prefix}/invoices`, invoicesRoutes);
 app.use(`${prefix}/cms`, cmsRoutes);
 app.use(`${prefix}/dashboard`, dashboardRoutes);
+app.use(`${prefix}/analytics`, analyticsRoutes);
 
 // New B2B Enterprise ERP & CRM Modules
 app.use(`${prefix}/companies`, companiesRoutes);

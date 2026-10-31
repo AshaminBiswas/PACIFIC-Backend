@@ -748,9 +748,17 @@ export const pdfService = {
           if (k.includes('thick')) res.boardThickness = v;
           if (k.includes('color')) res.boardColor = v;
           if (k.includes('size') && !k.includes('door')) res.cubicleSize = v;
-          if (k.includes('door')) res.doorSize = v;
+          if (k.includes('door')) {
+            if (!v.toLowerCase().includes('n/a') && !v.toLowerCase().includes('divider screen')) {
+              res.doorSize = v;
+            }
+          }
           if (k.includes('height')) res.overallHeight = v;
-          if (k.includes('hardware') || k.includes('material')) res.hardwarePackage = v;
+          if (k.includes('hardware') || k.includes('material')) {
+            if (!v.toLowerCase().includes('wall clamps') && !v.toLowerCase().includes('cantilever')) {
+              res.hardwarePackage = v;
+            }
+          }
         }
       }
       return res;
@@ -759,13 +767,23 @@ export const pdfService = {
     const cleanDescription = (desc: string): string => {
       if (!desc) return '';
 
-      // 1. Strip ANY specification parenthetical block e.g. (Model: ... | Type: ...)
+      // Clean Door: N/A and Hardware: Wall clamps explicitly
       let clean = desc
+        .replace(/\s*\|\s*Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?/gi, '')
+        .replace(/Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?\s*\|\s*/gi, '')
+        .replace(/Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?/gi, '')
+        .replace(/\s*\|\s*Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*/gi, '')
+        .replace(/Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*\s*\|\s*/gi, '')
+        .replace(/Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*/gi, '')
+        // 1. Strip ANY specification parenthetical block e.g. (Model: ... | Type: ...)
         .replace(/\s*\(\s*(?:Model|Make|Board|Material|Color|Size|Door|Height|Hardware|Type|Category)\s*:[\s\S]*?\)/gi, '')
         // Also strip any remaining multi-property parentheticals with '|' and ':'
         .replace(/\s*\([^)]{8,}?:[^)]*?\|[^)]*?\)/gi, '')
         // Also strip legacy (Board: ...) or (Hardware: ...)
         .replace(/\s*\((?:Board|Hardware)\s*:.*?\)/gi, '')
+        .replace(/\(\s*\|\s*/g, '(')
+        .replace(/\s*\|\s*\)/g, ')')
+        .replace(/\(\s*\)/g, '')
         .trim();
 
       // 2. Remove duplicate titles like "Title — Title RestOfDescription" or "Title — Title"
@@ -890,12 +908,15 @@ export const pdfService = {
         const rawHardware = it.hardwarePackage || customSpecs.hardwarePackage || customSpecs.hardwareType || fallbackSpecs.hardwarePackage;
         const showHardware = Boolean(
           rawHardware &&
+          !isUrinal &&
           !rawHardware.includes('Golden, Black, SS') &&
           !rawHardware.includes('SS Hardware (Golden, Black, SS)') &&
           !rawHardware.includes('SS 304 Stainless Steel (Satin/Brushed)') &&
           !rawHardware.includes('SS 304 Stainless Steel') &&
           !rawHardware.toLowerCase().includes('satin/brushed') &&
-          !rawHardware.toLowerCase().includes('ss 304')
+          !rawHardware.toLowerCase().includes('ss 304') &&
+          !rawHardware.toLowerCase().includes('wall clamps') &&
+          !rawHardware.toLowerCase().includes('cantilever')
         );
         const hardwarePackage = showHardware ? rawHardware : undefined;
         const displayDesc = cleanDescription(it.description);
@@ -919,7 +940,7 @@ export const pdfService = {
 
         const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : isCubicle ? 'Cubicle / Depth Size' : 'Dimensions';
         const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
-        const showDoor = !isCustom && !isHardware && doorSize && !doorSize.toLowerCase().includes('n/a') && (!isUrinal || doorSize.trim() !== 'N/A');
+        const showDoor = !isCustom && !isHardware && !isUrinal && doorSize && !doorSize.toLowerCase().includes('n/a') && !doorSize.toLowerCase().includes('divider screen');
 
         const showCustomModel = Boolean(
           customModel &&
@@ -2227,15 +2248,18 @@ export const pdfService = {
 
             const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : isCubicle ? 'Cubicle / Depth Size' : 'Dimensions';
             const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
-            const showDoor = !isCustom && displayDoor && !displayDoor.toLowerCase().includes('n/a') && (!isUrinal || displayDoor.trim() !== 'N/A');
+            const showDoor = !isCustom && !isUrinal && displayDoor && !displayDoor.toLowerCase().includes('n/a') && !displayDoor.toLowerCase().includes('divider screen');
             const showHardware = Boolean(
               displayHardware &&
+              !isUrinal &&
               !displayHardware.includes('Golden, Black, SS') &&
               !displayHardware.includes('SS Hardware (Golden, Black, SS)') &&
               !displayHardware.includes('SS 304 Stainless Steel (Satin/Brushed)') &&
               !displayHardware.includes('SS 304 Stainless Steel') &&
               !displayHardware.toLowerCase().includes('satin/brushed') &&
-              !displayHardware.toLowerCase().includes('ss 304')
+              !displayHardware.toLowerCase().includes('ss 304') &&
+              !displayHardware.toLowerCase().includes('wall clamps') &&
+              !displayHardware.toLowerCase().includes('cantilever')
             );
 
             return `
@@ -3034,16 +3058,36 @@ export const pdfService = {
           if (k.includes('thick')) res.boardThickness = v;
           if (k.includes('color')) res.boardColor = v;
           if (k.includes('size') && !k.includes('door')) res.cubicleSize = v;
-          if (k.includes('door')) res.doorSize = v;
+          if (k.includes('door')) {
+            if (!v.toLowerCase().includes('n/a') && !v.toLowerCase().includes('divider screen')) {
+              res.doorSize = v;
+            }
+          }
           if (k.includes('height')) res.overallHeight = v;
-          if (k.includes('hardware')) res.hardwarePackage = v;
+          if (k.includes('hardware')) {
+            if (!v.toLowerCase().includes('wall clamps') && !v.toLowerCase().includes('cantilever')) {
+              res.hardwarePackage = v;
+            }
+          }
         }
       }
       return res;
     };
 
     const cleanDescription = (desc: string) =>
-      desc.replace(/\s*\((Board:.*?)\)/gi, '').replace(/\s*\((.*?Hardware:.*?)\)/gi, '').trim();
+      desc
+        .replace(/\s*\|\s*Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?/gi, '')
+        .replace(/Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?\s*\|\s*/gi, '')
+        .replace(/Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?/gi, '')
+        .replace(/\s*\|\s*Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*/gi, '')
+        .replace(/Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*\s*\|\s*/gi, '')
+        .replace(/Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*/gi, '')
+        .replace(/\s*\((Board:.*?)\)/gi, '')
+        .replace(/\s*\((.*?Hardware:.*?)\)/gi, '')
+        .replace(/\(\s*\|\s*/g, '(')
+        .replace(/\s*\|\s*\)/g, ')')
+        .replace(/\(\s*\)/g, '')
+        .trim();
 
     const itemRows = data.items
       .map((it, idx) => {
@@ -3124,19 +3168,22 @@ export const pdfService = {
         const rawHardware = it.hardwarePackage || customSpecs.hardwarePackage || customSpecs.hardwareType || fallbackSpecs.hardwarePackage;
         const showHardware = Boolean(
           rawHardware &&
+          !isUrinal &&
           !rawHardware.includes('Golden, Black, SS') &&
           !rawHardware.includes('SS Hardware (Golden, Black, SS)') &&
           !rawHardware.includes('SS 304 Stainless Steel (Satin/Brushed)') &&
           !rawHardware.includes('SS 304 Stainless Steel') &&
           !rawHardware.toLowerCase().includes('satin/brushed') &&
-          !rawHardware.toLowerCase().includes('ss 304')
+          !rawHardware.toLowerCase().includes('ss 304') &&
+          !rawHardware.toLowerCase().includes('wall clamps') &&
+          !rawHardware.toLowerCase().includes('cantilever')
         );
         const hardwarePackage = showHardware ? rawHardware : undefined;
         const displayDesc = cleanDescription(it.description);
 
         const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : isCubicle ? 'Cubicle / Depth Size' : 'Dimensions';
         const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
-        const showDoor = !isCustom && doorSize && !doorSize.toLowerCase().includes('n/a') && (!isUrinal || doorSize.trim() !== 'N/A');
+        const showDoor = !isCustom && !isUrinal && doorSize && !doorSize.toLowerCase().includes('n/a') && !doorSize.toLowerCase().includes('divider screen');
 
         const hasSpecs = Boolean(
           isLocker || it.make || boardType || boardThickness || boardColor || cubicleSize || doorSize || overallHeight || hardwarePackage

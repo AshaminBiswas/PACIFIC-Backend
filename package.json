@@ -24,6 +24,7 @@
     "test:mail": "npx tsx src/modules/mail/mail.tests.ts",
     "test:mail:security": "npx tsx src/modules/mail/mail.security.tests.ts",
     "test:mail:gateway": "npx tsx src/modules/mail/mail.gateway.tests.ts",
+    "benchmark:analytics": "npx tsx src/scripts/loadTestAnalytics.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts"
   },

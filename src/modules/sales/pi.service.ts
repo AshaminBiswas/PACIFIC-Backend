@@ -24,6 +24,48 @@ async function fetchImageAsDataUri(url: string): Promise<string> {
   }
 }
 
+export function sanitizePiItem<T extends Record<string, any>>(it: T): T {
+  let desc = it.description || '';
+  desc = desc
+    .replace(/\s*\|\s*Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?/gi, '')
+    .replace(/Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?\s*\|\s*/gi, '')
+    .replace(/Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?/gi, '')
+    .replace(/\s*\|\s*Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*/gi, '')
+    .replace(/Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*\s*\|\s*/gi, '')
+    .replace(/Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*/gi, '')
+    .replace(/\(\s*\|\s*/g, '(')
+    .replace(/\s*\|\s*\)/g, ')')
+    .replace(/\(\s*\)/g, '')
+    .trim();
+
+  const descLower = (desc || '').toLowerCase();
+  const isUrinal =
+    it.systemCategory === 'ump' ||
+    descLower.includes('urinal') ||
+    descLower.includes('ump') ||
+    descLower.includes('divider screen');
+
+  let doorSize = it.doorSize;
+  if (isUrinal || (doorSize && (doorSize.toLowerCase().includes('n/a') || doorSize.toLowerCase().includes('divider screen')))) {
+    doorSize = null;
+  }
+
+  let hardwarePackage = it.hardwarePackage;
+  if (isUrinal || (hardwarePackage && (
+    hardwarePackage.toLowerCase().includes('wall clamps') ||
+    hardwarePackage.toLowerCase().includes('cantilever')
+  ))) {
+    hardwarePackage = null;
+  }
+
+  return {
+    ...it,
+    description: desc,
+    doorSize,
+    hardwarePackage,
+  };
+}
+
 export const piService = {
   async list(query: {
     page?: number;
@@ -124,8 +166,15 @@ export const piService = {
       prisma.proformaInvoice.count({ where }),
     ]);
 
+    const sanitizedItems = items.map((p: any) => {
+      if (p.items && Array.isArray(p.items)) {
+        p.items = p.items.map(sanitizePiItem);
+      }
+      return p;
+    });
+
     return {
-      items,
+      items: sanitizedItems,
       total,
       page,
       limit,
@@ -176,6 +225,9 @@ export const piService = {
     });
 
     if (!pi) throw Object.assign(new Error('Proforma Invoice not found'), { status: 404 });
+    if (pi.items && Array.isArray(pi.items)) {
+      (pi as any).items = pi.items.map(sanitizePiItem);
+    }
     return pi;
   },
 
@@ -1427,18 +1479,77 @@ export const piService = {
       : [quotation.recipientAddress || billingAddress?.addressLine1, billingAddress?.city, billingAddress?.state].filter(Boolean);
     const shipAddressLine = shipAddressParts.join(', ') || 'Delivery Site Address';
 
+    // Check if quotation already has explicit hardware line items
+    const quotationHasHardware = (quotation.items || []).some((item: any) =>
+      item.itemType === 'hardware' ||
+      ['8302', '7610', '3925'].some((h) => String(item.hsnSac || '').startsWith(h)) ||
+      (item.description && (
+        item.description.toLowerCase().includes('hinge') ||
+        item.description.toLowerCase().includes('clamp') ||
+        item.description.toLowerCase().includes('fastener') ||
+        item.description.toLowerCase().includes('indicator lock')
+      ))
+    );
+
     // Map items with full cubicle specifications and auto-generate individual hardware line items!
     const piItems: any[] = [];
     (quotation.items || []).forEach((it: any) => {
       let desc = it.description || it.productName || 'Pacific Restroom Cubicle System';
+
+      // Strip legacy spec block and unwanted door/hardware strings
+      desc = desc
+        .replace(/\s*\|\s*Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?/gi, '')
+        .replace(/Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?\s*\|\s*/gi, '')
+        .replace(/Door:\s*N\/A(?:\s*\(Divider\s*Screen\))?/gi, '')
+        .replace(/\s*\|\s*Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*/gi, '')
+        .replace(/Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*\s*\|\s*/gi, '')
+        .replace(/Hardware:\s*Grade\s*304\s*Wall\s*Clamps[^\)|]*/gi, '')
+        .replace(/\s*\(\s*(?:Model|Make|Board|Material|Color|Thickness|Size|Door|Height|Hardware|Type|Category)\s*:[\s\S]*?\)$/gi, '')
+        .trim();
+
+      const descLower = (it.description || it.productName || '').toLowerCase();
+      const isUrinal =
+        it.systemCategory === 'ump' ||
+        descLower.includes('urinal') ||
+        descLower.includes('ump') ||
+        descLower.includes('divider screen');
+      const isLocker =
+        it.systemCategory === 'locker' ||
+        descLower.includes('locker') ||
+        descLower.includes('tier');
+      const isHardware =
+        it.itemType === 'hardware' ||
+        ['8302', '7610', '3925'].some((h) => String(it.hsnSac || '').startsWith(h));
+
       const specs: string[] = [];
       if (it.boardType) specs.push(`Board: ${it.boardType}`);
       if (it.boardThickness) specs.push(`Thickness: ${it.boardThickness}`);
-      if (it.boardColor) specs.push(`Color: ${it.boardColor}`);
+      if (it.boardColor && it.boardColor.toLowerCase() !== 'not confirmed') specs.push(`Color: ${it.boardColor}`);
       if (it.cubicleSize) specs.push(`Size: ${it.cubicleSize}`);
-      if (it.doorSize) specs.push(`Door: ${it.doorSize}`);
+
+      const doorVal = (it.doorSize || '').trim();
+      const isDoorIgnored = !doorVal ||
+        isUrinal ||
+        doorVal.toLowerCase().includes('n/a') ||
+        doorVal.toLowerCase().includes('divider screen');
+      if (!isDoorIgnored) {
+        specs.push(`Door: ${doorVal}`);
+      }
+
       if (it.overallHeight) specs.push(`Height: ${it.overallHeight}`);
-      if (it.hardwarePackage) specs.push(`Hardware: ${it.hardwarePackage}`);
+
+      const hwVal = (it.hardwarePackage || '').trim();
+      const isHwIgnored = !hwVal ||
+        isUrinal ||
+        hwVal.toLowerCase().includes('wall clamps') ||
+        hwVal.toLowerCase().includes('cantilever') ||
+        hwVal.toLowerCase().includes('golden, black, ss') ||
+        hwVal.toLowerCase().includes('ss 304') ||
+        hwVal.toLowerCase().includes('satin/brushed');
+      if (!isHwIgnored) {
+        specs.push(`Hardware: ${hwVal}`);
+      }
+
       if (specs.length > 0) {
         desc += `\n(${specs.join(' | ')})`;
       }
@@ -1446,7 +1557,7 @@ export const piService = {
       piItems.push({
         productId: it.productId || null,
         description: desc,
-        hsnSac: it.hsnSac || '9403',
+        hsnSac: it.hsnSac || (isHardware ? '8302' : '9403'),
         quantity: qty,
         unit: it.unit || 'NOS',
         rate: Number(it.rate) || 0,
@@ -1455,32 +1566,34 @@ export const piService = {
         boardThickness: it.boardThickness || null,
         boardColor: it.boardColor || null,
         cubicleSize: it.cubicleSize || null,
-        doorSize: it.doorSize || null,
+        doorSize: isDoorIgnored ? null : it.doorSize,
         overallHeight: it.overallHeight || null,
-        hardwarePackage: it.hardwarePackage || null,
+        hardwarePackage: isHwIgnored ? null : it.hardwarePackage,
       });
 
-      // Individual hardware line items for this cubicle
-      const hardwareDefaults = [
-        { name: 'Gravity Hinges (Self-Closing Pair with Nylon Cam)', unit: 'PAIR', hsn: '8302', qty: 1 },
-        { name: 'Occupancy Indicator Lock with Emergency Release', unit: 'SET', hsn: '8302', qty: 1 },
-        { name: 'Ergonomic Door Pull Handle / Knob', unit: 'NOS', hsn: '8302', qty: 1 },
-        { name: 'Coat Hook with Integrated Rubber Buffer Stop', unit: 'NOS', hsn: '8302', qty: 1 },
-        { name: 'Adjustable Supporting Legs (100–150mm ground clearance)', unit: 'NOS', hsn: '8302', qty: 2 },
-        { name: 'Continuous Top Headrail Stabilizer Box Extrusion', unit: 'RMT', hsn: '7610', qty: 1 },
-        { name: 'Wall Fixing U-Channels & SS 304 Fasteners Pack', unit: 'SET', hsn: '8302', qty: 1 },
-      ];
-      hardwareDefaults.forEach((hw) => {
-        piItems.push({
-          productId: null,
-          description: hw.name,
-          hsnSac: hw.hsn,
-          quantity: hw.qty * qty,
-          unit: hw.unit,
-          rate: 0,
-          gstRate: 18,
+      // Individual hardware line items for cubicle only if not already present in quotation
+      if (!quotationHasHardware && !isUrinal && !isLocker && !isHardware) {
+        const hardwareDefaults = [
+          { name: 'Gravity Hinges (Self-Closing Pair with Nylon Cam)', unit: 'PAIR', hsn: '8302', qty: 1 },
+          { name: 'Occupancy Indicator Lock with Emergency Release', unit: 'SET', hsn: '8302', qty: 1 },
+          { name: 'Ergonomic Door Pull Handle / Knob', unit: 'NOS', hsn: '8302', qty: 1 },
+          { name: 'Coat Hook with Integrated Rubber Buffer Stop', unit: 'NOS', hsn: '8302', qty: 1 },
+          { name: 'Adjustable Supporting Legs (100–150mm ground clearance)', unit: 'NOS', hsn: '8302', qty: 2 },
+          { name: 'Continuous Top Headrail Stabilizer Box Extrusion', unit: 'RMT', hsn: '7610', qty: 1 },
+          { name: 'Wall Fixing U-Channels & SS 304 Fasteners Pack', unit: 'SET', hsn: '8302', qty: 1 },
+        ];
+        hardwareDefaults.forEach((hw) => {
+          piItems.push({
+            productId: null,
+            description: hw.name,
+            hsnSac: hw.hsn,
+            quantity: hw.qty * qty,
+            unit: hw.unit,
+            rate: 0,
+            gstRate: 18,
+          });
         });
-      });
+      }
     });
 
     // 6 Official Commercial Terms & Conditions
