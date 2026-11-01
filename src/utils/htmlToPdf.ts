@@ -82,17 +82,21 @@ async function findSystemChromeExecutable(): Promise<string | undefined> {
  * The resulting buffer is a valid PDF file suitable for email attachments.
  */
 export async function htmlToPdfBuffer(html: string): Promise<Buffer> {
+  const isWin = process.platform === 'win32';
+  const args = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--disable-extensions',
+  ];
+  if (!isWin) {
+    args.push('--no-zygote');
+  }
+
   const options: LaunchOptions = {
     headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--no-zygote',
-      '--single-process',
-      '--disable-extensions',
-    ],
+    args,
   };
 
   const systemPath = await findSystemChromeExecutable();

@@ -10,10 +10,13 @@ import { auditService } from '../audit/audit.service';
 import { ordersService } from '../orders/orders.service';
 import { documentRevisionService } from '../docs/documentRevision.service';
 
-async function fetchImageAsDataUri(url: string): Promise<string> {
+async function fetchImageAsDataUri(url: string, timeoutMs = 2500): Promise<string> {
   if (!url || url.startsWith('data:')) return url;
   try {
-    const res = await fetch(url);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
     if (!res.ok) return url;
     const arrayBuffer = await res.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);

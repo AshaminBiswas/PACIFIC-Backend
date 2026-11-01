@@ -525,6 +525,11 @@ export const branchLedgerPdfService = {
         <div style="margin-top: 4px; font-size: 11px; font-weight: 800; color: #1e1b4b;">
           📍 Branch: ${branchName} · <span style="font-weight: 500; color: #475569;">${branchLocation}</span>
         </div>
+        ${branch?.bankName ? `
+          <div style="margin-top: 2px; font-size: 10px; color: #0284c7; font-weight: 600;">
+            🏦 Branch Bank: <strong>${branch.bankName}</strong> · A/C: <strong>${branch.accountNumber || '—'}</strong> · IFSC: <strong>${branch.ifscCode || '—'}</strong> ${branch.upiId ? `· UPI: <strong>${branch.upiId}</strong>` : ''}
+          </div>
+        ` : ''}
       </div>
       <div>
         <div class="report-badge">Debit / Credit Ledger</div>

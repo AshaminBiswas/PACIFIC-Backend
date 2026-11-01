@@ -3351,6 +3351,12 @@ model Branch {
   phone            String?
   email            String?
   contactPerson    String?             @map("contact_person")
+  bankName         String?             @map("bank_name")
+  accountNumber    String?             @map("account_number")
+  accountName      String?             @map("account_name")
+  ifscCode         String?             @map("ifsc_code")
+  bankBranch       String?             @map("bank_branch")
+  upiId            String?             @map("upi_id")
   openingBalance   Decimal             @default(0) @map("opening_balance") @db.Decimal(14, 2)
   currentBalance   Decimal             @default(0) @map("current_balance") @db.Decimal(14, 2)
   isDefault        Boolean             @default(false) @map("is_default")
@@ -3377,6 +3383,8 @@ model BranchTransaction {
   referenceNo      String?   @map("reference_no")
   paymentMode      String    @default("BANK_TRANSFER") @map("payment_mode")
   paymentStatus    String    @default("CLEARED") @map("payment_status")
+  bankName         String?   @map("bank_name")
+  accountNumber    String?   @map("account_number")
   description      String?
   voucherUrl       String?   @map("voucher_url")
   companyProfileId String?   @map("company_profile_id")

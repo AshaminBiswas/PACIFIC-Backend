@@ -103,6 +103,22 @@ export const piController = {
       const filename = `${billingName}_${cleanPiNumber}.pdf`;
 
       const html = await piService.getPdfHtml(req.params.id);
+
+      const wantsBinaryPdf = req.query.download === 'true' || req.query.dl === '1' || req.query.format === 'pdf';
+      if (wantsBinaryPdf) {
+        try {
+          const { htmlToPdfBuffer } = await import('../../utils/htmlToPdf');
+          const buffer = await htmlToPdfBuffer(html);
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+          res.setHeader('Content-Length', buffer.length);
+          res.send(buffer);
+          return;
+        } catch (pdfErr) {
+          console.warn('[PI Controller] Direct puppeteer PDF rendering failed, falling back to printable HTML view:', pdfErr);
+        }
+      }
+
       res.setHeader('Content-Type', 'text/html');
       res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
       res.send(html);

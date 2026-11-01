@@ -9,6 +9,12 @@ export interface BranchInput {
   phone?: string;
   email?: string;
   contactPerson?: string;
+  bankName?: string;
+  accountNumber?: string;
+  accountName?: string;
+  ifscCode?: string;
+  bankBranch?: string;
+  upiId?: string;
   openingBalance?: number;
   isDefault?: boolean;
   isActive?: boolean;
@@ -26,6 +32,8 @@ export interface BranchTransactionInput {
   referenceNo?: string;
   paymentMode?: string;
   paymentStatus?: string;
+  bankName?: string;
+  accountNumber?: string;
   description?: string;
   voucherUrl?: string;
   companyProfileId?: string;
@@ -97,6 +105,12 @@ export const branchLedgerService = {
           phone: b.phone,
           email: b.email,
           contactPerson: b.contactPerson,
+          bankName: b.bankName,
+          accountNumber: b.accountNumber,
+          accountName: b.accountName,
+          ifscCode: b.ifscCode,
+          bankBranch: b.bankBranch,
+          upiId: b.upiId,
           openingBalance: opening,
           currentBalance: computedCurrent,
           totalCredits,
@@ -174,6 +188,12 @@ export const branchLedgerService = {
         phone: input.phone?.trim() || null,
         email: input.email?.trim() || null,
         contactPerson: input.contactPerson?.trim() || null,
+        bankName: input.bankName?.trim() || null,
+        accountNumber: input.accountNumber?.trim() || null,
+        accountName: input.accountName?.trim() || null,
+        ifscCode: input.ifscCode?.trim() || null,
+        bankBranch: input.bankBranch?.trim() || null,
+        upiId: input.upiId?.trim() || null,
         openingBalance: opening,
         currentBalance: opening,
         isDefault: !!input.isDefault,
@@ -210,6 +230,12 @@ export const branchLedgerService = {
     if (input.phone !== undefined) data.phone = input.phone?.trim() || null;
     if (input.email !== undefined) data.email = input.email?.trim() || null;
     if (input.contactPerson !== undefined) data.contactPerson = input.contactPerson?.trim() || null;
+    if (input.bankName !== undefined) data.bankName = input.bankName?.trim() || null;
+    if (input.accountNumber !== undefined) data.accountNumber = input.accountNumber?.trim() || null;
+    if (input.accountName !== undefined) data.accountName = input.accountName?.trim() || null;
+    if (input.ifscCode !== undefined) data.ifscCode = input.ifscCode?.trim() || null;
+    if (input.bankBranch !== undefined) data.bankBranch = input.bankBranch?.trim() || null;
+    if (input.upiId !== undefined) data.upiId = input.upiId?.trim() || null;
     if (input.openingBalance !== undefined) data.openingBalance = Number(input.openingBalance);
     if (input.isDefault !== undefined) data.isDefault = !!input.isDefault;
     if (input.isActive !== undefined) data.isActive = !!input.isActive;
@@ -322,6 +348,8 @@ export const branchLedgerService = {
         referenceNo: t.referenceNo,
         paymentMode: t.paymentMode,
         paymentStatus: t.paymentStatus,
+        bankName: t.bankName,
+        accountNumber: t.accountNumber,
         description: t.description,
         voucherUrl: t.voucherUrl,
         createdAt: t.createdAt,
@@ -386,6 +414,8 @@ export const branchLedgerService = {
           referenceNo: input.referenceNo?.trim() || null,
           paymentMode: input.paymentMode || 'BANK_TRANSFER',
           paymentStatus: input.paymentStatus || 'CLEARED',
+          bankName: input.bankName?.trim() || branch.bankName || null,
+          accountNumber: input.accountNumber?.trim() || branch.accountNumber || null,
           description: input.description?.trim() || null,
           voucherUrl: input.voucherUrl || null,
           companyProfileId: input.companyProfileId || branch.companyProfileId || null,
@@ -685,6 +715,9 @@ export const branchLedgerService = {
         code: b.code,
         name: b.name,
         city: b.city,
+        bankName: b.bankName,
+        accountNumber: b.accountNumber,
+        ifscCode: b.ifscCode,
         credits: bCredits,
         debits: bDebits,
         netFlow: bCredits - bDebits,
