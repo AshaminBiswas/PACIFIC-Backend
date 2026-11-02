@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -73,7 +73,7 @@ const corsOptions: cors.CorsOptions = {
       return callback(null, true);
     }
     // Explicitly allow Pacific Admin Console on Vercel
-    if (cleanOrigin === 'https://pacific-admin-one.vercel.app') {
+    if (cleanOrigin === 'https://pacific-admin-one.vercel.app' || cleanOrigin === 'https://pacific-admin-eta.vercel.app') {
       return callback(null, true);
     }
     // Allow all Vercel preview & production deployments (*.vercel.app)
@@ -130,6 +130,26 @@ const corsOptions: cors.CorsOptions = {
   optionsSuccessStatus: 204,
   maxAge: 86400,
 };
+
+// Early CORS middleware to guarantee headers even on error responses or preflight
+app.use((req: Request, res: Response, next: NextFunction): void => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, X-Refresh-Token, x-client-info, Pragma, Range, x-session-token, X-Session-Token, x-access-token, X-Access-Token, idempotency-key, Idempotency-Key, x-idempotency-key, X-Idempotency-Key, x-pacific-signature, X-Pacific-Signature, x-pacific-timestamp, X-Pacific-Timestamp, apikey, x-api-key, X-API-Key'
+    );
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, X-Content-Range, Authorization');
+  }
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));

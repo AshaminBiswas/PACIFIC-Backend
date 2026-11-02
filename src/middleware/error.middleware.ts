@@ -13,6 +13,11 @@ export class AppError extends Error {
 }
 
 export const notFoundHandler = (req: Request, res: Response): void => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
   res.status(404).json({
     success: false,
     message: `Route not found: ${req.method} ${req.originalUrl}`,
@@ -35,6 +40,12 @@ export const errorHandler = (
     method: req.method,
     stack: err.stack,
   });
+
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
 
   res.status(status).json({
     success: false,

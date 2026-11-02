@@ -1514,7 +1514,39 @@ async function run() {
         last_number INT NOT NULL DEFAULT 0,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+
+      -- Expense module enums & tables
+      DO $$ BEGIN
+        CREATE TYPE "ExpensePaymentMode" AS ENUM ('CASH', 'UPI', 'BANK_TRANSFER');
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
+
+      DO $$ BEGIN
+        CREATE TYPE "ExpenseStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
     `);
+
+    // Ensure expense_entries column types match Prisma enums
+    try {
+      await client.query(`
+        ALTER TABLE IF EXISTS expense_entries 
+          ALTER COLUMN payment_mode DROP DEFAULT;
+        ALTER TABLE IF EXISTS expense_entries 
+          ALTER COLUMN payment_mode TYPE "ExpensePaymentMode" USING (payment_mode::"ExpensePaymentMode");
+        ALTER TABLE IF EXISTS expense_entries 
+          ALTER COLUMN payment_mode SET DEFAULT 'CASH';
+
+        ALTER TABLE IF EXISTS expense_entries 
+          ALTER COLUMN status DROP DEFAULT;
+        ALTER TABLE IF EXISTS expense_entries 
+          ALTER COLUMN status TYPE "ExpenseStatus" USING (status::"ExpenseStatus");
+        ALTER TABLE IF EXISTS expense_entries 
+          ALTER COLUMN status SET DEFAULT 'PENDING';
+      `);
+    } catch (_ignore) {}
 
     console.log('[fix-db] Schema auto-heal complete.');
   } catch (err) {
