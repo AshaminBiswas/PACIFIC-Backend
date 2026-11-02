@@ -23,6 +23,7 @@ export interface TaxCalculationParams {
   installationCharge?: number;
   installationGstRate?: number;
   isReverseCharge?: boolean;
+  cashReceived?: number; // Pre-GST cash deduction
 }
 
 export interface CalculatedLineItem {
@@ -65,6 +66,7 @@ export interface TaxCalculationResult {
   grandTotal: number;
   items: CalculatedLineItem[];
   taxSummary: TaxSummaryRow[];
+  cashReceived?: number;
 }
 
 function round2(val: number): number {
@@ -224,8 +226,71 @@ export function calculateGstTax(params: TaxCalculationParams): TaxCalculationRes
     summaryBuckets.set(installationGstRate, iBucket);
   }
 
-  const totalTaxableAmount = round2(subtotal + freightAmount + installationCharge);
-  const totalTaxAmount = round2(totalCgst + totalSgst + totalIgst);
+  const rawTotalBasic = round2(subtotal + freightAmount + installationCharge);
+  const cashReceived = Math.max(0, Number(params.cashReceived) || 0);
+  const cashToDeduct = Math.min(cashReceived, rawTotalBasic);
+  const remainingTaxable = round2(rawTotalBasic - cashToDeduct);
+
+  let finalTaxableAmount = rawTotalBasic;
+  let finalCgst = totalCgst;
+  let finalSgst = totalSgst;
+  let finalIgst = totalIgst;
+  let finalTaxAmount = round2(totalCgst + totalSgst + totalIgst);
+
+  if (cashToDeduct > 0) {
+    // When cash is deducted from total basic, tax is applied strictly on remaining basic:
+    // If Delhi / Intra-state: 9% CGST + 9% SGST
+    // If Interstate: 18% IGST
+    finalTaxableAmount = remainingTaxable;
+    if (!isReverseCharge) {
+      if (isIntraState) {
+        finalCgst = round2(remainingTaxable * 0.09);
+        finalSgst = round2(remainingTaxable * 0.09);
+        finalIgst = 0;
+      } else {
+        finalCgst = 0;
+        finalSgst = 0;
+        finalIgst = round2(remainingTaxable * 0.18);
+      }
+    } else {
+      finalCgst = 0;
+      finalSgst = 0;
+      finalIgst = 0;
+    }
+    finalTaxAmount = round2(finalCgst + finalSgst + finalIgst);
+
+    // Scale line items taxableAmount and tax proportionally so line items match totals
+    const scaleFactor = rawTotalBasic > 0 ? remainingTaxable / rawTotalBasic : 1;
+    for (const item of calculatedItems) {
+      item.taxableAmount = round2(item.amount * scaleFactor);
+      if (!isReverseCharge && item.gstRate > 0) {
+        if (isIntraState) {
+          const halfRate = item.gstRate / 2;
+          item.cgst = round2(item.taxableAmount * (halfRate / 100));
+          item.sgst = round2(item.taxableAmount * (halfRate / 100));
+          item.igst = 0;
+        } else {
+          item.cgst = 0;
+          item.sgst = 0;
+          item.igst = round2(item.taxableAmount * (item.gstRate / 100));
+        }
+      }
+      item.totalAmount = round2(item.taxableAmount + item.cgst + item.sgst + item.igst);
+    }
+
+    // Refresh summary buckets with adjusted taxable base
+    summaryBuckets.clear();
+    summaryBuckets.set(18, {
+      taxable: remainingTaxable,
+      cgst: finalCgst,
+      sgst: finalSgst,
+      igst: finalIgst,
+      totalTax: finalTaxAmount,
+    });
+  }
+
+  const totalTaxableAmount = finalTaxableAmount;
+  const totalTaxAmount = finalTaxAmount;
 
   // Exact unrounded grand total
   const rawGrandTotal = round2(totalTaxableAmount + totalTaxAmount);
@@ -255,14 +320,15 @@ export function calculateGstTax(params: TaxCalculationParams): TaxCalculationRes
     installationCharge,
     installationTax,
     totalTaxableAmount,
-    cgstAmount: totalCgst,
-    sgstAmount: totalSgst,
-    igstAmount: totalIgst,
+    cgstAmount: finalCgst,
+    sgstAmount: finalSgst,
+    igstAmount: finalIgst,
     totalTaxAmount,
     roundingAdjustment,
     grandTotal,
     items: calculatedItems,
     taxSummary,
+    cashReceived: cashToDeduct,
   };
 }
 

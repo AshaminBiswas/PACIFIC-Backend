@@ -328,7 +328,13 @@ export const piService = {
         posName = posName || (isDelhi ? 'Delhi' : (GST_STATE_CODE_MAP[posStateCode] || 'Delhi'));
       }
 
-      // 5. Compute Tax Engine Totals on the server
+      // 5. Compute Tax Engine Totals on the server (incorporating pre-GST cash deduction if cash received)
+      const cashReceivedInput = data.cashReceived !== undefined
+        ? Number(data.cashReceived)
+        : data.advancePaymentMode === 'CASH'
+          ? Number(data.advanceReceivedAmount)
+          : 0;
+
       const taxResult = calculateGstTax({
         sellerStateCode,
         placeOfSupplyStateCode: posStateCode,
@@ -353,6 +359,7 @@ export const piService = {
         installationCharge: Number(data.installationCharge) || 0,
         installationGstRate: Number(data.installationGstRate ?? 18),
         isReverseCharge: Boolean(data.reverseCharge),
+        cashReceived: cashReceivedInput,
       });
 
       // 6. Amount in words
@@ -405,11 +412,11 @@ export const piService = {
           status: 'DRAFT',
           advancePercentage: data.advancePercentage !== undefined ? Number(data.advancePercentage) : 50,
           advanceRequiredAmount: data.advanceRequiredAmount !== undefined ? Number(data.advanceRequiredAmount) : Math.round(taxResult.grandTotal * 0.5),
-          advanceReceivedAmount: Number(data.advanceReceivedAmount) || 0,
-          advancePaymentStatus: data.advancePaymentStatus || (Number(data.advanceReceivedAmount) >= (data.advanceRequiredAmount || taxResult.grandTotal * 0.5) ? 'FULLY_RECEIVED' : Number(data.advanceReceivedAmount) > 0 ? 'PARTIAL' : 'PENDING'),
-          advancePaymentDate: data.advancePaymentDate ? new Date(data.advancePaymentDate) : undefined,
-          advancePaymentReference: data.advancePaymentReference || null,
-          advancePaymentMode: data.advancePaymentMode || null,
+          advanceReceivedAmount: cashReceivedInput > 0 ? cashReceivedInput : (Number(data.advanceReceivedAmount) || 0),
+          advancePaymentStatus: data.advancePaymentStatus || (cashReceivedInput > 0 ? 'PARTIAL' : (Number(data.advanceReceivedAmount) >= (data.advanceRequiredAmount || taxResult.grandTotal * 0.5) ? 'FULLY_RECEIVED' : Number(data.advanceReceivedAmount) > 0 ? 'PARTIAL' : 'PENDING')),
+          advancePaymentDate: data.advancePaymentDate ? new Date(data.advancePaymentDate) : (cashReceivedInput > 0 ? new Date() : undefined),
+          advancePaymentReference: data.advancePaymentReference || (cashReceivedInput > 0 ? 'CASH-SETTLEMENT-DEDUCTION' : null),
+          advancePaymentMode: cashReceivedInput > 0 ? 'CASH' : (data.advancePaymentMode || null),
           quotationId: data.quotationId || null,
           quotationRef: data.quotationRef || null,
           createdById: userId,
@@ -1042,12 +1049,19 @@ export const piService = {
       let igstAmount = Number(existing.igstAmount);
       let roundingAdjustment = Number(existing.roundingAdjustment);
 
+      const cashReceivedInput = data.cashReceived !== undefined
+        ? Number(data.cashReceived)
+        : (data.advancePaymentMode === 'CASH' || existing.advancePaymentMode === 'CASH')
+          ? Number(data.advanceReceivedAmount !== undefined ? data.advanceReceivedAmount : existing.advanceReceivedAmount)
+          : 0;
+
       const hasNewItems = Boolean(data.items && Array.isArray(data.items));
       const shouldRecalculateTax = hasNewItems ||
         data.freightAmount !== undefined ||
         data.installationCharge !== undefined ||
         data.placeOfSupplyStateCode !== undefined ||
-        data.companyProfileId !== undefined;
+        data.companyProfileId !== undefined ||
+        data.cashReceived !== undefined;
 
       if (shouldRecalculateTax) {
         let originStateCode = (existing.companyProfile?.stateCode || '07').trim();
@@ -1107,6 +1121,7 @@ export const piService = {
           freightAmount: freightAmountToSet,
           installationCharge: installationChargeToSet,
           isReverseCharge: Boolean(data.reverseCharge ?? existing.reverseCharge),
+          cashReceived: cashReceivedInput,
         });
 
         if (hasNewItems) {
@@ -1196,6 +1211,10 @@ export const piService = {
           amountInWords,
           advancePercentage: data.advancePercentage !== undefined ? Number(data.advancePercentage) : existing.advancePercentage,
           advanceRequiredAmount: data.advanceRequiredAmount !== undefined ? Number(data.advanceRequiredAmount) : existing.advanceRequiredAmount,
+          ...(data.advanceReceivedAmount !== undefined || cashReceivedInput > 0 ? {
+            advanceReceivedAmount: cashReceivedInput > 0 ? cashReceivedInput : Number(data.advanceReceivedAmount || 0),
+            advancePaymentMode: cashReceivedInput > 0 ? 'CASH' : (data.advancePaymentMode || (existing as any).advancePaymentMode),
+          } : {}),
           ...(data.status && data.status !== existing.status ? {
             statusHistory: {
               create: {
