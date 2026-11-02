@@ -176,8 +176,7 @@ async function runMigration() {
     INSERT INTO branches (id, code, name, city, state, address, phone, contact_person, is_default, is_active)
     VALUES 
       ('branch-delhi', 'DELHI', 'Delhi Main Plant & Central Warehouse', 'Delhi / NCR', 'Delhi', 'Plot 42, Udyog Vihar Phase 4, Gurugram / Delhi NCR', '+91 98112 34567', 'Harish Rawat (Store Incharge)', true, true),
-      ('branch-kolkata', 'KOLKATA', 'Kolkata Regional Hub & Warehouse', 'Kolkata', 'West Bengal', 'Kasba Industrial Estate, Phase 2, Kolkata 700107', '+91 98300 77665', 'Prabir Roy (Warehouse Manager)', false, true),
-      ('branch-up', 'UP', 'UP Factory & Manufacturing Unit', 'Kanpur', 'Uttar Pradesh', 'PRC Manufacturing Unit, Uttar Pradesh', '+91 98390 11223', 'Factory Manager', false, true)
+      ('branch-kolkata', 'KOLKATA', 'Kolkata Regional Hub & Warehouse', 'Kolkata', 'West Bengal', 'Kasba Industrial Estate, Phase 2, Kolkata 700107', '+91 98300 77665', 'Prabir Roy (Warehouse Manager)', false, true)
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name,
       code = EXCLUDED.code,
