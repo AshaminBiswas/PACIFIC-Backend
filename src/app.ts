@@ -53,6 +53,7 @@ import mailRoutes from './modules/mail/mail.routes';
 import analyticsRoutes from './modules/analytics/analytics.routes';
 import dailySalesPurchasesRoutes from './modules/daily-sales-purchases/dailySalesPurchases.routes';
 import branchLedgerRoutes from './modules/branch-ledger/branchLedger.routes';
+import expensesRoutes from './modules/expenses/expenses.routes';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 const app = express();
@@ -238,6 +239,7 @@ app.use(`${prefix}/wacrm`, wacrmRoutes);
 app.use(`${prefix}/mail`, mailRoutes);
 app.use(`${prefix}/daily-sales-purchases`, dailySalesPurchasesRoutes);
 app.use(`${prefix}/branch-ledger`, branchLedgerRoutes);
+app.use(`${prefix}/expenses`, expensesRoutes);
 
 // ─── Initialize Roles & Permissions ──────────────────────────────────────────
 rolesService.seedDefaultRolesAndPermissions().catch((err) => {

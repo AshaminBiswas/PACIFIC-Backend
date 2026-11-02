@@ -1,6 +1,17 @@
 import { Request, Response, NextFunction } from 'express';
 import logger from '../config/logger';
 
+export class AppError extends Error {
+  statusCode: number;
+  code: string;
+  constructor(code: string, message: string, statusCode: number = 400) {
+    super(message);
+    this.name = 'AppError';
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+}
+
 export const notFoundHandler = (req: Request, res: Response): void => {
   res.status(404).json({
     success: false,
