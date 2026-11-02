@@ -426,27 +426,67 @@ export class ExpensesService {
       await this.ensureBranchExists(branchId);
     }
     const today = parseDateOnly();
+    const branchFilter = branchId && branchId !== 'ALL' ? { branchId } : {};
 
-    const [balanceRecord, todayLedger, pendingApprovalsCount] = await Promise.all([
+    const [floatSum, expenseSum, balanceRecord, todayLedger, pendingApprovalsCount] = await Promise.all([
+      prisma.expenseFloatTopUp.aggregate({
+        _sum: { amount: true },
+        _count: { id: true },
+        where: branchFilter,
+      }),
+      prisma.expenseEntry.aggregate({
+        _sum: { amount: true },
+        _count: { id: true },
+        where: {
+          isVoid: false,
+          ...branchFilter,
+        },
+      }),
       prisma.branchCashBalance.findUnique({ where: { branchId } }),
       prisma.expenseDailyLedger.findUnique({
         where: { branchId_date: { branchId, date: today } },
       }),
       prisma.expenseEntry.count({
-        where: { branchId, status: 'PENDING', isVoid: false },
+        where: {
+          status: 'PENDING',
+          isVoid: false,
+          ...(branchId && branchId !== 'ALL' ? { branchId } : {}),
+        },
       }),
     ]);
+
+    const totalFloatInflows = floatSum._sum.amount || 0;
+    const totalFloatCount = floatSum._count.id || 0;
+    const totalExpenseLedger = expenseSum._sum.amount || 0;
+    const totalExpenseCount = expenseSum._count.id || 0;
+
+    // Formula: Live Cash In Hand = Total Float Inflows - Total Expense Ledger
+    const currentBalance = totalFloatInflows - totalExpenseLedger;
+
+    // Keep branchCashBalance row synchronized in database
+    if (branchId && branchId !== 'ALL') {
+      prisma.branchCashBalance.upsert({
+        where: { branchId },
+        update: { currentBalance },
+        create: { branchId, currentBalance },
+      }).catch(() => null);
+    }
 
     const openingBalance = todayLedger?.openingBalance || 0;
     const cashReceived = todayLedger?.cashReceived || 0;
     const totalExpenses = todayLedger?.totalExpenses || 0;
     const systemClosing = todayLedger?.closingBalance || openingBalance + cashReceived - totalExpenses;
-    const currentBalance = balanceRecord?.currentBalance ?? systemClosing;
 
     return {
       branchId,
       currentBalance,
       currentBalanceRupees: paiseToRupees(currentBalance),
+      totalFloatInflows,
+      totalFloatInflowsRupees: paiseToRupees(totalFloatInflows),
+      totalFloatCount,
+      totalExpenseLedger,
+      totalExpenseLedgerRupees: paiseToRupees(totalExpenseLedger),
+      totalExpenseCount,
       todayOpening: openingBalance,
       todayReceived: cashReceived,
       todayExpenses: totalExpenses,
@@ -480,6 +520,10 @@ export class ExpensesService {
     const consolidated = summaries.reduce(
       (acc, curr) => {
         acc.totalCashInHand += curr.currentBalance;
+        acc.totalFloatInflows = (acc.totalFloatInflows || 0) + (curr.totalFloatInflows || 0);
+        acc.totalFloatCount = (acc.totalFloatCount || 0) + (curr.totalFloatCount || 0);
+        acc.totalExpenseLedger = (acc.totalExpenseLedger || 0) + (curr.totalExpenseLedger || 0);
+        acc.totalExpenseCount = (acc.totalExpenseCount || 0) + (curr.totalExpenseCount || 0);
         acc.todayTotalExpenses += curr.todayExpenses;
         acc.todayTotalReceived += curr.todayReceived;
         acc.totalPendingApprovals += curr.pendingApprovalsCount;
@@ -487,6 +531,10 @@ export class ExpensesService {
       },
       {
         totalCashInHand: 0,
+        totalFloatInflows: 0,
+        totalFloatCount: 0,
+        totalExpenseLedger: 0,
+        totalExpenseCount: 0,
         todayTotalExpenses: 0,
         todayTotalReceived: 0,
         totalPendingApprovals: 0,
@@ -498,6 +546,8 @@ export class ExpensesService {
       consolidated: {
         ...consolidated,
         totalCashInHandRupees: paiseToRupees(consolidated.totalCashInHand),
+        totalFloatInflowsRupees: paiseToRupees(consolidated.totalFloatInflows),
+        totalExpenseLedgerRupees: paiseToRupees(consolidated.totalExpenseLedger),
         todayTotalExpensesRupees: paiseToRupees(consolidated.todayTotalExpenses),
       },
     };
