@@ -1002,8 +1002,19 @@ export const piService = {
   async update(id: string, data: any, userId?: string) {
     const existing = await this.getById(id);
 
+    // Resolve safe userId to guarantee foreign key integrity
+    let safeUserId: string | null = null;
+    if (userId) {
+      try {
+        const u = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+        if (u) safeUserId = u.id;
+      } catch {
+        safeUserId = null;
+      }
+    }
+
     // Ensure initial version is archived before incrementing
-    await documentRevisionService.ensureInitialPiRevision(id, userId).catch(() => {});
+    await documentRevisionService.ensureInitialPiRevision(id, safeUserId || undefined).catch(() => {});
 
     const nextRev = (existing.revisionNumber || 1) + 1;
 
@@ -1012,6 +1023,28 @@ export const piService = {
     if (data.customerId) {
       const party = await prisma.businessParty.findUnique({ where: { id: data.customerId } });
       if (party) customerIdToSet = party.id;
+    }
+
+    // Validate companyProfileId if provided
+    let companyProfileIdToSet = existing.companyProfileId;
+    if (data.companyProfileId && typeof data.companyProfileId === 'string' && data.companyProfileId.trim().length > 0) {
+      try {
+        const comp = await prisma.companyProfile.findUnique({ where: { id: data.companyProfileId.trim() }, select: { id: true } });
+        if (comp) companyProfileIdToSet = comp.id;
+      } catch {}
+    }
+
+    // Validate linkedPoDate safely
+    let linkedPoDateToSet = existing.linkedPoDate;
+    if (data.linkedPoDate !== undefined) {
+      if (data.linkedPoDate === null || data.linkedPoDate === '') {
+        linkedPoDateToSet = null;
+      } else {
+        const d = new Date(data.linkedPoDate);
+        if (!isNaN(d.getTime())) {
+          linkedPoDateToSet = d;
+        }
+      }
     }
 
     const rawItems = Array.isArray(data.items) ? data.items : [];
@@ -1130,18 +1163,18 @@ export const piService = {
             create: taxCalc.items.map((it: any, idx: number) => ({
               serialNumber: idx + 1,
               productId: (rawItems[idx]?.productId && validProductMap.has(rawItems[idx]?.productId)) ? rawItems[idx]?.productId : null,
-              description: it.description,
-              hsnSac: rawItems[idx]?.hsnSac || '9403',
-              quantity: it.quantity,
-              unit: rawItems[idx]?.unit || 'NOS',
-              rate: it.rate,
-              taxableAmount: it.taxableAmount,
-              gstRate: it.gstRate,
-              cgst: it.cgst,
-              sgst: it.sgst,
-              igst: it.igst,
-              totalAmount: it.totalAmount,
-              amount: it.amount,
+              description: String(it.description || rawItems[idx]?.description || 'Custom Item').trim() || 'Custom Item',
+              hsnSac: String(rawItems[idx]?.hsnSac || it.hsnSac || '9403').trim() || '9403',
+              quantity: Number(it.quantity) || 1,
+              unit: String(rawItems[idx]?.unit || it.unit || 'NOS').trim() || 'NOS',
+              rate: Number(it.rate) || 0,
+              taxableAmount: Number(it.taxableAmount) || 0,
+              gstRate: Number(it.gstRate ?? 18),
+              cgst: Number(it.cgst || 0),
+              sgst: Number(it.sgst || 0),
+              igst: Number(it.igst || 0),
+              totalAmount: Number(it.totalAmount) || 0,
+              amount: Number(it.amount) || 0,
               boardType: rawItems[idx]?.boardType || null,
               boardThickness: rawItems[idx]?.boardThickness || null,
               boardColor: rawItems[idx]?.boardColor || null,
@@ -1156,12 +1189,12 @@ export const piService = {
         await tx.proformaInvoiceTaxSummary.deleteMany({ where: { piId: id } });
         taxSummaryUpdate = {
           create: taxCalc.taxSummary.map((ts: any) => ({
-            gstRate: ts.gstRate,
-            taxableAmount: ts.taxableAmount,
-            cgst: ts.cgst,
-            sgst: ts.sgst,
-            igst: ts.igst,
-            totalTax: ts.totalTax,
+            gstRate: Number(ts.gstRate) || 18,
+            taxableAmount: Number(ts.taxableAmount) || 0,
+            cgst: Number(ts.cgst) || 0,
+            sgst: Number(ts.sgst) || 0,
+            igst: Number(ts.igst) || 0,
+            totalTax: Number(ts.totalTax) || 0,
           })),
         };
 
@@ -1183,14 +1216,14 @@ export const piService = {
         data: {
           revisionNumber: nextRev,
           customerId: customerIdToSet,
-          companyProfileId: data.companyProfileId ?? existing.companyProfileId,
+          companyProfileId: companyProfileIdToSet,
           placeOfSupply: data.placeOfSupply ?? existing.placeOfSupply,
           placeOfSupplyStateCode: data.placeOfSupplyStateCode ?? existing.placeOfSupplyStateCode,
           modeOfTransport: data.modeOfTransport ?? existing.modeOfTransport,
           vehicleNumber: data.vehicleNumber ?? existing.vehicleNumber,
           grLrNumber: data.grLrNumber ?? existing.grLrNumber,
           linkedPoNumber: data.linkedPoNumber ?? existing.linkedPoNumber,
-          linkedPoDate: data.linkedPoDate ? new Date(data.linkedPoDate) : existing.linkedPoDate,
+          linkedPoDate: linkedPoDateToSet,
           status: data.status ?? existing.status,
           subtotal,
           freightAmount: freightAmountToSet,
@@ -1214,13 +1247,14 @@ export const piService = {
           ...(data.advanceReceivedAmount !== undefined || cashReceivedInput > 0 ? {
             advanceReceivedAmount: cashReceivedInput > 0 ? cashReceivedInput : Number(data.advanceReceivedAmount || 0),
             advancePaymentMode: cashReceivedInput > 0 ? 'CASH' : (data.advancePaymentMode || (existing as any).advancePaymentMode),
+            advancePaymentStatus: cashReceivedInput > 0 ? (cashReceivedInput >= grandTotal ? 'FULLY_RECEIVED' : 'PARTIAL') : (data.advancePaymentStatus || (existing as any).advancePaymentStatus),
           } : {}),
           ...(data.status && data.status !== existing.status ? {
             statusHistory: {
               create: {
                 fromStatus: existing.status,
                 toStatus: data.status,
-                changedById: userId,
+                changedById: safeUserId,
                 comment: data.notes || `Status updated to ${data.status}`,
               },
             },
@@ -1234,13 +1268,15 @@ export const piService = {
       // Update terms if provided
       if (data.terms && Array.isArray(data.terms)) {
         await tx.proformaInvoiceTerm.deleteMany({ where: { piId: id } });
-        await tx.proformaInvoiceTerm.createMany({
-          data: data.terms.map((t: string, idx: number) => ({
-            piId: id,
-            clauseNumber: idx + 1,
-            text: t,
-          })),
-        });
+        const termRows = data.terms
+          .map((t: any, idx: number) => {
+            const str = typeof t === 'string' ? t.trim() : (t && typeof t.text === 'string' ? t.text.trim() : '');
+            return str ? { piId: id, clauseNumber: idx + 1, text: str } : null;
+          })
+          .filter(Boolean);
+        if (termRows.length > 0) {
+          await tx.proformaInvoiceTerm.createMany({ data: termRows as any });
+        }
       }
 
       // Update parties if provided
@@ -1255,25 +1291,25 @@ export const piService = {
           partiesToCreate.push({
             piId: id,
             partyRole: 'BILL_TO',
-            partyName: data.billTo.partyName || existing.customer?.legalName || 'Customer Billing Party',
-            gstin: data.billTo.gstin ? data.billTo.gstin.toUpperCase().trim() : undefined,
-            addressLine: data.billTo.addressLine || 'Registered Address',
-            state: data.billTo.state || partyPosName,
-            stateCode: data.billTo.stateCode || partyPosCode,
-            phone: data.billTo.phone,
-            email: data.billTo.email,
+            partyName: String(data.billTo.partyName || existing.customer?.legalName || 'Customer Billing Party').trim() || 'Customer Billing Party',
+            gstin: data.billTo.gstin ? String(data.billTo.gstin).toUpperCase().trim() : undefined,
+            addressLine: String(data.billTo.addressLine || 'Registered Address').trim() || 'Registered Address',
+            state: String(data.billTo.state || partyPosName || 'Delhi').trim() || 'Delhi',
+            stateCode: data.billTo.stateCode ? String(data.billTo.stateCode).trim() : partyPosCode,
+            phone: data.billTo.phone ? String(data.billTo.phone).trim() : null,
+            email: data.billTo.email ? String(data.billTo.email).trim() : null,
           });
         }
         if (data.shipTo) {
           partiesToCreate.push({
             piId: id,
             partyRole: 'SHIP_TO',
-            partyName: data.shipTo.partyName || data.billTo?.partyName || existing.customer?.legalName || 'Delivery Site',
-            gstin: data.shipTo.gstin ? data.shipTo.gstin.toUpperCase().trim() : undefined,
-            addressLine: data.shipTo.addressLine || data.billTo?.addressLine || 'Delivery Address',
-            state: data.shipTo.state || data.billTo?.state || partyPosName,
-            stateCode: data.shipTo.stateCode || data.billTo?.stateCode || partyPosCode,
-            phone: data.shipTo.phone || data.billTo?.phone,
+            partyName: String(data.shipTo.partyName || data.billTo?.partyName || existing.customer?.legalName || 'Delivery Site').trim() || 'Delivery Site',
+            gstin: data.shipTo.gstin ? String(data.shipTo.gstin).toUpperCase().trim() : undefined,
+            addressLine: String(data.shipTo.addressLine || data.billTo?.addressLine || 'Delivery Address').trim() || 'Delivery Address',
+            state: String(data.shipTo.state || data.billTo?.state || partyPosName || 'Delhi').trim() || 'Delhi',
+            stateCode: data.shipTo.stateCode ? String(data.shipTo.stateCode).trim() : (data.billTo?.stateCode ? String(data.billTo.stateCode).trim() : partyPosCode),
+            phone: data.shipTo.phone ? String(data.shipTo.phone).trim() : (data.billTo?.phone ? String(data.billTo.phone).trim() : null),
           });
         }
         if (partiesToCreate.length > 0) {
@@ -1281,14 +1317,16 @@ export const piService = {
         }
       }
 
-      if (userId) {
+      if (safeUserId) {
         await auditService.logMutation({
-          userId,
+          userId: safeUserId,
           action: 'UPDATE',
           module: 'Sales',
           entityType: 'ProformaInvoice',
           entityId: id,
           newData: { grandTotal, piNumber: updated.piNumber },
+        }).catch((auditErr) => {
+          console.warn('[PIService] Non-fatal: auditLog failed on update:', auditErr);
         });
       }
 
@@ -1304,7 +1342,7 @@ export const piService = {
         id,
         nextRev,
         data.revisionReason || data.reason || `Revision ${nextRev}`,
-        userId
+        safeUserId || undefined
       );
     } catch (revErr) {
       console.warn(`[PIService] Warning: Failed to archive revision ${nextRev} for PI ${id}:`, revErr);

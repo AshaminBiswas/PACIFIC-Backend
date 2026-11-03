@@ -20,6 +20,7 @@ router.post('/:id/convert-to-order', requireAuth, requirePermission('pi:create')
 router.get('/:id/followups', requireAuth, requirePermission('pi:view'), piController.getFollowups);
 router.post('/:id/followups', requireAuth, requirePermission('pi:create'), piController.addFollowup);
 router.patch('/:id', requireAuth, requirePermission('pi:create'), piController.update);
+router.put('/:id', requireAuth, requirePermission('pi:create'), piController.update);
 router.delete('/:id', requireAuth, requirePermission('pi:cancel'), piController.delete);
 
 export default router;

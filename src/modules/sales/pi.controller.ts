@@ -73,7 +73,8 @@ export const piController = {
     try {
       const data = await piService.update(req.params.id, req.body, req.user?.id);
       res.json({ success: true, data, message: 'Proforma Invoice updated successfully' });
-    } catch (err) {
+    } catch (err: any) {
+      console.error('[piController.update] Failed to update PI ' + req.params?.id + ':', err?.message || err);
       next(err);
     }
   },
