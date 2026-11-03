@@ -1,4 +1,5 @@
 import { prisma } from '../../config/database';
+import { AppError } from '../../middleware/error.middleware';
 
 export interface CreateDailySalesPurchaseDto {
   entryDate: string; // YYYY-MM-DD
@@ -50,47 +51,164 @@ export interface DailySalesPurchaseQueryDto {
 
 export const dailySalesPurchasesService = {
   /**
+   * Helper to safely resolve a valid CustomerProfile.id from either CustomerProfile.id or BusinessParty.id.
+   * Auto-provisions CustomerProfile if the BusinessParty exists, preventing foreign key violations.
+   */
+  async resolveCustomerProfile(idOrPartyId?: string): Promise<{ profileId: string | null; displayName?: string }> {
+    if (!idOrPartyId) return { profileId: null };
+
+    // 1. Try finding by CustomerProfile.id
+    let profile = await prisma.customerProfile.findUnique({
+      where: { id: idOrPartyId },
+      include: { party: true },
+    });
+
+    // 2. If not found, try finding by partyId
+    if (!profile) {
+      profile = await prisma.customerProfile.findUnique({
+        where: { partyId: idOrPartyId },
+        include: { party: true },
+      });
+    }
+
+    // 3. If still not found, check if BusinessParty exists; if so, upsert CustomerProfile
+    if (!profile) {
+      const party = await prisma.businessParty.findUnique({
+        where: { id: idOrPartyId },
+      });
+      if (party) {
+        try {
+          profile = await prisma.customerProfile.upsert({
+            where: { partyId: party.id },
+            create: {
+              partyId: party.id,
+              customerType: 'CONTRACTOR',
+              status: 'ACTIVE',
+            },
+            update: {},
+            include: { party: true },
+          });
+        } catch (upsertErr: any) {
+          console.warn('[DailySales] Could not upsert CustomerProfile:', upsertErr?.message);
+        }
+      }
+    }
+
+    if (profile) {
+      const displayName = profile.party?.tradeName || profile.party?.legalName || undefined;
+      return { profileId: profile.id, displayName };
+    }
+
+    return { profileId: null };
+  },
+
+  /**
+   * Helper to safely resolve a valid VendorProfile.id from either VendorProfile.id or BusinessParty.id.
+   */
+  async resolveVendorProfile(idOrPartyId?: string): Promise<{ profileId: string | null; displayName?: string }> {
+    if (!idOrPartyId) return { profileId: null };
+
+    // 1. Try finding by VendorProfile.id
+    let profile = await prisma.vendorProfile.findUnique({
+      where: { id: idOrPartyId },
+      include: { party: true },
+    });
+
+    // 2. If not found, try finding by partyId
+    if (!profile) {
+      profile = await prisma.vendorProfile.findUnique({
+        where: { partyId: idOrPartyId },
+        include: { party: true },
+      });
+    }
+
+    // 3. If still not found, check if BusinessParty exists; if so, upsert VendorProfile
+    if (!profile) {
+      const party = await prisma.businessParty.findUnique({
+        where: { id: idOrPartyId },
+      });
+      if (party) {
+        try {
+          profile = await prisma.vendorProfile.upsert({
+            where: { partyId: party.id },
+            create: {
+              partyId: party.id,
+              vendorType: 'MANUFACTURER',
+              status: 'ACTIVE',
+            },
+            update: {},
+            include: { party: true },
+          });
+        } catch (upsertErr: any) {
+          console.warn('[DailyPurchase] Could not upsert VendorProfile:', upsertErr?.message);
+        }
+      }
+    }
+
+    if (profile) {
+      const displayName = profile.party?.tradeName || profile.party?.legalName || undefined;
+      return { profileId: profile.id, displayName };
+    }
+
+    return { profileId: null };
+  },
+
+  /**
+   * Helper to ensure companyProfileId references a valid record or returns null.
+   */
+  async resolveCompanyProfile(companyProfileId?: string): Promise<string | null> {
+    if (!companyProfileId) return null;
+    const comp = await prisma.companyProfile.findUnique({
+      where: { id: companyProfileId },
+      select: { id: true },
+    });
+    return comp ? comp.id : null;
+  },
+
+  /**
    * Create a manual daily sales or purchase entry.
    * Delinked from PI — binds directly to CustomerProfile (Sales) or VendorProfile (Purchase).
    */
   async createEntry(dto: CreateDailySalesPurchaseDto, userId?: string) {
     if (!dto.entryDate) {
-      throw new Error('Entry date is required');
+      throw new AppError('ENTRY_DATE_REQUIRED', 'Entry date is required', 400);
     }
     if (!['SALES', 'PURCHASE'].includes(dto.type)) {
-      throw new Error("Entry type must be either 'SALES' or 'PURCHASE'");
+      throw new AppError('INVALID_ENTRY_TYPE', "Entry type must be either 'SALES' or 'PURCHASE'", 400);
     }
-    const amount = Number(dto.amount) || 0;
-    if (amount <= 0) {
-      throw new Error('Amount must be greater than zero');
-    }
-    const taxAmount = Number(dto.taxAmount) || 0;
-    const totalAmount = dto.totalAmount ? Number(dto.totalAmount) : amount + taxAmount;
 
-    // Resolve party display name from Customer or Vendor if not provided
+    const amount = Math.max(0, Number(dto.amount) || 0);
+    const taxAmount = Math.max(0, Number(dto.taxAmount) || 0);
+    const totalAmount = dto.totalAmount ? Number(dto.totalAmount) : Math.round((amount + taxAmount) * 100) / 100;
+
+    if (totalAmount <= 0 && amount <= 0) {
+      throw new AppError('INVALID_AMOUNT', 'Total amount must be greater than zero', 400);
+    }
+
+    // Resolve party display name and safe relation IDs
     let resolvedPartyName = dto.partyName?.trim() || '';
+    let resolvedCustomerId: string | null = null;
+    let resolvedVendorId: string | null = null;
 
     if (dto.type === 'SALES' && dto.customerId) {
-      const customer = await prisma.customerProfile.findUnique({
-        where: { id: dto.customerId },
-        include: { party: true },
-      });
-      if (customer) {
-        resolvedPartyName = customer.party.tradeName || customer.party.legalName || resolvedPartyName;
+      const custRes = await this.resolveCustomerProfile(dto.customerId);
+      resolvedCustomerId = custRes.profileId;
+      if (!resolvedPartyName && custRes.displayName) {
+        resolvedPartyName = custRes.displayName;
       }
     } else if (dto.type === 'PURCHASE' && dto.vendorId) {
-      const vendor = await prisma.vendorProfile.findUnique({
-        where: { id: dto.vendorId },
-        include: { party: true },
-      });
-      if (vendor) {
-        resolvedPartyName = vendor.party.tradeName || vendor.party.legalName || resolvedPartyName;
+      const vendRes = await this.resolveVendorProfile(dto.vendorId);
+      resolvedVendorId = vendRes.profileId;
+      if (!resolvedPartyName && vendRes.displayName) {
+        resolvedPartyName = vendRes.displayName;
       }
     }
 
     if (!resolvedPartyName) {
       resolvedPartyName = dto.type === 'SALES' ? 'Direct Customer' : 'Direct Supplier';
     }
+
+    const resolvedCompanyProfileId = await this.resolveCompanyProfile(dto.companyProfileId);
 
     const entry = await prisma.dailySalesPurchase.create({
       data: {
@@ -99,15 +217,15 @@ export const dailySalesPurchasesService = {
         amount,
         taxAmount,
         totalAmount,
-        referenceNo: dto.referenceNo || null,
+        referenceNo: dto.referenceNo?.trim() || null,
         partyName: resolvedPartyName,
-        customerId: dto.type === 'SALES' ? dto.customerId || null : null,
-        vendorId: dto.type === 'PURCHASE' ? dto.vendorId || null : null,
+        customerId: dto.type === 'SALES' ? resolvedCustomerId : null,
+        vendorId: dto.type === 'PURCHASE' ? resolvedVendorId : null,
         category: dto.category || 'General',
         description: dto.description || null,
         paymentMode: dto.paymentMode || 'CASH',
         paymentStatus: dto.paymentStatus || 'PAID',
-        companyProfileId: dto.companyProfileId || null,
+        companyProfileId: resolvedCompanyProfileId,
         createdBy: userId || null,
       },
       include: {
@@ -150,10 +268,12 @@ export const dailySalesPurchasesService = {
     }
 
     if (query.customerId) {
-      where.customerId = query.customerId;
+      const custRes = await this.resolveCustomerProfile(query.customerId);
+      where.customerId = custRes.profileId || query.customerId;
     }
     if (query.vendorId) {
-      where.vendorId = query.vendorId;
+      const vendRes = await this.resolveVendorProfile(query.vendorId);
+      where.vendorId = vendRes.profileId || query.vendorId;
     }
     if (query.category) {
       where.category = query.category;
@@ -352,23 +472,25 @@ export const dailySalesPurchasesService = {
 
     if (dto.partyName !== undefined) updateData.partyName = dto.partyName;
     if (dto.customerId !== undefined) {
-      updateData.customerId = dto.customerId || null;
       if (dto.customerId) {
-        const cust = await prisma.customerProfile.findUnique({
-          where: { id: dto.customerId },
-          include: { party: true },
-        });
-        if (cust) updateData.partyName = cust.party.tradeName || cust.party.legalName;
+        const custRes = await this.resolveCustomerProfile(dto.customerId);
+        updateData.customerId = custRes.profileId;
+        if (custRes.displayName && !dto.partyName) {
+          updateData.partyName = custRes.displayName;
+        }
+      } else {
+        updateData.customerId = null;
       }
     }
     if (dto.vendorId !== undefined) {
-      updateData.vendorId = dto.vendorId || null;
       if (dto.vendorId) {
-        const vend = await prisma.vendorProfile.findUnique({
-          where: { id: dto.vendorId },
-          include: { party: true },
-        });
-        if (vend) updateData.partyName = vend.party.tradeName || vend.party.legalName;
+        const vendRes = await this.resolveVendorProfile(dto.vendorId);
+        updateData.vendorId = vendRes.profileId;
+        if (vendRes.displayName && !dto.partyName) {
+          updateData.partyName = vendRes.displayName;
+        }
+      } else {
+        updateData.vendorId = null;
       }
     }
 
