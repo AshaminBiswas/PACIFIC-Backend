@@ -13,29 +13,7 @@ import { emailService } from '../../utils/email.service';
 import { htmlToPdfBuffer } from '../../utils/htmlToPdf';
 import { v4 as uuidv4 } from 'uuid';
 import { documentRevisionService } from '../docs/documentRevision.service';
-
-/** Fetches a remote image URL and converts it to a base64 data URI for offline embedding. */
-async function fetchImageAsDataUri(url: string): Promise<string> {
-  return new Promise((resolve) => {
-    try {
-      const client = url.startsWith('https://') ? https : http;
-      const req = client.get(url, { timeout: 5000 }, (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('end', () => {
-          const contentType = res.headers['content-type'] || 'image/png';
-          const b64 = Buffer.concat(chunks).toString('base64');
-          resolve(`data:${contentType};base64,${b64}`);
-        });
-        res.on('error', () => resolve(url));
-      });
-      req.on('error', () => resolve(url));
-      req.on('timeout', () => { req.destroy(); resolve(url); });
-    } catch {
-      resolve(url);
-    }
-  });
-}
+import { resolveQuotationModelImages, fetchImageAsDataUri } from './quotationModelVisuals';
 
 
 function determineQuotationScopeAndType(q: any): { quotationScope: 'CUBICLE' | 'BOARD' | 'HARDWARE' | 'CUSTOM_ITEM'; quotationType: 'cubicle' | 'custom_board' | 'custom_hardware' | 'custom_item' } {
@@ -374,6 +352,14 @@ export const quotationsService = {
       const calculatedAmount = isLocker ? (tierRows * qty * rate) : (qty * rate);
       const amount = Number(it.amount ?? calculatedAmount);
       const description = it.description || it.itemDescription || 'Pacific Restroom Cubicle Partition';
+      const rawSpecs = (typeof it.customSpecsJson === 'object' && it.customSpecsJson !== null ? it.customSpecsJson : {});
+      const resolvedModelName = it.customModelName || it.modelName || rawSpecs.customModelName || rawSpecs.modelName || null;
+      const resolvedModelImageUrl = it.modelImageUrl || rawSpecs.modelImageUrl || rawSpecs.imageUrl || null;
+      const resolvedSystemCategory = it.systemCategory || rawSpecs.systemCategory || (isLocker ? 'locker' : null);
+      const resolvedHardware = it.hardwarePackage || rawSpecs.hardwarePackage || null;
+      const resolvedBoardType = it.boardType || rawSpecs.boardType || null;
+      const resolvedMake = it.make || rawSpecs.make || null;
+
       return {
         serialNumber: idx + 1,
         productId: it.productId || null,
@@ -383,20 +369,21 @@ export const quotationsService = {
         rate,
         amount,
         cubicleSize: it.cubicleSize || it.specifications || null,
+        boardType: resolvedBoardType,
         boardColor: it.boardColor || null,
         boardThickness: it.boardThickness || null,
         doorSize: it.doorSize || null,
         overallHeight: it.overallHeight || null,
-        customSpecsJson: (it.hardwarePackage || it.boardType || it.make || it.customModelName || it.modelName || it.modelImageUrl || it.customSpecsJson)
+        customSpecsJson: (resolvedHardware || resolvedBoardType || resolvedMake || resolvedModelName || resolvedModelImageUrl || it.customSpecsJson)
           ? {
-              hardwarePackage: it.hardwarePackage || null,
-              boardType: it.boardType || null,
-              make: it.make || null,
-              customModelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.customModelName : null) || null,
-              modelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.modelName : null) || null,
-              modelImageUrl: it.modelImageUrl || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.modelImageUrl : null) || null,
-              systemCategory: it.systemCategory || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.systemCategory : null) || null,
-              ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
+              ...rawSpecs,
+              hardwarePackage: resolvedHardware,
+              boardType: resolvedBoardType,
+              make: resolvedMake,
+              customModelName: resolvedModelName,
+              modelName: resolvedModelName,
+              modelImageUrl: resolvedModelImageUrl,
+              systemCategory: resolvedSystemCategory,
             }
           : null,
       };
@@ -534,6 +521,14 @@ export const quotationsService = {
         create: updateData.items.map((it: any, idx: number) => {
           const qty = Number(it.quantity) || 1;
           const rate = Number(it.rate ?? it.unitPrice ?? 0);
+          const rawSpecs = (typeof it.customSpecsJson === 'object' && it.customSpecsJson !== null ? it.customSpecsJson : {});
+          const resolvedModelName = it.customModelName || it.modelName || rawSpecs.customModelName || rawSpecs.modelName || null;
+          const resolvedModelImageUrl = it.modelImageUrl || rawSpecs.modelImageUrl || rawSpecs.imageUrl || null;
+          const resolvedSystemCategory = it.systemCategory || rawSpecs.systemCategory || null;
+          const resolvedHardware = it.hardwarePackage || rawSpecs.hardwarePackage || null;
+          const resolvedBoardType = it.boardType || rawSpecs.boardType || null;
+          const resolvedMake = it.make || rawSpecs.make || null;
+
           return {
             serialNumber: idx + 1,
             productId: it.productId || null,
@@ -543,20 +538,21 @@ export const quotationsService = {
             rate,
             amount: Number(it.amount ?? (qty * rate)),
             cubicleSize: it.cubicleSize || it.specifications || null,
+            boardType: resolvedBoardType,
             boardColor: it.boardColor || null,
             boardThickness: it.boardThickness || null,
             doorSize: it.doorSize || null,
             overallHeight: it.overallHeight || null,
-            customSpecsJson: (it.hardwarePackage || it.boardType || it.make || it.customModelName || it.modelName || it.modelImageUrl || it.customSpecsJson)
+            customSpecsJson: (resolvedHardware || resolvedBoardType || resolvedMake || resolvedModelName || resolvedModelImageUrl || it.customSpecsJson)
               ? {
-                  hardwarePackage: it.hardwarePackage || null,
-                  boardType: it.boardType || null,
-                  make: it.make || null,
-                  customModelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.customModelName : null) || null,
-                  modelName: it.customModelName || it.modelName || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.modelName : null) || null,
-                  modelImageUrl: it.modelImageUrl || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.modelImageUrl : null) || null,
-                  systemCategory: it.systemCategory || (typeof it.customSpecsJson === 'object' ? it.customSpecsJson?.systemCategory : null) || null,
-                  ...(typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}),
+                  ...rawSpecs,
+                  hardwarePackage: resolvedHardware,
+                  boardType: resolvedBoardType,
+                  make: resolvedMake,
+                  customModelName: resolvedModelName,
+                  modelName: resolvedModelName,
+                  modelImageUrl: resolvedModelImageUrl,
+                  systemCategory: resolvedSystemCategory,
                 }
               : null,
           };
@@ -755,126 +751,7 @@ export const quotationsService = {
       ? await fetchImageAsDataUri(rawSignatureUrl)
       : rawSignatureUrl;
 
-    const lockerCatalogModels = await prisma.websiteProduct.findMany({
-      where: { category: { contains: 'Locker', mode: 'insensitive' } },
-    }).catch(() => []);
-
-    // Collect unique model images from line items (only clean model name, no unnecessary descriptions)
-    const rawModelImages = (quote.items || [])
-      .map((it: any) => {
-        const desc = String(it.description || '').trim();
-        const descLower = desc.toLowerCase();
-        const customSpecs = ((it.customSpecsJson as any) || {});
-        const isLocker = (
-          it.systemCategory === 'locker' ||
-          customSpecs.systemCategory === 'locker' ||
-          descLower.includes('locker') ||
-          descLower.includes('tier') ||
-          String(it.unit || '').toLowerCase().includes('tier') ||
-          (/^\d+$/.test(String(it.unit || '').trim()) && !descLower.includes('cubicle'))
-        );
-        const isUrinal = !isLocker && (
-          it.systemCategory === 'ump' ||
-          customSpecs.systemCategory === 'ump' ||
-          descLower.includes('urinal') ||
-          descLower.includes('ump') ||
-          descLower.includes('modesty')
-        );
-
-        const matchedLocker = isLocker
-          ? lockerCatalogModels.find((m: any) =>
-              (it.modelId && (m.id === it.modelId || m.slug === it.modelId)) ||
-              (customSpecs.customModelName && m.title.toLowerCase().includes(String(customSpecs.customModelName).toLowerCase())) ||
-              (customSpecs.modelName && m.title.toLowerCase().includes(String(customSpecs.modelName).toLowerCase())) ||
-              (it.modelName && m.title.toLowerCase().includes(String(it.modelName).toLowerCase())) ||
-              (it.description && m.title.toLowerCase().includes(it.description.toLowerCase())) ||
-              (it.description && it.description.toLowerCase().includes(m.title.toLowerCase()))
-            )
-          : null;
-
-        let imgUrl = it.modelImageUrl ||
-          customSpecs.modelImageUrl ||
-          customSpecs.imageUrl ||
-          matchedLocker?.imageUrl;
-
-        let cleanModelName = matchedLocker?.title ||
-          customSpecs.customModelName ||
-          customSpecs.modelName ||
-          it.modelName;
-
-        if (!cleanModelName && desc) {
-          const match = desc.match(/(?:Model|Series|System)[:\s]+([^,\n\r]+)/i);
-          if (match) {
-            cleanModelName = match[1].trim();
-          } else if (desc.length > 30) {
-            cleanModelName = desc.split(/[,\n\r\-]/)[0].trim().slice(0, 30);
-          } else {
-            cleanModelName = desc;
-          }
-        }
-
-        cleanModelName = (cleanModelName || (isUrinal ? 'Model A' : isLocker ? (matchedLocker?.title || 'Modular Locker') : 'Model Visual'))
-          .replace(/^(?:Model\s*Name|System)\s*:\s*/i, '')
-          .replace(/[\(\[\{].*?[\)\]\}]/g, '')
-          .replace(/^Pacific\s+/i, '')
-          .trim();
-
-        if (matchedLocker?.title) {
-          cleanModelName = matchedLocker.title;
-        }
-
-        // Special handling for Urinal Partitions: Ensure image and format title as Model "A"
-        if (isUrinal) {
-          if (!imgUrl) {
-            if (descLower.includes('model b') || descLower.includes('mode b') || cleanModelName.toLowerCase() === 'b') {
-              imgUrl = 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80';
-            } else if (descLower.includes('model c') || descLower.includes('mode c') || cleanModelName.toLowerCase() === 'c') {
-              imgUrl = 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=800&q=80';
-            } else if (descLower.includes('model d') || descLower.includes('mode d') || cleanModelName.toLowerCase() === 'd') {
-              imgUrl = 'https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=800&q=80';
-            } else {
-              imgUrl = 'https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=800&q=80';
-            }
-          }
-
-          const upper = cleanModelName.toUpperCase();
-          if (upper === 'A' || upper === 'MODEL A' || upper === 'MODE A' || descLower.includes('model a') || descLower.includes('mode a')) {
-            cleanModelName = 'Model "A"';
-          } else if (upper === 'B' || upper === 'MODEL B' || upper === 'MODE B' || descLower.includes('model b')) {
-            cleanModelName = 'Model "B"';
-          } else if (upper === 'C' || upper === 'MODEL C' || upper === 'MODE C' || descLower.includes('model c')) {
-            cleanModelName = 'Model "C"';
-          } else if (upper === 'D' || upper === 'MODEL D' || upper === 'MODE D' || descLower.includes('model d')) {
-            cleanModelName = 'Model "D"';
-          } else if (!cleanModelName.toLowerCase().startsWith('model')) {
-            cleanModelName = `Model "${cleanModelName}"`;
-          }
-        }
-
-        return imgUrl ? { modelName: cleanModelName, imageUrl: imgUrl } : null;
-      })
-      .filter((img: any): img is { modelName: string; imageUrl: string } => Boolean(img && img.imageUrl));
-
-    const seenUrls = new Set<string>();
-    const uniqueModelImages: Array<{ modelName: string; imageUrl: string }> = [];
-    for (const img of rawModelImages) {
-      if (!seenUrls.has(img.imageUrl)) {
-        seenUrls.add(img.imageUrl);
-        uniqueModelImages.push(img);
-      }
-    }
-
-    const modelImagesWithDataUri = await Promise.all(
-      uniqueModelImages.map(async (img) => {
-        const dataUri = img.imageUrl.startsWith('data:')
-          ? img.imageUrl
-          : await fetchImageAsDataUri(img.imageUrl);
-        return {
-          ...img,
-          imageUrl: dataUri || img.imageUrl,
-        };
-      })
-    );
+    const { modelImages: modelImagesWithDataUri, enrichedItems } = await resolveQuotationModelImages(quote.items || []);
 
     const installCharge = Number(quote.installationCharge || 0);
     const cubCount = (quote.items || [])
@@ -958,10 +835,11 @@ export const quotationsService = {
       issuingStaffPhone,
       issuingStaffEmail: quote.issuingStaff?.email,
       currency: quote.currency,
-      items: (quote.items || []).map((it: any) => {
+      items: (quote.items || []).map((it: any, idx: number) => {
+        const enriched = (enrichedItems || [])[idx] || {};
         const descLower = (it.description || '').toLowerCase();
         const customSpecs = ((it.customSpecsJson as any) || {});
-        const modelName = (customSpecs.customModelName || customSpecs.modelName || it.modelName || it.customModelName || '').trim();
+        const modelName = (enriched.modelName || customSpecs.customModelName || customSpecs.modelName || it.modelName || it.customModelName || '').trim();
         const isLocker = (
           it.systemCategory === 'locker' ||
           customSpecs.systemCategory === 'locker' ||
@@ -971,14 +849,8 @@ export const quotationsService = {
           (/^\d+$/.test(String(it.unit || '').trim()) && !descLower.includes('cubicle'))
         );
 
-        const matchedLockerModel = isLocker
-          ? lockerCatalogModels.find((m: any) =>
-              (it.modelId && (m.id === it.modelId || m.slug === it.modelId)) ||
-              (modelName && m.title.toLowerCase().includes(modelName.toLowerCase())) ||
-              (it.description && m.title.toLowerCase().includes(it.description.toLowerCase())) ||
-              (it.description && it.description.toLowerCase().includes(m.title.toLowerCase()))
-            )
-          : null;
+        const matchedProduct = enriched.matchedProduct;
+        const matchedLockerModel = isLocker ? matchedProduct : null;
 
         let width = customSpecs.width;
         let depth = customSpecs.depth;
@@ -1041,9 +913,9 @@ export const quotationsService = {
           boardType: it.boardType || customSpecs.boardType || customSpecs.boardMaterial || undefined,
           hardwarePackage: it.hardwarePackage || customSpecs.hardwarePackage || customSpecs.hardwareType || undefined,
           make: it.make || customSpecs.make || undefined,
-          modelImageUrl: isLocker ? (it.modelImageUrl || customSpecs.modelImageUrl || matchedLockerModel?.imageUrl || undefined) : (it.modelImageUrl || customSpecs.modelImageUrl || undefined),
-          modelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : (customSpecs.customModelName || customSpecs.modelName || it.modelName || undefined),
-          customModelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : (customSpecs.customModelName || it.customModelName || undefined),
+          modelImageUrl: enriched.modelImageUrl || it.modelImageUrl || customSpecs.modelImageUrl || matchedProduct?.imageUrl || undefined,
+          modelName: enriched.modelName || (isLocker && matchedLockerModel?.title) || customSpecs.customModelName || customSpecs.modelName || it.modelName || undefined,
+          customModelName: enriched.customModelName || (isLocker && matchedLockerModel?.title) || customSpecs.customModelName || it.customModelName || undefined,
           customSpecsJson: {
             ...customSpecs,
             systemCategory: isLocker ? 'locker' : customSpecs.systemCategory,
@@ -1053,8 +925,9 @@ export const quotationsService = {
             overallHeight: isLocker ? `${totalH}mm` : customSpecs.overallHeight,
             compartmentDimension: isLocker ? `${cleanW}mm W × ${cleanD}mm D × ${compH}mm H` : customSpecs.compartmentDimension,
             overallLockerDimension: isLocker ? `${cleanW}mm W × ${cleanD}mm D × ${totalH}mm H` : customSpecs.overallLockerDimension,
-            customModelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : customSpecs.customModelName,
-            modelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : customSpecs.modelName,
+            customModelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : (enriched.customModelName || customSpecs.customModelName),
+            modelName: (isLocker && matchedLockerModel?.title) ? matchedLockerModel.title : (enriched.modelName || customSpecs.modelName),
+            modelImageUrl: enriched.modelImageUrl || customSpecs.modelImageUrl,
           },
           isCustom: Boolean(customSpecs.isCustom || it.isCustom || customSpecs.systemCategory === 'custom'),
           hsnSac: customSpecs.hsnSac || it.hsnSac || undefined,
@@ -1226,12 +1099,23 @@ export const quotationsService = {
         const rate = Number(it.rate ?? it.unitPrice ?? 0);
         const calculatedAmount = isLocker ? (tierRows * qty * rate) : (qty * rate);
         const amount = Number(it.amount ?? calculatedAmount);
-        const rawSpecs = (typeof it.customSpecsJson === 'object' ? it.customSpecsJson : {}) || {};
+        const rawSpecs = (typeof it.customSpecsJson === 'object' && it.customSpecsJson !== null ? it.customSpecsJson : {});
+        const resolvedModelName = it.customModelName || it.modelName || rawSpecs.customModelName || rawSpecs.modelName || null;
+        const resolvedModelImageUrl = it.modelImageUrl || rawSpecs.modelImageUrl || rawSpecs.imageUrl || null;
+        const resolvedSystemCategory = it.systemCategory || rawSpecs.systemCategory || (isLocker ? 'locker' : null);
+        const resolvedHardware = it.hardwarePackage || rawSpecs.hardwarePackage || null;
+        const resolvedBoardType = it.boardType || rawSpecs.boardType || null;
+        const resolvedMake = it.make || rawSpecs.make || null;
+
         const mergedCustomSpecs = {
-          hardwarePackage: it.hardwarePackage || rawSpecs.hardwarePackage || null,
-          boardType: it.boardType || rawSpecs.boardType || null,
-          make: it.make || rawSpecs.make || null,
           ...rawSpecs,
+          hardwarePackage: resolvedHardware,
+          boardType: resolvedBoardType,
+          make: resolvedMake,
+          customModelName: resolvedModelName,
+          modelName: resolvedModelName,
+          modelImageUrl: resolvedModelImageUrl,
+          systemCategory: resolvedSystemCategory,
           ...(updateScope ? {
             quotationScope: updateScope,
             quotationType: updateScope === 'HARDWARE' ? 'custom_hardware' : updateScope === 'BOARD' ? 'custom_board' : updateScope === 'CUSTOM_ITEM' ? 'custom_item' : 'cubicle'
@@ -1246,6 +1130,7 @@ export const quotationsService = {
           rate,
           amount,
           cubicleSize: it.cubicleSize || it.specifications || null,
+          boardType: resolvedBoardType,
           boardColor: it.boardColor || null,
           boardThickness: it.boardThickness || null,
           doorSize: it.doorSize || null,

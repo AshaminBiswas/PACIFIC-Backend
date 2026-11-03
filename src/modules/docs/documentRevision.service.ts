@@ -3,6 +3,7 @@ import path from 'node:path';
 import { prisma } from '../../config/database';
 import { htmlToPdfBuffer } from '../../utils/htmlToPdf';
 import { pdfService, QuotationPdfData, PiPdfData } from '../pdf/pdf.service';
+import { resolveQuotationModelImages } from '../quotations/quotationModelVisuals';
 
 /**
  * Storage root for permanent, immutable document revisions and archived PDFs.
@@ -67,67 +68,81 @@ export const documentRevisionService = {
       throw Object.assign(new Error(`Sales Quotation ${quotationId} not found`), { status: 404 });
     }
 
-    const snapshot = snapshotOverride || {
-      id: quote.id,
-      referenceNumber: quote.referenceNumber,
-      revisionNumber,
-      date: quote.date,
-      validUntil: quote.validUntil,
-      validityDays: quote.validityDays,
-      status: quote.status,
-      projectName: quote.projectName,
-      subject: quote.subject,
-      title: quote.title,
-      currency: quote.currency,
-      basicPrice: Number(quote.basicPrice),
-      installationCharge: Number(quote.installationCharge || 0),
-      installationRatePerCubicle: (quote as any).installationRatePerCubicle ? Number((quote as any).installationRatePerCubicle) : null,
-      installationCubicleCount: (quote as any).installationCubicleCount || null,
-      installationOption: (quote as any).installationOption || null,
-      installationCustomNote: (quote as any).installationCustomNote || null,
-      freightAmount: Number(quote.freightAmount || 0),
-      freightTerms: quote.freightTerms,
-      freightCustomNote: (quote as any).freightCustomNote || null,
-      gstRate: Number(quote.gstRate || 18),
-      gstAmount: Number(quote.gstAmount || 0),
-      grandTotal: Number(quote.grandTotal || 0),
-      isSezExempt: quote.isSezExempt,
-      sezCertificateRef: quote.sezCertificateRef,
-      amountInWords: quote.amountInWords,
-      accessoriesText: quote.accessoriesText,
-      warrantyText: quote.warrantyText,
-      generalTerms: quote.generalTerms,
-      otherTerms: quote.otherTerms,
-      paymentTerms: quote.paymentTerms,
-      deliveryTerms: quote.deliveryTerms,
-      statutoryComplianceTerms: quote.statutoryComplianceTerms,
-      customer: quote.customer,
-      companyProfile: quote.companyProfile,
-      issuingStaff: quote.issuingStaff,
-      recipientSalutation: quote.recipientSalutation,
-      recipientName: quote.recipientName,
-      recipientCompany: quote.recipientCompany,
-      recipientAddress: quote.recipientAddress,
-      recipientEmail: quote.recipientEmail,
-      recipientPhone: quote.recipientPhone,
-      items: quote.items.map((it) => ({
-        serialNumber: it.serialNumber,
-        productId: it.productId,
-        description: it.description,
-        unit: it.unit,
-        quantity: Number(it.quantity),
-        rate: Number(it.rate),
-        amount: Number(it.amount),
-        cubicleSize: it.cubicleSize,
-        boardColor: it.boardColor,
-        boardThickness: it.boardThickness,
-        doorSize: it.doorSize,
-        overallHeight: it.overallHeight,
-        hardwarePackage: it.hardwarePackage,
-        customSpecsJson: it.customSpecsJson,
-      })),
-      snapshotCreatedAt: new Date().toISOString(),
-    };
+    let snapshot = snapshotOverride;
+    if (!snapshot) {
+      const { modelImages, enrichedItems } = await resolveQuotationModelImages(quote.items);
+      snapshot = {
+        id: quote.id,
+        referenceNumber: quote.referenceNumber,
+        revisionNumber,
+        date: quote.date,
+        validUntil: quote.validUntil,
+        validityDays: quote.validityDays,
+        status: quote.status,
+        projectName: quote.projectName,
+        subject: quote.subject,
+        title: quote.title,
+        currency: quote.currency,
+        basicPrice: Number(quote.basicPrice),
+        installationCharge: Number(quote.installationCharge || 0),
+        installationRatePerCubicle: (quote as any).installationRatePerCubicle ? Number((quote as any).installationRatePerCubicle) : null,
+        installationCubicleCount: (quote as any).installationCubicleCount || null,
+        installationOption: (quote as any).installationOption || null,
+        installationCustomNote: (quote as any).installationCustomNote || null,
+        freightAmount: Number(quote.freightAmount || 0),
+        freightTerms: quote.freightTerms,
+        freightCustomNote: (quote as any).freightCustomNote || null,
+        gstRate: Number(quote.gstRate || 18),
+        gstAmount: Number(quote.gstAmount || 0),
+        grandTotal: Number(quote.grandTotal || 0),
+        isSezExempt: quote.isSezExempt,
+        sezCertificateRef: quote.sezCertificateRef,
+        amountInWords: quote.amountInWords,
+        accessoriesText: quote.accessoriesText,
+        warrantyText: quote.warrantyText,
+        generalTerms: quote.generalTerms,
+        otherTerms: quote.otherTerms,
+        paymentTerms: quote.paymentTerms,
+        deliveryTerms: quote.deliveryTerms,
+        statutoryComplianceTerms: quote.statutoryComplianceTerms,
+        customer: quote.customer,
+        companyProfile: quote.companyProfile,
+        issuingStaff: quote.issuingStaff,
+        recipientSalutation: quote.recipientSalutation,
+        recipientName: quote.recipientName,
+        recipientCompany: quote.recipientCompany,
+        recipientAddress: quote.recipientAddress,
+        recipientEmail: quote.recipientEmail,
+        recipientPhone: quote.recipientPhone,
+        items: (enrichedItems || []).map((it) => {
+          const specs = (typeof it.customSpecsJson === 'object' && it.customSpecsJson !== null ? it.customSpecsJson : {});
+          return {
+            serialNumber: it.serialNumber,
+            productId: it.productId,
+            description: it.description,
+            unit: it.unit,
+            quantity: Number(it.quantity),
+            rate: Number(it.rate),
+            amount: Number(it.amount),
+            cubicleSize: it.cubicleSize,
+            boardType: it.boardType || specs.boardType || null,
+            boardColor: it.boardColor,
+            boardThickness: it.boardThickness,
+            doorSize: it.doorSize,
+            overallHeight: it.overallHeight,
+            hardwarePackage: it.hardwarePackage,
+            make: specs.make || it.make || null,
+            customModelName: it.customModelName || specs.customModelName || specs.modelName || null,
+            modelName: it.modelName || specs.modelName || specs.customModelName || null,
+            modelImageUrl: it.modelImageUrl || specs.modelImageUrl || specs.imageUrl || null,
+            systemCategory: specs.systemCategory || it.systemCategory || null,
+            customSpecsJson: it.customSpecsJson,
+          };
+        }),
+        modelImages,
+        snapshotCreatedAt: new Date().toISOString(),
+      };
+    }
 
     const revCode = formatRevisionCode(revisionNumber);
     const safeDocNum = sanitizeDocNumberForFilename(quote.referenceNumber);
@@ -722,6 +737,8 @@ export const documentRevisionService = {
       snapshot.companyProfile?.addresses?.[0]?.state,
     ].filter(Boolean).join(', ') || 'Delhi, India';
 
+    const { modelImages, enrichedItems } = await resolveQuotationModelImages(snapshot.items || []);
+
     const pdfData: QuotationPdfData = {
       referenceNumber: snapshot.referenceNumber,
       revisionNumber: snapshot.revisionNumber || 1,
@@ -742,7 +759,7 @@ export const documentRevisionService = {
       recipientGstin: snapshot.recipientGstin || undefined,
       issuingStaffName: snapshot.issuingStaff ? `${snapshot.issuingStaff.firstName} ${snapshot.issuingStaff.lastName}`.trim() : 'Company Head',
       currency: snapshot.currency || 'INR',
-      items: (snapshot.items || []).map((it: any) => ({
+      items: (enrichedItems || []).map((it: any) => ({
         serialNumber: it.serialNumber,
         description: it.description,
         unit: it.unit || 'NOS',
@@ -754,11 +771,12 @@ export const documentRevisionService = {
         boardThickness: it.boardThickness || undefined,
         doorSize: it.doorSize || undefined,
         overallHeight: it.overallHeight || undefined,
-        boardType: it.boardType || undefined,
-        hardwarePackage: it.hardwarePackage || undefined,
-        make: it.make || undefined,
-        modelName: it.modelName || undefined,
-        customModelName: it.customModelName || undefined,
+        boardType: it.boardType || (it.customSpecsJson as any)?.boardType || undefined,
+        hardwarePackage: it.hardwarePackage || (it.customSpecsJson as any)?.hardwarePackage || undefined,
+        make: it.make || (it.customSpecsJson as any)?.make || undefined,
+        modelName: it.modelName || (it.customSpecsJson as any)?.modelName || undefined,
+        customModelName: it.customModelName || (it.customSpecsJson as any)?.customModelName || undefined,
+        modelImageUrl: it.modelImageUrl || (it.customSpecsJson as any)?.modelImageUrl || undefined,
       })),
       basicPrice: Number(snapshot.basicPrice || 0),
       installationCharge: Number(snapshot.installationCharge || 0),
@@ -782,6 +800,7 @@ export const documentRevisionService = {
       deliveryTerms: snapshot.deliveryTerms || undefined,
       statutoryComplianceTerms: snapshot.statutoryComplianceTerms || undefined,
       validityDays: snapshot.validityDays || 30,
+      modelImages: (modelImages && modelImages.length > 0) ? modelImages : (snapshot.modelImages || undefined),
     };
 
     return pdfService.generateQuotationPdfHtml(pdfData);
