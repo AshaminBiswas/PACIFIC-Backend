@@ -13,3 +13,5 @@ Thumbs.db
 coverage/
 prisma/migrations/.migration_lock.toml
 .cache/
+storage/
+

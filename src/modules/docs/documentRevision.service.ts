@@ -205,21 +205,8 @@ export const documentRevisionService = {
       });
     });
 
-    // Asynchronously warm PDF cache in background (non-blocking) using snapshot renderer
-    setImmediate(async () => {
-      try {
-        const html = await this.renderQuotationSnapshotHtml(snapshot);
-        const pdfBuffer = await htmlToPdfBuffer(html);
-        await fs.promises.writeFile(pdfPath, pdfBuffer);
-        await prisma.salesQuotationRevision.updateMany({
-          where: { quotationId: quote.id, revisionNumber },
-          data: { pdfPath },
-        });
-      } catch (pdfErr) {
-        console.warn(`[DocumentRevision] Background PDF cache deferred for quote ${quote.id} Rev ${revisionNumber}:`, pdfErr);
-      }
-    });
-
+    // PDF is generated and cached on-demand when user views/downloads the revision PDF.
+    // Pre-generating via Puppeteer on every save causes heavy event loop starvation and request timeouts on constrained cloud instances.
     return revisionRecord;
   },
 
@@ -396,120 +383,139 @@ export const documentRevisionService = {
     userId?: string,
     snapshotOverride?: any
   ) {
-    const pi = await prisma.proformaInvoice.findUnique({
-      where: { id: piId },
-      include: {
-        customer: { include: { addresses: true, contacts: true } },
-        companyProfile: { include: { addresses: true, signatories: true, bankAccounts: true } },
-        parties: true,
-        items: { orderBy: { serialNumber: 'asc' } },
-        taxSummary: { orderBy: { gstRate: 'asc' } },
-        terms: { orderBy: { clauseNumber: 'asc' } },
-      },
-    });
+    let snapshot = snapshotOverride;
+    let piNumber = 'PI';
+    let grandTotal = 0;
+    let taxAmount = 0;
+    let subtotal = 0;
+    let itemCount = 0;
+    let createdByIdToSet = userId || null;
 
-    if (!pi) {
-      throw Object.assign(new Error(`Proforma Invoice ${piId} not found`), { status: 404 });
+    if (snapshot) {
+      piNumber = snapshot.piNumber || 'PI';
+      grandTotal = Number(snapshot.grandTotal || 0);
+      taxAmount = Number(snapshot.totalTaxAmount || snapshot.taxAmount || 0);
+      subtotal = Number(snapshot.subtotal || 0);
+      itemCount = snapshot.items?.length || 0;
+      if (!createdByIdToSet) {
+        createdByIdToSet = snapshot.createdById || null;
+      }
+    } else {
+      const pi = await prisma.proformaInvoice.findUnique({
+        where: { id: piId },
+        include: {
+          customer: { include: { addresses: true, contacts: true } },
+          companyProfile: { include: { addresses: true, signatories: true, bankAccounts: true } },
+          parties: true,
+          items: { orderBy: { serialNumber: 'asc' } },
+          taxSummary: { orderBy: { gstRate: 'asc' } },
+          terms: { orderBy: { clauseNumber: 'asc' } },
+        },
+      });
+
+      if (!pi) {
+        throw Object.assign(new Error(`Proforma Invoice ${piId} not found`), { status: 404 });
+      }
+
+      piNumber = pi.piNumber;
+      grandTotal = Number(pi.grandTotal || 0);
+      taxAmount = Number(pi.totalTaxAmount || 0);
+      subtotal = Number(pi.subtotal || 0);
+      itemCount = pi.items?.length || 0;
+      if (!createdByIdToSet) {
+        createdByIdToSet = pi.createdById || null;
+      }
+
+      snapshot = {
+        id: pi.id,
+        piNumber: pi.piNumber,
+        revisionNumber,
+        piDate: pi.piDate,
+        status: pi.status,
+        placeOfSupply: pi.placeOfSupply,
+        placeOfSupplyStateCode: pi.placeOfSupplyStateCode,
+        reverseCharge: pi.reverseCharge,
+        modeOfTransport: pi.modeOfTransport,
+        vehicleNumber: pi.vehicleNumber,
+        grLrNumber: pi.grLrNumber,
+        linkedPoNumber: pi.linkedPoNumber,
+        linkedPoDate: pi.linkedPoDate,
+        subtotal: Number(pi.subtotal),
+        freightAmount: Number(pi.freightAmount || 0),
+        freightTerms: pi.freightTerms,
+        freightCustomNote: pi.freightCustomNote,
+        installationCharge: pi.installationCharge != null ? Number(pi.installationCharge) : 0,
+        installationRatePerCubicle: pi.installationRatePerCubicle != null ? Number(pi.installationRatePerCubicle) : null,
+        installationCubicleCount: pi.installationCubicleCount,
+        installationOption: pi.installationOption,
+        installationCustomNote: pi.installationCustomNote,
+        taxableAmount: Number(pi.taxableAmount || 0),
+        cgstAmount: Number(pi.cgstAmount || 0),
+        sgstAmount: Number(pi.sgstAmount || 0),
+        igstAmount: Number(pi.igstAmount || 0),
+        totalTaxAmount: Number(pi.totalTaxAmount || 0),
+        roundingAdjustment: Number(pi.roundingAdjustment || 0),
+        grandTotal: Number(pi.grandTotal || 0),
+        amountInWords: pi.amountInWords,
+        currency: pi.currency,
+        advancePercentage: Number(pi.advancePercentage || 50),
+        advanceRequiredAmount: Number(pi.advanceRequiredAmount || 0),
+        advanceReceivedAmount: Number(pi.advanceReceivedAmount || 0),
+        advancePaymentStatus: pi.advancePaymentStatus,
+        advancePaymentDate: pi.advancePaymentDate,
+        advancePaymentReference: pi.advancePaymentReference,
+        advancePaymentMode: pi.advancePaymentMode,
+        customer: pi.customer,
+        companyProfile: pi.companyProfile,
+        parties: pi.parties,
+        items: pi.items.map((it) => ({
+          serialNumber: it.serialNumber,
+          productId: it.productId,
+          description: it.description,
+          hsnSac: it.hsnSac,
+          quantity: Number(it.quantity),
+          unit: it.unit,
+          rate: Number(it.rate),
+          amount: Number(it.amount),
+          gstRate: Number(it.gstRate),
+          taxableAmount: Number(it.taxableAmount),
+          cgst: Number(it.cgst),
+          sgst: Number(it.sgst),
+          igst: Number(it.igst),
+          totalAmount: Number(it.totalAmount),
+          boardType: it.boardType,
+          boardThickness: it.boardThickness,
+          boardColor: it.boardColor,
+          cubicleSize: it.cubicleSize,
+          doorSize: it.doorSize,
+          overallHeight: it.overallHeight,
+          hardwarePackage: it.hardwarePackage,
+        })),
+        taxSummary: pi.taxSummary.map((ts) => ({
+          gstRate: Number(ts.gstRate),
+          taxableAmount: Number(ts.taxableAmount),
+          cgst: Number(ts.cgst),
+          sgst: Number(ts.sgst),
+          igst: Number(ts.igst),
+          totalTax: Number(ts.totalTax),
+        })),
+        terms: pi.terms.map((t) => ({
+          clauseNumber: t.clauseNumber,
+          text: t.text,
+        })),
+        snapshotCreatedAt: new Date().toISOString(),
+      };
     }
 
-    const snapshot = snapshotOverride || {
-      id: pi.id,
-      piNumber: pi.piNumber,
-      revisionNumber,
-      piDate: pi.piDate,
-      status: pi.status,
-      placeOfSupply: pi.placeOfSupply,
-      placeOfSupplyStateCode: pi.placeOfSupplyStateCode,
-      reverseCharge: pi.reverseCharge,
-      modeOfTransport: pi.modeOfTransport,
-      vehicleNumber: pi.vehicleNumber,
-      grLrNumber: pi.grLrNumber,
-      linkedPoNumber: pi.linkedPoNumber,
-      linkedPoDate: pi.linkedPoDate,
-      subtotal: Number(pi.subtotal),
-      freightAmount: Number(pi.freightAmount || 0),
-      freightTerms: pi.freightTerms,
-      freightCustomNote: pi.freightCustomNote,
-      installationCharge: pi.installationCharge != null ? Number(pi.installationCharge) : 0,
-      installationRatePerCubicle: pi.installationRatePerCubicle != null ? Number(pi.installationRatePerCubicle) : null,
-      installationCubicleCount: pi.installationCubicleCount,
-      installationOption: pi.installationOption,
-      installationCustomNote: pi.installationCustomNote,
-      taxableAmount: Number(pi.taxableAmount || 0),
-      cgstAmount: Number(pi.cgstAmount || 0),
-      sgstAmount: Number(pi.sgstAmount || 0),
-      igstAmount: Number(pi.igstAmount || 0),
-      totalTaxAmount: Number(pi.totalTaxAmount || 0),
-      roundingAdjustment: Number(pi.roundingAdjustment || 0),
-      grandTotal: Number(pi.grandTotal || 0),
-      amountInWords: pi.amountInWords,
-      currency: pi.currency,
-      advancePercentage: Number(pi.advancePercentage || 50),
-      advanceRequiredAmount: Number(pi.advanceRequiredAmount || 0),
-      advanceReceivedAmount: Number(pi.advanceReceivedAmount || 0),
-      advancePaymentStatus: pi.advancePaymentStatus,
-      advancePaymentDate: pi.advancePaymentDate,
-      advancePaymentReference: pi.advancePaymentReference,
-      advancePaymentMode: pi.advancePaymentMode,
-      customer: pi.customer,
-      companyProfile: pi.companyProfile,
-      parties: pi.parties,
-      items: pi.items.map((it) => ({
-        serialNumber: it.serialNumber,
-        productId: it.productId,
-        description: it.description,
-        hsnSac: it.hsnSac,
-        quantity: Number(it.quantity),
-        unit: it.unit,
-        rate: Number(it.rate),
-        amount: Number(it.amount),
-        gstRate: Number(it.gstRate),
-        taxableAmount: Number(it.taxableAmount),
-        cgst: Number(it.cgst),
-        sgst: Number(it.sgst),
-        igst: Number(it.igst),
-        totalAmount: Number(it.totalAmount),
-        boardType: it.boardType,
-        boardThickness: it.boardThickness,
-        boardColor: it.boardColor,
-        cubicleSize: it.cubicleSize,
-        doorSize: it.doorSize,
-        overallHeight: it.overallHeight,
-        hardwarePackage: it.hardwarePackage,
-      })),
-      taxSummary: pi.taxSummary.map((ts) => ({
-        gstRate: Number(ts.gstRate),
-        taxableAmount: Number(ts.taxableAmount),
-        cgst: Number(ts.cgst),
-        sgst: Number(ts.sgst),
-        igst: Number(ts.igst),
-        totalTax: Number(ts.totalTax),
-      })),
-      terms: pi.terms.map((t) => ({
-        clauseNumber: t.clauseNumber,
-        text: t.text,
-      })),
-      snapshotCreatedAt: new Date().toISOString(),
-    };
-
     const revCode = formatRevisionCode(revisionNumber);
-    const safeDocNum = sanitizeDocNumberForFilename(pi.piNumber);
+    const safeDocNum = sanitizeDocNumberForFilename(piNumber);
     const fileName = `${safeDocNum}_${revCode}.pdf`;
-
-    const targetDir = path.join(DOCUMENTS_STORAGE_DIR, 'proforma-invoices', pi.id);
-    ensureDirExists(targetDir);
-    const pdfPath = path.join(targetDir, fileName);
-
-    const grandTotal = Number(pi.grandTotal || 0);
-    const taxAmount = Number(pi.totalTaxAmount || 0);
-    const subtotal = Number(pi.subtotal || 0);
-    const itemCount = pi.items?.length || 0;
-    const pdfUrl = `/api/v1/sales/pi/${pi.id}/revisions/${revisionNumber}/pdf`;
+    const pdfUrl = `/api/v1/sales/pi/${piId}/revisions/${revisionNumber}/pdf`;
 
     const revisionRecord = await prisma.$transaction(async (tx) => {
       // Mark prior revisions as SUPERSEDED
       await tx.proformaInvoiceRevision.updateMany({
-        where: { piId: pi.id },
+        where: { piId },
         data: {
           status: 'SUPERSEDED',
         },
@@ -519,12 +525,12 @@ export const documentRevisionService = {
       return tx.proformaInvoiceRevision.upsert({
         where: {
           piId_revisionNumber: {
-            piId: pi.id,
+            piId,
             revisionNumber,
           },
         },
         create: {
-          piId: pi.id,
+          piId,
           revisionNumber,
           status: 'CURRENT',
           snapshotJson: snapshot as any,
@@ -536,7 +542,7 @@ export const documentRevisionService = {
           pdfFileName: fileName,
           pdfUrl,
           reason: reason || (revisionNumber === 1 ? 'Initial issuance (Rev 01)' : `Revision ${revisionNumber}`),
-          createdById: userId || pi.createdById || null,
+          createdById: createdByIdToSet,
         },
         update: {
           status: 'CURRENT',
@@ -552,21 +558,8 @@ export const documentRevisionService = {
       });
     });
 
-    // Asynchronously warm PDF cache in background (non-blocking) using snapshot renderer
-    setImmediate(async () => {
-      try {
-        const html = await this.renderPiSnapshotHtml(snapshot);
-        const pdfBuffer = await htmlToPdfBuffer(html);
-        await fs.promises.writeFile(pdfPath, pdfBuffer);
-        await prisma.proformaInvoiceRevision.updateMany({
-          where: { piId: pi.id, revisionNumber },
-          data: { pdfPath },
-        });
-      } catch (pdfErr) {
-        console.warn(`[DocumentRevision] Background PDF cache deferred for PI ${pi.id} Rev ${revisionNumber}:`, pdfErr);
-      }
-    });
-
+    // PDF is generated and cached on-demand when user views/downloads the revision PDF.
+    // Pre-generating via Puppeteer on every save causes heavy event loop starvation and request timeouts on constrained cloud instances.
     return revisionRecord;
   },
 

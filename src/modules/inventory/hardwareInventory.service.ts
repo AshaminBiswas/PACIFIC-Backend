@@ -660,8 +660,8 @@ export class HardwareInventoryService {
       prisma.$queryRawUnsafe<any[]>(`
         SELECT 
           current_stock, 
-          COALESCE(unit_cost, cost_per_unit, 0) as unit_cost, 
-          COALESCE(min_reorder_level, reorder_level, reorder_qty, 10) as reorder_level, 
+          COALESCE(unit_cost, 0) as unit_cost, 
+          COALESCE(reorder_level, reorder_qty, min_stock, 10) as reorder_level, 
           material, 
           warehouse, 
           color, 

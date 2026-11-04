@@ -1000,7 +1000,21 @@ export const piService = {
   },
 
   async update(id: string, data: any, userId?: string) {
-    const existing = await this.getById(id);
+    const existing = await prisma.proformaInvoice.findUnique({
+      where: { id },
+      include: {
+        customer: true,
+        companyProfile: true,
+        parties: true,
+        items: true,
+        taxSummary: true,
+        terms: true,
+      },
+    });
+
+    if (!existing) {
+      throw Object.assign(new Error('Proforma Invoice not found'), { status: 404 });
+    }
 
     // Resolve safe userId to guarantee foreign key integrity
     let safeUserId: string | null = null;
@@ -1013,8 +1027,10 @@ export const piService = {
       }
     }
 
-    // Ensure initial version is archived before incrementing
-    await documentRevisionService.ensureInitialPiRevision(id, safeUserId || undefined).catch(() => {});
+    // Ensure initial version is archived before incrementing (only if on initial revision)
+    if ((existing.revisionNumber || 1) <= 1) {
+      await documentRevisionService.ensureInitialPiRevision(id, safeUserId || undefined).catch(() => {});
+    }
 
     const nextRev = (existing.revisionNumber || 1) + 1;
 
@@ -1336,13 +1352,97 @@ export const piService = {
       timeout: 45000,
     });
 
-    // Automatically snapshot new revision and generate archived PDF
+    // Automatically snapshot new revision using already-loaded updatedPi data
+    // This eliminates redundant database lookups and makes revision creation instantaneous!
     try {
+      const fullCompanyProfile = existing.companyProfile || (companyProfileIdToSet ? await prisma.companyProfile.findUnique({ where: { id: companyProfileIdToSet }, include: { addresses: true, signatories: true, bankAccounts: true } }) : null);
+
+      const snapshot = {
+        id: updatedPi.id,
+        piNumber: updatedPi.piNumber,
+        revisionNumber: nextRev,
+        piDate: updatedPi.piDate,
+        status: updatedPi.status,
+        placeOfSupply: updatedPi.placeOfSupply,
+        placeOfSupplyStateCode: updatedPi.placeOfSupplyStateCode,
+        reverseCharge: updatedPi.reverseCharge,
+        modeOfTransport: updatedPi.modeOfTransport,
+        vehicleNumber: updatedPi.vehicleNumber,
+        grLrNumber: updatedPi.grLrNumber,
+        linkedPoNumber: updatedPi.linkedPoNumber,
+        linkedPoDate: updatedPi.linkedPoDate,
+        subtotal: Number(updatedPi.subtotal),
+        freightAmount: Number(updatedPi.freightAmount || 0),
+        freightTerms: updatedPi.freightTerms,
+        freightCustomNote: updatedPi.freightCustomNote,
+        installationCharge: updatedPi.installationCharge != null ? Number(updatedPi.installationCharge) : 0,
+        installationRatePerCubicle: updatedPi.installationRatePerCubicle != null ? Number(updatedPi.installationRatePerCubicle) : null,
+        installationCubicleCount: updatedPi.installationCubicleCount,
+        installationOption: updatedPi.installationOption,
+        installationCustomNote: updatedPi.installationCustomNote,
+        taxableAmount: Number(updatedPi.taxableAmount || 0),
+        cgstAmount: Number(updatedPi.cgstAmount || 0),
+        sgstAmount: Number(updatedPi.sgstAmount || 0),
+        igstAmount: Number(updatedPi.igstAmount || 0),
+        totalTaxAmount: Number(updatedPi.totalTaxAmount || 0),
+        roundingAdjustment: Number(updatedPi.roundingAdjustment || 0),
+        grandTotal: Number(updatedPi.grandTotal || 0),
+        amountInWords: updatedPi.amountInWords,
+        currency: updatedPi.currency,
+        advancePercentage: Number(updatedPi.advancePercentage || 50),
+        advanceRequiredAmount: Number(updatedPi.advanceRequiredAmount || 0),
+        advanceReceivedAmount: Number(updatedPi.advanceReceivedAmount || 0),
+        advancePaymentStatus: updatedPi.advancePaymentStatus,
+        advancePaymentDate: updatedPi.advancePaymentDate,
+        advancePaymentReference: updatedPi.advancePaymentReference,
+        advancePaymentMode: updatedPi.advancePaymentMode,
+        customer: updatedPi.customer || existing.customer,
+        companyProfile: fullCompanyProfile,
+        parties: updatedPi.parties || existing.parties,
+        items: (updatedPi.items || []).map((it: any) => ({
+          serialNumber: it.serialNumber,
+          productId: it.productId,
+          description: it.description,
+          hsnSac: it.hsnSac,
+          quantity: Number(it.quantity),
+          unit: it.unit,
+          rate: Number(it.rate),
+          amount: Number(it.amount),
+          gstRate: Number(it.gstRate),
+          taxableAmount: Number(it.taxableAmount),
+          cgst: Number(it.cgst),
+          sgst: Number(it.sgst),
+          igst: Number(it.igst),
+          totalAmount: Number(it.totalAmount),
+          boardType: it.boardType,
+          boardThickness: it.boardThickness,
+          boardColor: it.boardColor,
+          cubicleSize: it.cubicleSize,
+          doorSize: it.doorSize,
+          overallHeight: it.overallHeight,
+          hardwarePackage: it.hardwarePackage,
+        })),
+        taxSummary: (updatedPi.taxSummary || []).map((ts: any) => ({
+          gstRate: Number(ts.gstRate),
+          taxableAmount: Number(ts.taxableAmount),
+          cgst: Number(ts.cgst),
+          sgst: Number(ts.sgst),
+          igst: Number(ts.igst),
+          totalTax: Number(ts.totalTax),
+        })),
+        terms: (updatedPi.terms || []).map((t: any) => ({
+          clauseNumber: t.clauseNumber,
+          text: t.text,
+        })),
+        snapshotCreatedAt: new Date().toISOString(),
+      };
+
       await documentRevisionService.createPiRevision(
         id,
         nextRev,
         data.revisionReason || data.reason || `Revision ${nextRev}`,
-        safeUserId || undefined
+        safeUserId || undefined,
+        snapshot
       );
     } catch (revErr) {
       console.warn(`[PIService] Warning: Failed to archive revision ${nextRev} for PI ${id}:`, revErr);
