@@ -231,6 +231,28 @@ export const piService = {
     if (pi.items && Array.isArray(pi.items)) {
       (pi as any).items = pi.items.map(sanitizePiItem);
     }
+
+    // Ensure advanceReceivedAmount and advancePaymentStatus reflect actual paymentAllocations
+    if (pi.paymentAllocations && pi.paymentAllocations.length > 0) {
+      const totalAllocated = pi.paymentAllocations.reduce(
+        (sum: number, a: any) => sum + Number(a.allocatedAmount || 0),
+        0
+      );
+      if (totalAllocated > 0 && totalAllocated > Number(pi.advanceReceivedAmount || 0)) {
+        (pi as any).advanceReceivedAmount = totalAllocated;
+        const totalBill = Number(pi.grandTotal || 0);
+        const req = Number(pi.advanceRequiredAmount) || (totalBill * (Number(pi.advancePercentage || 50) / 100));
+        (pi as any).advancePaymentStatus = (totalAllocated >= totalBill || (req > 0 && totalAllocated >= req)) ? 'FULLY_RECEIVED' : 'PARTIAL';
+        prisma.proformaInvoice.update({
+          where: { id: pi.id },
+          data: {
+            advanceReceivedAmount: totalAllocated,
+            advancePaymentStatus: (pi as any).advancePaymentStatus,
+          },
+        }).catch(() => {});
+      }
+    }
+
     return pi;
   },
 
@@ -1009,6 +1031,7 @@ export const piService = {
         items: true,
         taxSummary: true,
         terms: true,
+        paymentAllocations: true,
       },
     });
 
@@ -1261,9 +1284,15 @@ export const piService = {
           advancePercentage: data.advancePercentage !== undefined ? Number(data.advancePercentage) : existing.advancePercentage,
           advanceRequiredAmount: data.advanceRequiredAmount !== undefined ? Number(data.advanceRequiredAmount) : existing.advanceRequiredAmount,
           ...(data.advanceReceivedAmount !== undefined || cashReceivedInput > 0 ? {
-            advanceReceivedAmount: cashReceivedInput > 0 ? cashReceivedInput : Number(data.advanceReceivedAmount || 0),
-            advancePaymentMode: cashReceivedInput > 0 ? 'CASH' : (data.advancePaymentMode || (existing as any).advancePaymentMode),
-            advancePaymentStatus: cashReceivedInput > 0 ? (cashReceivedInput >= grandTotal ? 'FULLY_RECEIVED' : 'PARTIAL') : (data.advancePaymentStatus || (existing as any).advancePaymentStatus),
+            advanceReceivedAmount: (existing.paymentAllocations && existing.paymentAllocations.length > 0)
+              ? Math.max(
+                  existing.paymentAllocations.reduce((sum: number, a: any) => sum + Number(a.allocatedAmount || 0), 0),
+                  Number(data.advanceReceivedAmount ?? existing.advanceReceivedAmount ?? 0),
+                  cashReceivedInput
+                )
+              : (cashReceivedInput > 0 ? cashReceivedInput : Number(data.advanceReceivedAmount || existing.advanceReceivedAmount || 0)),
+            advancePaymentMode: (cashReceivedInput > 0 && !existing.advancePaymentMode) ? 'CASH' : (data.advancePaymentMode || (existing as any).advancePaymentMode),
+            advancePaymentStatus: data.advancePaymentStatus || (existing as any).advancePaymentStatus,
           } : {}),
           ...(data.status && data.status !== existing.status ? {
             statusHistory: {
@@ -1841,12 +1870,28 @@ export const piService = {
       throw new Error('Valid advance payment amount is required');
     }
 
-    const currentReceived = Number(pi.advanceReceivedAmount) || 0;
-    const newReceived = currentReceived + amount;
-    const required = Number(pi.advanceRequiredAmount) || (Number(pi.grandTotal) * 0.5);
+    const currentAllocated = (pi.paymentAllocations || []).reduce(
+      (sum: number, a: any) => sum + Number(a.allocatedAmount || 0),
+      0
+    );
+    const currentReceived = Math.max(currentAllocated, Number(pi.advanceReceivedAmount) || 0);
+    const newReceived = Math.round((currentReceived + amount) * 100) / 100;
+
+    const rawBasic = Number(pi.subtotal || 0) + Number(pi.freightAmount || 0) + Number(pi.installationCharge || 0);
+    const taxable = Number(pi.taxableAmount || 0);
+    const cashDeductionFromTax = Math.max(0, Math.round((rawBasic - taxable) * 100) / 100);
+    const cashFromAdvance = (pi.advancePaymentMode === 'CASH' && Number(pi.advanceReceivedAmount || 0) > 0)
+      ? Number(pi.advanceReceivedAmount)
+      : 0;
+    const cashPaymentAmount = cashDeductionFromTax > 0 ? cashDeductionFromTax : cashFromAdvance;
+    const totalBill = (pi.advancePaymentMode === 'CASH' && cashPaymentAmount > 0)
+      ? Math.round((Number(pi.grandTotal || 0) + cashPaymentAmount) * 100) / 100
+      : Number(pi.grandTotal || 0);
+
+    const required = Number(pi.advanceRequiredAmount) || (totalBill * (Number(pi.advancePercentage || 50) / 100));
 
     let advancePaymentStatus = 'PENDING';
-    if (newReceived >= required) {
+    if (newReceived >= totalBill || (required > 0 && newReceived >= required)) {
       advancePaymentStatus = 'FULLY_RECEIVED';
     } else if (newReceived > 0) {
       advancePaymentStatus = 'PARTIAL';
@@ -1943,6 +1988,67 @@ export const piService = {
     }
 
     return updatedPi;
+  },
+
+  /**
+   * Synchronizes a Proforma Invoice's advanceReceivedAmount and advancePaymentStatus
+   * with the sum of its allocated payments and cash deduction.
+   */
+  async syncAdvanceStatus(piId: string) {
+    const pi = await prisma.proformaInvoice.findUnique({
+      where: { id: piId },
+      include: {
+        paymentAllocations: {
+          include: { payment: true },
+        },
+      },
+    });
+    if (!pi) return null;
+
+    const rawBasic = Number(pi.subtotal || 0) + Number(pi.freightAmount || 0) + Number(pi.installationCharge || 0);
+    const taxable = Number(pi.taxableAmount || 0);
+    const cashDeductionFromTax = Math.max(0, Math.round((rawBasic - taxable) * 100) / 100);
+    const cashFromAdvance = (pi.advancePaymentMode === 'CASH' && Number(pi.advanceReceivedAmount || 0) > 0)
+      ? Number(pi.advanceReceivedAmount)
+      : 0;
+    const cashPaymentAmount = cashDeductionFromTax > 0 ? cashDeductionFromTax : cashFromAdvance;
+    const totalBill = (pi.advancePaymentMode === 'CASH' && cashPaymentAmount > 0)
+      ? Math.round((Number(pi.grandTotal || 0) + cashPaymentAmount) * 100) / 100
+      : Number(pi.grandTotal || 0);
+
+    const totalAllocated = (pi.paymentAllocations || []).reduce(
+      (sum: number, a: any) => sum + Number(a.allocatedAmount || (a.payment?.amount && a.documentType === 'PI' ? a.payment.amount : 0) || 0),
+      0
+    );
+
+    const effectiveReceived = Math.max(totalAllocated, Number(pi.advanceReceivedAmount || 0));
+    const advPercentage = Number(pi.advancePercentage) || 50;
+    const required = Number(pi.advanceRequiredAmount) || (totalBill * (advPercentage / 100));
+
+    const newStatus = (effectiveReceived >= totalBill || (required > 0 && effectiveReceived >= required))
+      ? 'FULLY_RECEIVED'
+      : effectiveReceived > 0
+      ? 'PARTIAL'
+      : 'PENDING';
+
+    const latestPayment = pi.paymentAllocations
+      ?.filter((a: any) => a.payment)
+      ?.sort((a: any, b: any) => new Date(b.payment.paymentDate || b.createdAt).getTime() - new Date(a.payment.paymentDate || a.createdAt).getTime())[0]?.payment;
+
+    const updated = await prisma.proformaInvoice.update({
+      where: { id: piId },
+      data: {
+        advanceReceivedAmount: effectiveReceived,
+        advancePaymentStatus: newStatus,
+        ...(latestPayment ? {
+          advancePaymentDate: latestPayment.paymentDate ? new Date(latestPayment.paymentDate) : undefined,
+          advancePaymentReference: latestPayment.referenceNumber || undefined,
+          advancePaymentMode: latestPayment.paymentMethod || undefined,
+        } : {}),
+      },
+    });
+
+    return updated;
   },
 
   /**

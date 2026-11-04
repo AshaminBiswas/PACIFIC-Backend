@@ -1,5 +1,6 @@
 import { prisma } from '../../config/database';
 import { auditService } from '../audit/audit.service';
+import { piService } from '../sales/pi.service';
 
 export const financeService = {
   async listPayments(query: { page?: number; limit?: number; partyId?: string; paymentType?: string }) {
@@ -58,7 +59,7 @@ export const financeService = {
    * Records an immutable payment and allocates it across specified invoices/documents.
    */
   async recordPayment(data: any, userId?: string) {
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       let companyProfileId = data.companyProfileId;
       if (!companyProfileId) {
         const defaultCompany = await tx.companyProfile.findFirst({ where: { status: 'ACTIVE' } });
@@ -152,6 +153,18 @@ export const financeService = {
 
       return payment;
     });
+
+    // Synchronize linked Proforma Invoices with new payment allocations
+    if (Array.isArray(data.allocations)) {
+      for (const alloc of data.allocations) {
+        const piId = alloc.proformaInvoiceId || (alloc.documentType === 'PI' ? alloc.documentId : null);
+        if (piId) {
+          await piService.syncAdvanceStatus(piId).catch(() => {});
+        }
+      }
+    }
+
+    return result;
   },
 
   async getReceivables(query: { status?: string }) {
@@ -412,6 +425,14 @@ export const financeService = {
 
     // Delete payment record
     await prisma.payment.delete({ where: { id } });
+
+    // Re-sync advance status of all affected Proforma Invoices
+    for (const alloc of payment.allocations) {
+      const piId = alloc.proformaInvoiceId || (alloc.documentType === 'PI' ? alloc.documentId : null);
+      if (piId) {
+        await piService.syncAdvanceStatus(piId).catch(() => {});
+      }
+    }
 
     if (userId) {
       await auditService.logMutation({
