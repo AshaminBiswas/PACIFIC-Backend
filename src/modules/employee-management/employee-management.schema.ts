@@ -417,6 +417,105 @@ export const ResendPayslipEmailSchema = z.object({
   recipientEmail: z.string().email().optional(),
 });
 
+// ─── Conveyance / Site Visit Expenses Schemas ─────────────────────────────────
+export const ConveyanceCategoryEnum = z.enum([
+  'PETROL',
+  'GARIVARA',
+  'MATERIAL_SHIFTING',
+  'TOLL_PARKING',
+  'FOOD_ALLOWANCE',
+  'HOTEL_STAY',
+  'OTHER',
+]);
+
+export const ConveyancePurposeEnum = z.enum([
+  'SITE_MEASUREMENT',
+  'SITE_INSPECTION',
+  'MATERIAL_SHIFTING',
+  'INSTALLATION_SUPPORT',
+  'CLIENT_MEETING',
+  'SAMPLE_SUBMISSION',
+  'MAINTENANCE_SERVICE',
+  'OTHER',
+]);
+
+export const ConveyancePaymentModeEnum = z.enum([
+  'PAID_BY_EMPLOYEE',
+  'COMPANY_CASH',
+  'COMPANY_UPI',
+  'COMPANY_CARD',
+]);
+
+export const ConveyanceStatusEnum = z.enum([
+  'PENDING',
+  'APPROVED',
+  'REJECTED',
+  'REIMBURSED',
+]);
+
+export const CreateConveyanceExpenseSchema = z.object({
+  employeeId: z.string().uuid(),
+  visitDate: z.coerce.date(),
+  siteName: z.string().min(2, 'Site name is required'),
+  siteAddress: z.string().optional().nullable(),
+  clientName: z.string().optional().nullable(),
+  purpose: ConveyancePurposeEnum.default('SITE_MEASUREMENT'),
+  category: ConveyanceCategoryEnum.default('PETROL'),
+  amount: z.coerce.number().min(0.01, 'Amount must be greater than 0'),
+  paymentMode: ConveyancePaymentModeEnum.default('PAID_BY_EMPLOYEE'),
+  // Travel details
+  startLocation: z.string().optional().nullable(),
+  endLocation: z.string().optional().nullable(),
+  transportMode: z.string().optional().nullable(),
+  distanceKm: z.coerce.number().optional().nullable(),
+  ratePerKm: z.coerce.number().optional().nullable(),
+  // Material shifting
+  materialDetails: z.string().optional().nullable(),
+  shiftingType: z.string().optional().nullable(),
+  // Receipt proof
+  receiptUrl: z.string().optional().nullable(),
+  receiptNumber: z.string().optional().nullable(),
+  // Context
+  branch: z.string().optional().nullable().default('DELHI'),
+  projectName: z.string().optional().nullable(),
+  remarks: z.string().optional().nullable(),
+});
+
+export const UpdateConveyanceExpenseSchema = CreateConveyanceExpenseSchema.partial().extend({
+  status: ConveyanceStatusEnum.optional(),
+  rejectionReason: z.string().optional().nullable(),
+  isReimbursed: z.boolean().optional(),
+  reimbursedAmount: z.coerce.number().optional().nullable(),
+  reimbursedRef: z.string().optional().nullable(),
+});
+
+export const ListConveyanceExpensesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(200).default(20),
+  employeeId: z.string().uuid().optional(),
+  category: ConveyanceCategoryEnum.optional(),
+  purpose: ConveyancePurposeEnum.optional(),
+  status: ConveyanceStatusEnum.optional(),
+  paymentMode: ConveyancePaymentModeEnum.optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  search: z.string().optional(),
+  branch: z.string().optional(),
+});
+
+export const ApproveConveyanceSchema = z.object({
+  notes: z.string().optional().nullable(),
+});
+
+export const RejectConveyanceSchema = z.object({
+  reason: z.string().min(2, 'Rejection reason is required'),
+});
+
+export const SettleConveyanceSchema = z.object({
+  paymentRef: z.string().min(1, 'Payment reference / transaction ID or voucher note is required'),
+  reimbursedAmount: z.coerce.number().min(0.01).optional(),
+});
+
 // ─── TypeScript Types ─────────────────────────────────────────────────────────
 export type CreateEmployeeInput = z.infer<typeof CreateEmployeeSchema>;
 export type UpdateEmployeeInput = z.infer<typeof UpdateEmployeeSchema>;
@@ -441,3 +540,8 @@ export type CalculatePayrollInput = z.infer<typeof CalculatePayrollSchema>;
 export type SimulateSalaryCalculationInput = z.infer<typeof SimulateSalaryCalculationSchema>;
 export type MarkPayrollPaidInput = z.infer<typeof MarkPayrollPaidSchema>;
 export type ListPayrollQuery = z.infer<typeof ListPayrollQuerySchema>;
+
+export type CreateConveyanceExpenseInput = z.infer<typeof CreateConveyanceExpenseSchema>;
+export type UpdateConveyanceExpenseInput = z.infer<typeof UpdateConveyanceExpenseSchema>;
+export type ListConveyanceExpensesQuery = z.infer<typeof ListConveyanceExpensesQuerySchema>;
+export type SettleConveyanceInput = z.infer<typeof SettleConveyanceSchema>;

@@ -36,6 +36,14 @@ import {
   markPayrollPaidHandler,
   downloadPayslipPdfHandler,
   resendPayslipEmailHandler,
+  listConveyanceExpensesHandler,
+  createConveyanceExpenseHandler,
+  getConveyanceExpenseHandler,
+  updateConveyanceExpenseHandler,
+  deleteConveyanceExpenseHandler,
+  approveConveyanceExpenseHandler,
+  rejectConveyanceExpenseHandler,
+  settleConveyanceExpenseHandler,
 } from './employee-management.controller';
 
 const router = Router();
@@ -161,6 +169,17 @@ router.post('/payroll/:id/revert-draft', authorize('payroll.revert_draft'), reve
 router.post('/payroll/:id/mark-paid', authorize('payroll.disburse'), markPayrollPaidHandler);
 router.get(['/payroll/:id/pdf', '/payroll/:id/payslip-pdf'], authorize('payroll.download_payslip', 'payroll.read'), downloadPayslipPdfHandler);
 router.post(['/payroll/:id/resend-email', '/payroll/:id/resend-payslip-email'], authorize('payroll.email_payslip'), resendPayslipEmailHandler);
+
+// ─── Site Visits & Convenience Expenses ───────────────────────────────────────
+router.get('/conveyance', authorize('employees.read'), listConveyanceExpensesHandler);
+router.post('/conveyance', authorize('employees.create', 'employees.update'), createConveyanceExpenseHandler);
+router.get('/conveyance/:id', authorize('employees.read'), getConveyanceExpenseHandler);
+router.put('/conveyance/:id', authorize('employees.update'), updateConveyanceExpenseHandler);
+router.patch('/conveyance/:id', authorize('employees.update'), updateConveyanceExpenseHandler);
+router.delete('/conveyance/:id', authorize('employees.delete'), deleteConveyanceExpenseHandler);
+router.post('/conveyance/:id/approve', authorize('employees.update'), approveConveyanceExpenseHandler);
+router.post('/conveyance/:id/reject', authorize('employees.update'), rejectConveyanceExpenseHandler);
+router.post('/conveyance/:id/settle', authorize('payroll.disburse', 'employees.update'), settleConveyanceExpenseHandler);
 
 // ─── Individual Employee Master Detail (Wildcard /:id MUST be last) ───────────
 router.get(['/detail/:id', '/:id'], authorize('employees.read'), getEmployeeHandler);

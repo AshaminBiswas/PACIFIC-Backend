@@ -28,6 +28,10 @@ import {
   SimulateSalaryCalculationInput,
   MarkPayrollPaidInput,
   ListPayrollQuery,
+  CreateConveyanceExpenseInput,
+  UpdateConveyanceExpenseInput,
+  ListConveyanceExpensesQuery,
+  SettleConveyanceInput,
 } from './employee-management.schema';
 import { Prisma } from '@prisma/client';
 
@@ -160,10 +164,18 @@ export async function getEmployee(id: string) {
   return await prisma.employee.findUnique({
     where: { id },
     include: {
-      advances: { orderBy: { createdAt: 'desc' }, take: 5 },
-      deductions: { orderBy: { createdAt: 'desc' }, take: 5 },
-      leaveLedgers: { orderBy: { createdAt: 'desc' }, take: 10 },
-      payrollRuns: { orderBy: { createdAt: 'desc' }, take: 6 },
+      advances: { orderBy: { createdAt: 'desc' }, take: 15 },
+      deductions: { orderBy: { createdAt: 'desc' }, take: 15 },
+      leaveLedgers: { orderBy: { createdAt: 'desc' }, take: 20 },
+      payrollRuns: { orderBy: { createdAt: 'desc' }, take: 12 },
+      conveyanceExpenses: {
+        orderBy: { visitDate: 'desc' },
+        take: 50,
+        include: {
+          approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
+      },
     },
   });
 }
@@ -3072,5 +3084,349 @@ export async function getMonthlyAttendanceReportPdfBuffer(params: {
   const filename = `PRC_Attendance_Register_${monthAbbr}_${year}${scopeSuffix}.pdf`;
 
   return { buffer, filename };
+}
+
+// ─── Site Visits & Convenience Expenses Services ──────────────────────────────
+
+export async function generateConveyanceVoucherNumber(visitDate = new Date()): Promise<string> {
+  const d = new Date(visitDate);
+  const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  let counter = 1;
+  let voucherNumber = `CONV-${dateStr}-${String(counter).padStart(3, '0')}`;
+  while (await prisma.employeeConveyanceExpense.findUnique({ where: { voucherNumber } })) {
+    counter++;
+    voucherNumber = `CONV-${dateStr}-${String(counter).padStart(3, '0')}`;
+  }
+  return voucherNumber;
 }
+
+export async function createConveyanceExpense(data: CreateConveyanceExpenseInput, userId?: string) {
+  const employee = await prisma.employee.findUnique({
+    where: { id: data.employeeId },
+    select: { id: true, name: true, employeeId: true },
+  });
+
+  if (!employee) {
+    throw new Error(`Employee with ID ${data.employeeId} not found`);
+  }
+
+  const voucherNumber = await generateConveyanceVoucherNumber(new Date(data.visitDate));
+
+  const expense = await prisma.employeeConveyanceExpense.create({
+    data: {
+      voucherNumber,
+      employeeId: data.employeeId,
+      visitDate: new Date(data.visitDate),
+      siteName: data.siteName.trim(),
+      siteAddress: data.siteAddress?.trim() || null,
+      clientName: data.clientName?.trim() || null,
+      purpose: data.purpose,
+      category: data.category,
+      amount: new Prisma.Decimal(data.amount),
+      paymentMode: data.paymentMode,
+      status: 'PENDING',
+      startLocation: data.startLocation?.trim() || null,
+      endLocation: data.endLocation?.trim() || null,
+      transportMode: data.transportMode?.trim() || null,
+      distanceKm: data.distanceKm ? new Prisma.Decimal(data.distanceKm) : null,
+      ratePerKm: data.ratePerKm ? new Prisma.Decimal(data.ratePerKm) : null,
+      materialDetails: data.materialDetails?.trim() || null,
+      shiftingType: data.shiftingType?.trim() || null,
+      receiptUrl: data.receiptUrl?.trim() || null,
+      receiptNumber: data.receiptNumber?.trim() || null,
+      branch: data.branch?.trim() || 'DELHI',
+      projectName: data.projectName?.trim() || null,
+      remarks: data.remarks?.trim() || null,
+      createdById: userId || null,
+    },
+    include: {
+      employee: {
+        select: { id: true, name: true, employeeId: true, department: true, designation: true },
+      },
+      createdBy: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+    },
+  });
+
+  logger.info(
+    `[Conveyance] Recorded ${data.category} expense ${expense.voucherNumber} (₹${data.amount}) for ${employee.name} (${employee.employeeId})`
+  );
+
+  return expense;
+}
+
+export async function updateConveyanceExpense(id: string, data: UpdateConveyanceExpenseInput) {
+  const existing = await prisma.employeeConveyanceExpense.findUnique({ where: { id } });
+  if (!existing) {
+    throw new Error('Conveyance expense record not found');
+  }
+
+  const updateData: any = {};
+  if (data.visitDate !== undefined) updateData.visitDate = new Date(data.visitDate);
+  if (data.siteName !== undefined) updateData.siteName = data.siteName.trim();
+  if (data.siteAddress !== undefined) updateData.siteAddress = data.siteAddress?.trim() || null;
+  if (data.clientName !== undefined) updateData.clientName = data.clientName?.trim() || null;
+  if (data.purpose !== undefined) updateData.purpose = data.purpose;
+  if (data.category !== undefined) updateData.category = data.category;
+  if (data.amount !== undefined) updateData.amount = new Prisma.Decimal(data.amount);
+  if (data.paymentMode !== undefined) updateData.paymentMode = data.paymentMode;
+  if (data.status !== undefined) updateData.status = data.status;
+  if (data.startLocation !== undefined) updateData.startLocation = data.startLocation?.trim() || null;
+  if (data.endLocation !== undefined) updateData.endLocation = data.endLocation?.trim() || null;
+  if (data.transportMode !== undefined) updateData.transportMode = data.transportMode?.trim() || null;
+  if (data.distanceKm !== undefined) updateData.distanceKm = data.distanceKm ? new Prisma.Decimal(data.distanceKm) : null;
+  if (data.ratePerKm !== undefined) updateData.ratePerKm = data.ratePerKm ? new Prisma.Decimal(data.ratePerKm) : null;
+  if (data.materialDetails !== undefined) updateData.materialDetails = data.materialDetails?.trim() || null;
+  if (data.shiftingType !== undefined) updateData.shiftingType = data.shiftingType?.trim() || null;
+  if (data.receiptUrl !== undefined) updateData.receiptUrl = data.receiptUrl?.trim() || null;
+  if (data.receiptNumber !== undefined) updateData.receiptNumber = data.receiptNumber?.trim() || null;
+  if (data.branch !== undefined) updateData.branch = data.branch?.trim() || null;
+  if (data.projectName !== undefined) updateData.projectName = data.projectName?.trim() || null;
+  if (data.remarks !== undefined) updateData.remarks = data.remarks?.trim() || null;
+  if (data.rejectionReason !== undefined) updateData.rejectionReason = data.rejectionReason?.trim() || null;
+  if (data.isReimbursed !== undefined) updateData.isReimbursed = data.isReimbursed;
+  if (data.reimbursedAmount !== undefined) {
+    updateData.reimbursedAmount = data.reimbursedAmount ? new Prisma.Decimal(data.reimbursedAmount) : null;
+  }
+  if (data.reimbursedRef !== undefined) updateData.reimbursedRef = data.reimbursedRef?.trim() || null;
+
+  return await prisma.employeeConveyanceExpense.update({
+    where: { id },
+    data: updateData,
+    include: {
+      employee: {
+        select: { id: true, name: true, employeeId: true, department: true, designation: true },
+      },
+      createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+  });
+}
+
+export async function deleteConveyanceExpense(id: string) {
+  return await prisma.employeeConveyanceExpense.delete({
+    where: { id },
+  });
+}
+
+export async function getConveyanceExpense(id: string) {
+  const expense = await prisma.employeeConveyanceExpense.findUnique({
+    where: { id },
+    include: {
+      employee: {
+        select: {
+          id: true,
+          name: true,
+          employeeId: true,
+          department: true,
+          designation: true,
+          phone: true,
+          bankAccountNumber: true,
+          bankIfsc: true,
+          bankName: true,
+        },
+      },
+      createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+  });
+
+  if (!expense) {
+    throw new Error('Conveyance expense record not found');
+  }
+
+  return expense;
+}
+
+export async function listConveyanceExpenses(query: ListConveyanceExpensesQuery) {
+  const {
+    page = 1,
+    limit = 20,
+    employeeId,
+    category,
+    purpose,
+    status,
+    paymentMode,
+    startDate,
+    endDate,
+    search,
+    branch,
+  } = query;
+
+  const skip = (page - 1) * limit;
+  const where: Prisma.EmployeeConveyanceExpenseWhereInput = {};
+
+  if (employeeId) where.employeeId = employeeId;
+  if (category) where.category = category;
+  if (purpose) where.purpose = purpose;
+  if (status) where.status = status;
+  if (paymentMode) where.paymentMode = paymentMode;
+  if (branch) where.branch = branch;
+
+  if (startDate || endDate) {
+    where.visitDate = {};
+    if (startDate) where.visitDate.gte = new Date(startDate);
+    if (endDate) where.visitDate.lte = new Date(endDate);
+  }
+
+  if (search && search.trim()) {
+    const s = search.trim();
+    where.OR = [
+      { voucherNumber: { contains: s, mode: 'insensitive' } },
+      { siteName: { contains: s, mode: 'insensitive' } },
+      { siteAddress: { contains: s, mode: 'insensitive' } },
+      { clientName: { contains: s, mode: 'insensitive' } },
+      { projectName: { contains: s, mode: 'insensitive' } },
+      { materialDetails: { contains: s, mode: 'insensitive' } },
+      { employee: { name: { contains: s, mode: 'insensitive' } } },
+      { employee: { employeeId: { contains: s, mode: 'insensitive' } } },
+    ];
+  }
+
+  const [total, items, summaryAggregations] = await Promise.all([
+    prisma.employeeConveyanceExpense.count({ where }),
+    prisma.employeeConveyanceExpense.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { visitDate: 'desc' },
+      include: {
+        employee: {
+          select: { id: true, name: true, employeeId: true, department: true, designation: true },
+        },
+        createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+        approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+    }),
+    prisma.employeeConveyanceExpense.groupBy({
+      by: ['category', 'status', 'isReimbursed'],
+      where: employeeId ? { employeeId } : (startDate || endDate) ? { visitDate: where.visitDate } : {},
+      _sum: { amount: true },
+      _count: { id: true },
+    }),
+  ]);
+
+  let totalClaimedAmount = 0;
+  let totalApprovedAmount = 0;
+  let totalPendingAmount = 0;
+  let totalReimbursedAmount = 0;
+  let petrolAmount = 0;
+  let garivaraAmount = 0;
+  let materialShiftingAmount = 0;
+  let otherAmount = 0;
+
+  for (const group of summaryAggregations) {
+    const amt = Number(group._sum.amount || 0);
+    totalClaimedAmount += amt;
+
+    if (group.status === 'APPROVED') totalApprovedAmount += amt;
+    else if (group.status === 'PENDING') totalPendingAmount += amt;
+
+    if (group.isReimbursed || group.status === 'REIMBURSED') {
+      totalReimbursedAmount += amt;
+    }
+
+    if (group.category === 'PETROL') petrolAmount += amt;
+    else if (group.category === 'GARIVARA') garivaraAmount += amt;
+    else if (group.category === 'MATERIAL_SHIFTING') materialShiftingAmount += amt;
+    else otherAmount += amt;
+  }
+
+  return {
+    items,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+    summary: {
+      totalCount: total,
+      totalClaimedAmount,
+      totalApprovedAmount,
+      totalPendingAmount,
+      totalReimbursedAmount,
+      petrolAmount,
+      garivaraAmount,
+      materialShiftingAmount,
+      otherAmount,
+    },
+  };
+}
+
+export async function approveConveyanceExpense(id: string, userId: string, notes?: string) {
+  const existing = await prisma.employeeConveyanceExpense.findUnique({ where: { id } });
+  if (!existing) {
+    throw new Error('Conveyance expense record not found');
+  }
+
+  return await prisma.employeeConveyanceExpense.update({
+    where: { id },
+    data: {
+      status: 'APPROVED',
+      approvedById: userId,
+      approvedAt: new Date(),
+      remarks: notes ? (existing.remarks ? `${existing.remarks} | Approval Note: ${notes}` : notes) : existing.remarks,
+    },
+    include: {
+      employee: {
+        select: { id: true, name: true, employeeId: true, department: true, designation: true },
+      },
+      approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+  });
+}
+
+export async function rejectConveyanceExpense(id: string, userId: string, reason: string) {
+  const existing = await prisma.employeeConveyanceExpense.findUnique({ where: { id } });
+  if (!existing) {
+    throw new Error('Conveyance expense record not found');
+  }
+
+  return await prisma.employeeConveyanceExpense.update({
+    where: { id },
+    data: {
+      status: 'REJECTED',
+      approvedById: userId,
+      approvedAt: new Date(),
+      rejectionReason: reason,
+    },
+    include: {
+      employee: {
+        select: { id: true, name: true, employeeId: true, department: true, designation: true },
+      },
+      approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+  });
+}
+
+export async function settleConveyanceExpense(id: string, userId: string, input: SettleConveyanceInput) {
+  const existing = await prisma.employeeConveyanceExpense.findUnique({ where: { id } });
+  if (!existing) {
+    throw new Error('Conveyance expense record not found');
+  }
+
+  const reimbursedAmount = input.reimbursedAmount ? new Prisma.Decimal(input.reimbursedAmount) : existing.amount;
+
+  return await prisma.employeeConveyanceExpense.update({
+    where: { id },
+    data: {
+      status: 'REIMBURSED',
+      isReimbursed: true,
+      reimbursedAt: new Date(),
+      reimbursedRef: input.paymentRef.trim(),
+      reimbursedAmount,
+      approvedById: existing.approvedById || userId,
+      approvedAt: existing.approvedAt || new Date(),
+    },
+    include: {
+      employee: {
+        select: { id: true, name: true, employeeId: true, department: true, designation: true },
+      },
+      approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+  });
+}
+
 

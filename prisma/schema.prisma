@@ -70,6 +70,10 @@ model User {
   ledgersReconciled        ExpenseDailyLedger[]    @relation("LedgerReconciledBy")
   expenseAudits            ExpenseAuditLog[]       @relation("ExpenseAuditPerformer")
 
+  // Employee Conveyance / Site Visit Expense Relations
+  conveyancesCreated       EmployeeConveyanceExpense[] @relation("ConveyanceCreatedBy")
+  conveyancesApproved      EmployeeConveyanceExpense[] @relation("ConveyanceApprovedBy")
+
   // Security, 2FA & Session Additions
   mustChangePassword      Boolean          @default(false)
   twoFactorEnabled        Boolean          @default(false)
@@ -3063,6 +3067,7 @@ model Employee {
   deductions         EmployeeDeduction[]
   payrollRuns        EmployeePayrollRun[]
   expenses           ExpenseEntry[]
+  conveyanceExpenses EmployeeConveyanceExpense[]
 
   @@index([employeeId])
   @@index([email])
@@ -3230,6 +3235,105 @@ model EmployeeIdSequence {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   @@map("employee_id_sequences")
+}
+
+// ─── Site Visit & Conveyance / Convenience Expenses Module ──────────────────
+
+enum ConveyanceCategory {
+  PETROL
+  GARIVARA
+  MATERIAL_SHIFTING
+  TOLL_PARKING
+  FOOD_ALLOWANCE
+  HOTEL_STAY
+  OTHER
+}
+
+enum ConveyancePurpose {
+  SITE_MEASUREMENT
+  SITE_INSPECTION
+  MATERIAL_SHIFTING
+  INSTALLATION_SUPPORT
+  CLIENT_MEETING
+  SAMPLE_SUBMISSION
+  MAINTENANCE_SERVICE
+  OTHER
+}
+
+enum ConveyancePaymentMode {
+  PAID_BY_EMPLOYEE
+  COMPANY_CASH
+  COMPANY_UPI
+  COMPANY_CARD
+}
+
+enum ConveyanceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REIMBURSED
+}
+
+model EmployeeConveyanceExpense {
+  id               String                @id @default(uuid())
+  voucherNumber    String                @unique @map("voucher_number")
+  employeeId       String                @map("employee_id")
+  visitDate        DateTime              @map("visit_date") @db.Date
+  siteName         String                @map("site_name")
+  siteAddress      String?               @map("site_address") @db.Text
+  clientName       String?               @map("client_name")
+  purpose          ConveyancePurpose     @default(SITE_MEASUREMENT)
+  category         ConveyanceCategory    @default(PETROL)
+  amount           Decimal               @db.Decimal(10, 2)
+  paymentMode      ConveyancePaymentMode @default(PAID_BY_EMPLOYEE) @map("payment_mode")
+  status           ConveyanceStatus      @default(PENDING)
+
+  // Travel / Vehicle details (petrol, garivara, fare)
+  startLocation    String?               @map("start_location")
+  endLocation      String?               @map("end_location")
+  transportMode    String?               @map("transport_mode")
+  distanceKm       Decimal?              @map("distance_km") @db.Decimal(6, 2)
+  ratePerKm        Decimal?              @map("rate_per_km") @db.Decimal(6, 2)
+
+  // Material shifting specific details
+  materialDetails  String?               @map("material_details") @db.Text
+  shiftingType     String?               @map("shifting_type")
+
+  // Proof & Receipts
+  receiptUrl       String?               @map("receipt_url")
+  receiptNumber    String?               @map("receipt_number")
+
+  // Reimbursement / Settlement
+  isReimbursed     Boolean               @default(false) @map("is_reimbursed")
+  reimbursedAt     DateTime?             @map("reimbursed_at")
+  reimbursedRef    String?               @map("reimbursed_ref")
+  reimbursedAmount Decimal?              @map("reimbursed_amount") @db.Decimal(10, 2)
+
+  // Approval / Rejection
+  approvedById     String?               @map("approved_by_id")
+  approvedAt       DateTime?             @map("approved_at")
+  rejectionReason  String?               @map("rejection_reason") @db.Text
+
+  // Context & Metadata
+  branch           String?               @default("DELHI")
+  projectName      String?               @map("project_name")
+  remarks          String?               @db.Text
+  createdById      String?               @map("created_by_id")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  // Relations
+  employee         Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  createdBy        User?                 @relation("ConveyanceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  approvedBy       User?                 @relation("ConveyanceApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([visitDate])
+  @@index([category])
+  @@index([purpose])
+  @@index([status])
+  @@index([isReimbursed])
+  @@map("employee_conveyance_expenses")
 }
 
 

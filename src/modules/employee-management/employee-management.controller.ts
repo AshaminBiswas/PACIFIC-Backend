@@ -23,6 +23,12 @@ import {
   MarkPayrollPaidSchema,
   ListPayrollQuerySchema,
   ResendPayslipEmailSchema,
+  CreateConveyanceExpenseSchema,
+  UpdateConveyanceExpenseSchema,
+  ListConveyanceExpensesQuerySchema,
+  ApproveConveyanceSchema,
+  RejectConveyanceSchema,
+  SettleConveyanceSchema,
 } from './employee-management.schema';
 import { sendSuccess, sendError } from '../../utils/response';
 
@@ -50,6 +56,7 @@ export const updateEmployeeHandler = async (req: Request, res: Response, next: N
 };
 
 const RESERVED_EMPLOYEE_SUBPATHS = new Set([
+  'conveyance',
   'attendance',
   'advances',
   'deductions',
@@ -441,6 +448,96 @@ export const resendPayslipEmailHandler = async (req: Request, res: Response, nex
         500
       );
     }
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+// ─── Site Visits & Convenience Expenses Handlers ──────────────────────────────
+export const listConveyanceExpensesHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = ListConveyanceExpensesQuerySchema.parse(req.query);
+    const result = await employeeService.listConveyanceExpenses(query);
+    sendSuccess(res, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createConveyanceExpenseHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const input = CreateConveyanceExpenseSchema.parse(req.body);
+    const userId = (req as any).user?.id;
+    const expense = await employeeService.createConveyanceExpense(input, userId);
+    sendSuccess(res, expense, 'Site visit conveyance expense recorded successfully', 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getConveyanceExpenseHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const expense = await employeeService.getConveyanceExpense(id);
+    sendSuccess(res, expense);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateConveyanceExpenseHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const input = UpdateConveyanceExpenseSchema.parse(req.body);
+    const updated = await employeeService.updateConveyanceExpense(id, input);
+    sendSuccess(res, updated, 'Expense updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteConveyanceExpenseHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    await employeeService.deleteConveyanceExpense(id);
+    sendSuccess(res, { deleted: true }, 'Expense deleted successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const approveConveyanceExpenseHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const userId = (req as any).user?.id;
+    const { notes } = ApproveConveyanceSchema.parse(req.body || {});
+    const approved = await employeeService.approveConveyanceExpense(id, userId, notes || undefined);
+    sendSuccess(res, approved, 'Expense approved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const rejectConveyanceExpenseHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const userId = (req as any).user?.id;
+    const input = RejectConveyanceSchema.parse(req.body);
+    const rejected = await employeeService.rejectConveyanceExpense(id, userId, input.reason);
+    sendSuccess(res, rejected, 'Expense claim rejected');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const settleConveyanceExpenseHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const userId = (req as any).user?.id;
+    const input = SettleConveyanceSchema.parse(req.body);
+    const settled = await employeeService.settleConveyanceExpense(id, userId, input);
+    sendSuccess(res, settled, 'Expense reimbursed and settled successfully');
   } catch (error) {
     next(error);
   }
