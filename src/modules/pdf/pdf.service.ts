@@ -3593,7 +3593,8 @@ export const pdfService = {
   },
 
   /**
-   * Generates official GST Tax Invoice PDF HTML (Rule 46 compliant) with distinct Tax Invoice T&Cs
+   * Generates official GST Tax Invoice PDF HTML (Rule 46 compliant) matching statutory Tax Invoice format.
+   * NOTE: QR code is strictly omitted per system specification.
    */
   generateTaxInvoicePdfHtml(data: {
     invoiceNumber: string;
@@ -3605,14 +3606,25 @@ export const pdfService = {
     companyEmail?: string;
     companyGstin?: string;
     companyPan?: string;
+    companyState?: string;
+    companyStateCode?: string;
     logoUrl?: string;
-    qrDataUrl?: string;
+    qrDataUrl?: string; // Kept in type for backward compatibility, but intentionally ignored
     customerName: string;
     customerGstin?: string;
     customerAddress?: string;
+    customerState?: string;
+    customerStateCode?: string;
     consigneeName?: string;
     deliveryAddress?: string;
+    consigneeGstin?: string;
+    consigneeState?: string;
+    consigneeStateCode?: string;
     placeOfSupply?: string;
+    reverseCharge?: string | boolean;
+    modeOfTransport?: string;
+    vehicleNumber?: string;
+    grLrNumber?: string;
     orderNumber?: string;
     piNumber?: string;
     items: Array<{
@@ -3620,18 +3632,24 @@ export const pdfService = {
       description: string;
       hsnSac?: string;
       quantity: number;
+      unit?: string;
       rate: number;
       amount: number;
-      gstRate: number;
+      gstRate?: number;
     }>;
     subtotal: number;
+    freightAmount?: number;
     installationCharge?: number;
     installationRatePerCubicle?: number;
     installationCubicleCount?: number;
+    cgstAmount?: number;
+    sgstAmount?: number;
+    igstAmount?: number;
+    roundingAdjustment?: number;
     taxAmount: number;
     grandTotal: number;
-    currency: string;
-    status: string;
+    currency?: string;
+    status?: string;
     bankDetails?: {
       bankName: string;
       accountNumber: string;
@@ -3640,29 +3658,91 @@ export const pdfService = {
     };
     signatureUrl?: string;
     signatoryName?: string;
+    jurisdiction?: string;
   }): string {
-    const formattedDate = new Date(data.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const currSym = data.currency === 'AED' ? 'AED' : '₹';
+    const formattedDate = new Date(data.invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const logoSrc = resolveCompanyLogoDataUri(data.logoUrl);
 
-    const itemRows = data.items
-      .map(
-        (it) => {
-          const isLocker = (it.description || '').toLowerCase().includes('locker');
-          const qtyDisplay = isLocker ? `${it.quantity} Col` : it.quantity;
-          return `
+    const isKolkata =
+      (data.companyGstin || '').startsWith('19') ||
+      (data.companyStateCode || '') === '19' ||
+      (data.invoiceNumber || '').startsWith('PPSK/') ||
+      (data.companyAddress || '').toLowerCase().includes('bengal') ||
+      (data.companyAddress || '').toLowerCase().includes('kolkata');
+
+    const companyGstin = data.companyGstin || (isKolkata ? '19CIJPS1392A1Z5' : '07CIJPS1392A2Z9');
+    const companyPhone = data.companyPhone || '9818592113/ 9882056529';
+    const companyEmail = data.companyEmail || 'info.pacificproduct@gmail.com';
+    const companyAddr = data.companyAddress || (isKolkata
+      ? 'Village Burirhat Bazar, P.O-Chowrashi, P.S-Deganga, Distt-North 24 Paragana, West Bengal - 743424'
+      : 'H-3, JR Complex, Gate No. 4, Melaram farm, Sewa Dham Rd, Mandoli, Delhi - 110093');
+    const jurisdictionText = data.jurisdiction || (isKolkata ? 'SUBJECT TO WEST BENGAL JURISDICTION ONLY' : 'SUBJECT TO DELHI JURISDICTION ONLY');
+
+    const defaultCustomerState = isKolkata ? 'West Bengal' : 'Delhi';
+    const defaultCustomerCode = isKolkata ? '19' : '07';
+
+    const customerState = data.customerState || (data.customerGstin ? (data.customerGstin.startsWith('19') ? 'West Bengal' : data.customerGstin.startsWith('07') ? 'Delhi' : '') : defaultCustomerState);
+    const customerCode = data.customerStateCode || (data.customerGstin ? data.customerGstin.slice(0, 2) : defaultCustomerCode);
+
+    const consigneeState = data.consigneeState || customerState;
+    const consigneeCode = data.consigneeStateCode || customerCode;
+
+    // Check if intra-state or inter-state for tax calculation
+    const sellerCode = isKolkata ? '19' : '07';
+    const isIntraState = customerCode === sellerCode;
+
+    const subtotal = Number(data.subtotal) || 0;
+    const freight = Number(data.freightAmount) || 0;
+    const totalTaxable = subtotal + freight;
+    const totalTax = Number(data.taxAmount) || 0;
+
+    let cgst = Number(data.cgstAmount) || 0;
+    let sgst = Number(data.sgstAmount) || 0;
+    let igst = Number(data.igstAmount) || 0;
+
+    if (cgst === 0 && sgst === 0 && igst === 0) {
+      if (isIntraState) {
+        cgst = Math.round((totalTax / 2) * 100) / 100;
+        sgst = Math.round((totalTax - cgst) * 100) / 100;
+      } else {
+        igst = totalTax;
+      }
+    }
+
+    const grandTotal = Number(data.grandTotal) || (totalTaxable + totalTax);
+    const rawSum = totalTaxable + (isIntraState ? (cgst + sgst) : igst);
+    let rounding = data.roundingAdjustment !== undefined ? Number(data.roundingAdjustment) : (Math.round((grandTotal - rawSum) * 100) / 100);
+
+    const amountInWordsText = numberToWords(grandTotal, data.currency || 'INR');
+
+    // Build Items rows
+    const itemRowsHtml = (data.items || []).map((it, idx) => {
+      const slNo = String(it.serialNumber || idx + 1).padStart(2, '0');
+      const hsn = it.hsnSac || '48239019';
+      const qty = Number(it.quantity) || 1;
+      const qtyStr = qty.toFixed(2);
+      const unit = it.unit || "No's";
+      const rate = Number(it.rate) || 0;
+      const amount = Number(it.amount) || (qty * rate);
+
+      return `
         <tr>
-          <td style="text-align: center; border: 1px solid #000; padding: 4px;">${it.serialNumber}</td>
-          <td style="border: 1px solid #000; padding: 4px;"><strong>${it.description}</strong></td>
-          <td style="text-align: center; border: 1px solid #000; padding: 4px;">${it.hsnSac || '73089090'}</td>
-          <td style="text-align: right; border: 1px solid #000; padding: 4px;">${qtyDisplay}</td>
-          <td style="text-align: right; border: 1px solid #000; padding: 4px;">${currSym} ${Number(it.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-          <td style="text-align: right; border: 1px solid #000; padding: 4px; font-weight: bold;">${currSym} ${Number(it.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-          <td style="text-align: center; border: 1px solid #000; padding: 4px;">${it.gstRate || 18}%</td>
+          <td style="text-align: center; border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 4px 2px;">${slNo}</td>
+          <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 4px 6px; font-weight: 500;">${it.description}</td>
+          <td style="text-align: center; border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 4px 2px;">${hsn}</td>
+          <td style="text-align: right; border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 4px 4px;">${qtyStr}</td>
+          <td style="text-align: center; border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 4px 2px;">${unit}</td>
+          <td style="text-align: right; border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 4px 4px;">${rate.toFixed(2)}</td>
+          <td style="text-align: right; border-bottom: 1px solid #000; padding: 4px 6px;">${amount.toFixed(2)}</td>
         </tr>`;
-        }
-      )
-      .join('');
+    }).join('');
+
+    const bank = data.bankDetails || {
+      bankName: 'HDFC BANK',
+      accountNumber: '50200123651435',
+      ifscCode: 'HDFC0000395',
+      branchName: 'YAMUNA VIHAR BRANCH, DELHI-110053',
+    };
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -3670,158 +3750,329 @@ export const pdfService = {
   <meta charset="UTF-8">
   <title>Tax Invoice - ${data.invoiceNumber}</title>
   <style>
-    @page { size: A4; margin: 8mm; }
-    * { box-sizing: border-box; color: #000000 !important; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 11px; line-height: 1.35; margin: 0; padding: 0; background: #fff; }
-    .container { width: 100%; max-width: 194mm; margin: 0 auto; border: 1px solid #000; background: #fff; }
-    table { width: 100%; border-collapse: collapse; }
-    td, th { vertical-align: top; }
+    @page {
+      size: A4 portrait;
+      margin: 8mm;
+    }
+    * {
+      box-sizing: border-box;
+      color: #000000 !important;
+      -webkit-print-color-adjust: exact;
+    }
+    body {
+      font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+      font-size: 10.5px;
+      line-height: 1.25;
+      margin: 0;
+      padding: 0;
+      background: #fff;
+    }
+    .invoice-box {
+      width: 100%;
+      max-width: 194mm;
+      margin: 0 auto;
+      border: 1.5px solid #000;
+      background: #fff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    th, td {
+      vertical-align: top;
+      word-wrap: break-word;
+    }
+    .border-b { border-bottom: 1px solid #000; }
+    .border-t { border-top: 1px solid #000; }
+    .border-l { border-left: 1px solid #000; }
+    .border-r { border-right: 1px solid #000; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <table style="border-bottom: 1px solid #000;">
+  <div class="invoice-box">
+    <!-- Top Header: Logo, Title & Company Address, Original Copy -->
+    <table class="border-b">
       <tr>
-        <td style="width: 55%; padding: 8px 10px;">
-          ${logoSrc ? `<img src="${logoSrc}" alt="Logo" style="height: 38px; max-width: 170px; object-fit: contain; margin-bottom: 4px;" />` : ''}
-          <div style="font-size: 13px; font-weight: 800; text-transform: uppercase;">${data.companyName}</div>
-          <div style="font-size: 9.5px; color: #334155;">${data.companyAddress}</div>
-          <div style="font-size: 9.5px; margin-top: 2px;"><strong>GSTIN:</strong> ${data.companyGstin || '07CIJPS1392A2Z9'} | <strong>PAN:</strong> ${data.companyPan || 'CIJPS1392A'}</div>
-          ${data.companyPhone ? `<div style="font-size: 9.5px;"><strong>Phone:</strong> ${data.companyPhone}</div>` : ''}
+        <td style="width: 24%; padding: 6px 8px; vertical-align: middle;">
+          ${logoSrc ? `<img src="${logoSrc}" alt="Pacific Logo" style="max-height: 48px; max-width: 150px; object-fit: contain;" />` : ''}
         </td>
-        <td style="width: 45%; padding: 8px 10px; text-align: right; border-left: 1px solid #000;">
-          <div style="display: inline-block; border: 1px solid #000; padding: 3px 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; background: #f8fafc; margin-bottom: 6px;">
-            TAX INVOICE (GST)
+        <td style="width: 58%; padding: 4px 4px; text-align: center; vertical-align: middle;">
+          <div style="font-size: 12px; font-weight: 800; letter-spacing: 0.5px;">TAX INVOICE</div>
+          <div style="font-size: 15px; font-weight: 900; margin-top: 2px;">${data.companyName || 'PACIFIC PRODUCTS AND SOLUTIONS'}</div>
+          <div style="font-size: 9px; line-height: 1.25; margin-top: 2px;">${companyAddr}</div>
+          <div style="font-size: 9.5px; margin-top: 2px;">
+            <strong>Mb :</strong> ${companyPhone} &nbsp; <strong>Email:</strong> ${companyEmail}
           </div>
-          <table style="font-size: 10px; margin-top: 4px; float: right; width: auto;">
-            <tr><td style="text-align: right; padding: 1px 4px;"><strong>Invoice No:</strong></td><td style="text-align: left; padding: 1px 4px; font-family: monospace; font-weight: bold;">${data.invoiceNumber}</td></tr>
-            <tr><td style="text-align: right; padding: 1px 4px;"><strong>Invoice Date:</strong></td><td style="text-align: left; padding: 1px 4px;">${formattedDate}</td></tr>
-            ${data.orderNumber ? `<tr><td style="text-align: right; padding: 1px 4px;"><strong>Order Ref:</strong></td><td style="text-align: left; padding: 1px 4px; font-family: monospace;">${data.orderNumber}</td></tr>` : ''}
-            ${data.placeOfSupply ? `<tr><td style="text-align: right; padding: 1px 4px;"><strong>Place of Supply:</strong></td><td style="text-align: left; padding: 1px 4px;">${data.placeOfSupply}</td></tr>` : ''}
-            <tr><td style="text-align: right; padding: 1px 4px;"><strong>Reverse Charge:</strong></td><td style="text-align: left; padding: 1px 4px;">NO</td></tr>
-          </table>
-          ${data.qrDataUrl ? `<div style="clear: both; padding-top: 4px;"><img src="${data.qrDataUrl}" alt="QR" style="width: 52px; height: 52px;" /></div>` : ''}
+          <div style="font-size: 10.5px; font-weight: 800; margin-top: 2px;">
+            GSTIN NO. : <span style="text-decoration: underline;">${companyGstin}</span>
+          </div>
+        </td>
+        <td style="width: 18%; padding: 6px 8px; text-align: right; vertical-align: top;">
+          <div style="display: inline-block; border: 1px solid #000; padding: 2px 6px; font-size: 9px; font-weight: bold;">
+            Original Copy
+          </div>
         </td>
       </tr>
     </table>
 
-    <table style="border-bottom: 1px solid #000; font-size: 10px; width: 100%;">
+    <!-- Party & Invoice Transport Metadata Split Box -->
+    <table class="border-b" style="font-size: 9.5px;">
       <tr>
-        <td style="width: 50%; padding: 6px 10px; border-right: 1px solid #000; vertical-align: top;">
-          <div style="font-weight: 800; text-transform: uppercase; font-size: 9.5px; color: #475569; margin-bottom: 2px;">BILLED TO (RECEIVER):</div>
-          <div style="font-size: 11px; font-weight: bold;">${data.customerName}</div>
-          <div>${data.customerAddress || 'Client Office Address'}</div>
-          ${data.customerGstin ? `<div><strong>Customer GSTIN:</strong> ${data.customerGstin}</div>` : ''}
+        <!-- Left: Bill to & Ship to -->
+        <td style="width: 54%; padding: 0;" class="border-r">
+          <!-- Bill to Header -->
+          <div style="border-bottom: 1px solid #000; text-align: center; font-weight: bold; padding: 2px 4px; background: #fafafa; font-size: 10px;">
+            Bill to Party
+          </div>
+          <div style="padding: 4px 6px; line-height: 1.35;">
+            <div><strong>Name:</strong> ${data.customerName || 'M/s.'}</div>
+            <div><strong>Address:</strong> ${data.customerAddress || ''}</div>
+            <div style="margin-top: 2px;">
+              <strong>GSTIN No. &nbsp;&nbsp;&nbsp;&nbsp;:</strong> ${data.customerGstin || ''}
+            </div>
+            <div>
+              <strong>State:</strong> ${customerState} &nbsp;&nbsp;&nbsp;&nbsp; <strong>Code:</strong> ${customerCode}
+            </div>
+          </div>
+
+          <!-- Ship to Header -->
+          <div style="border-top: 1px solid #000; border-bottom: 1px solid #000; text-align: center; font-weight: bold; padding: 2px 4px; background: #fafafa; font-size: 10px;">
+            Ship to Party
+          </div>
+          <div style="padding: 4px 6px; line-height: 1.35;">
+            <div><strong>Name:</strong> ${data.consigneeName || data.customerName || 'M/s.'}</div>
+            <div><strong>Address:</strong> ${data.deliveryAddress || data.customerAddress || ''}</div>
+            <div style="margin-top: 2px;">
+              <strong>GSTIN No. &nbsp;&nbsp;&nbsp;&nbsp;:</strong> ${data.consigneeGstin || data.customerGstin || ''}
+            </div>
+            <div>
+              <strong>State:</strong> ${consigneeState} &nbsp;&nbsp;&nbsp;&nbsp; <strong>Code:</strong> ${consigneeCode}
+            </div>
+          </div>
         </td>
-        <td style="width: 50%; padding: 6px 10px; vertical-align: top;">
-          <div style="font-weight: 800; text-transform: uppercase; font-size: 9.5px; color: #475569; margin-bottom: 2px;">SHIPPED TO (DELIVERY / SITE):</div>
-          <div style="font-size: 11px; font-weight: bold;">${data.consigneeName || data.customerName}</div>
-          <div>${data.deliveryAddress || data.customerAddress || 'Same as Billing Address'}</div>
+
+        <!-- Right: Invoice Metadata & Transport -->
+        <td style="width: 46%; padding: 4px 8px; vertical-align: top; line-height: 1.55;">
+          <table style="width: 100%; font-size: 9.5px;">
+            <tr>
+              <td style="width: 44%; font-weight: bold;">Invoice No.</td>
+              <td style="width: 56%;">: ${data.invoiceNumber}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: bold;">Dated</td>
+              <td>: ${formattedDate}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: bold;">Place of Supply</td>
+              <td>: ${data.placeOfSupply || customerState}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: bold;">Reverse Charge (Y/N)</td>
+              <td>: ${data.reverseCharge ? 'Y' : 'N'}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: bold;">Mode of Transport</td>
+              <td>: ${data.modeOfTransport || 'By Road'}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: bold;">Vehicle No.</td>
+              <td>: ${data.vehicleNumber || ''}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: bold;">GR/LR/RR No.</td>
+              <td>: ${data.grLrNumber || ''}</td>
+            </tr>
+          </table>
         </td>
       </tr>
     </table>
 
-    <div style="padding: 6px 10px;">
-      <table style="border: 1px solid #000; font-size: 10px; margin: 4px 0;">
-        <thead>
-          <tr style="background: #f1f5f9;">
-            <th style="width: 28px; border: 1px solid #000; padding: 4px; text-align: center;">S.N.</th>
-            <th style="border: 1px solid #000; padding: 4px; text-align: left;">Description of Goods</th>
-            <th style="width: 60px; border: 1px solid #000; padding: 4px; text-align: center;">HSN/SAC</th>
-            <th style="width: 50px; border: 1px solid #000; padding: 4px; text-align: right;">Qty</th>
-            <th style="width: 75px; border: 1px solid #000; padding: 4px; text-align: right;">Rate</th>
-            <th style="width: 85px; border: 1px solid #000; padding: 4px; text-align: right;">Amount</th>
-            <th style="width: 45px; border: 1px solid #000; padding: 4px; text-align: center;">GST %</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${itemRows}
-        </tbody>
-      </table>
-
-      <table style="margin-top: 4px;">
+    <!-- Line Items Table -->
+    <table class="border-b" style="font-size: 9.5px;">
+      <thead>
+        <tr style="border-bottom: 1px solid #000; font-weight: bold; background: #fafafa;">
+          <th style="width: 7%; padding: 4px 2px; text-align: center; border-right: 1px solid #000;">S.L. No.</th>
+          <th style="width: 41%; padding: 4px 6px; text-align: left; border-right: 1px solid #000;">Description of goods</th>
+          <th style="width: 13%; padding: 4px 2px; text-align: center; border-right: 1px solid #000;">HSN/ SAC CODE</th>
+          <th style="width: 9%; padding: 4px 4px; text-align: right; border-right: 1px solid #000;">Qty.</th>
+          <th style="width: 8%; padding: 4px 2px; text-align: center; border-right: 1px solid #000;">Unit</th>
+          <th style="width: 10%; padding: 4px 4px; text-align: right; border-right: 1px solid #000;">Rate</th>
+          <th style="width: 12%; padding: 4px 6px; text-align: right;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemRowsHtml}
+      </tbody>
+      <tfoot>
+        <!-- Subtotal / Freight / Taxes / Rounding / Grand Total -->
         <tr>
-          <td style="width: 55%; font-size: 9px; padding-right: 8px;">
-            <div style="border: 1px solid #cbd5e1; padding: 6px; background: #fafafa; margin-bottom: 4px;">
-              <strong>Amount in Words:</strong> ${numberToWords(data.grandTotal, data.currency)}
-            </div>
-            ${data.bankDetails ? `
-            <div style="border: 1px dashed #000; padding: 4px 6px; font-size: 8.5px; background: #f8fafc;">
-              <strong>Bank Remittance Details:</strong><br/>
-              Bank: ${data.bankDetails.bankName} | A/C No: ${data.bankDetails.accountNumber} | IFSC: ${data.bankDetails.ifscCode}
-            </div>` : ''}
-          </td>
-          <td style="width: 45%;">
-            <table style="border: 1px solid #000; font-size: 10px;">
-              <tr>
-                <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">Taxable Value:</td>
-                <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1; font-weight: bold;">${currSym} ${Number(data.subtotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              </tr>
-              ${data.installationCharge && data.installationCharge > 0 ? `
-                <tr>
-                  <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">
-                    Installation Charges${(() => {
-                      const cubCount = data.installationCubicleCount || data.items
-                        .filter(isCubiclePdfItem)
-                        .reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
-                      const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 ? Math.round(Number(data.installationCharge) / cubCount) : 0);
-                      return ratePerCub > 0 && cubCount > 0 ? ` (@ ${currSym} ${ratePerCub.toLocaleString('en-IN')}/Cubicle for ${cubCount} Cubicle${cubCount === 1 ? '' : 's'})` : '';
-                    })()}:
-                  </td>
-                  <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1;">${currSym} ${Number(data.installationCharge).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                </tr>
-              ` : ''}
-              ${
-                isDelhiGst(data.customerGstin, undefined, data.placeOfSupply || data.customerAddress)
-                  ? `<tr>
-                      <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">CGST (9%):</td>
-                      <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1;">${currSym} ${(Number(data.taxAmount) / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    </tr>
-                    <tr>
-                      <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">SGST (9%):</td>
-                      <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1;">${currSym} ${(Number(data.taxAmount) / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    </tr>`
-                  : `<tr>
-                      <td style="padding: 3px 6px; border-bottom: 1px solid #cbd5e1;">IGST (18%):</td>
-                      <td style="padding: 3px 6px; text-align: right; border-bottom: 1px solid #cbd5e1;">${currSym} ${Number(data.taxAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    </tr>`
-              }
-              <tr style="background: #0f172a; color: #fff;">
-                <td style="padding: 5px 6px; font-weight: bold;">Invoice Total:</td>
-                <td style="padding: 5px 6px; text-align: right; font-weight: bold; color: #7FB706;">${currSym} ${Number(data.grandTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              </tr>
-            </table>
+          <td colspan="5" style="border-right: 1px solid #000; border-top: 1px solid #000; padding: 2px;"></td>
+          <td style="border-right: 1px solid #000; border-top: 1px solid #000; padding: 3px 4px; text-align: right; font-weight: bold;"></td>
+          <td style="padding: 3px 6px; text-align: right; font-weight: bold; border-top: 1px solid #000; border-bottom: 1px solid #000;">
+            ${subtotal.toFixed(2)}
           </td>
         </tr>
-      </table>
+        <tr>
+          <td colspan="4" style="border-right: 1px solid #000;"></td>
+          <td colspan="2" style="border-right: 1px solid #000; padding: 2px 4px; text-align: right; font-size: 9px;">
+            Add : Freight
+          </td>
+          <td style="padding: 2px 6px; text-align: right; font-size: 9px;">
+            ${freight > 0 ? freight.toFixed(2) : ''}
+          </td>
+        </tr>
+        <tr style="border-top: 1px solid #000; border-bottom: 1px solid #000;">
+          <td colspan="4" style="border-right: 1px solid #000;"></td>
+          <td colspan="2" style="border-right: 1px solid #000; padding: 2px 4px; text-align: right; font-weight: bold;">
+            Total Amount
+          </td>
+          <td style="padding: 2px 6px; text-align: right; font-weight: bold;">
+            ${totalTaxable.toFixed(2)}
+          </td>
+        </tr>
+        ${
+          isIntraState
+            ? `
+        <tr>
+          <td colspan="3" style="border-right: 1px solid #000;"></td>
+          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
+          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">CGST @: 9.00%</td>
+          <td style="padding: 2px 6px; text-align: right; font-size: 9px;">${cgst.toFixed(2)}</td>
+        </tr>
+        <tr>
+          <td colspan="3" style="border-right: 1px solid #000;"></td>
+          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
+          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">SGST @: 9.00%</td>
+          <td style="padding: 2px 6px; text-align: right; font-size: 9px;">${sgst.toFixed(2)}</td>
+        </tr>
+        <tr>
+          <td colspan="3" style="border-right: 1px solid #000;"></td>
+          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
+          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">IGST @:</td>
+          <td style="padding: 2px 6px; text-align: right; font-size: 9px;"></td>
+        </tr>`
+            : `
+        <tr>
+          <td colspan="3" style="border-right: 1px solid #000;"></td>
+          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
+          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">CGST @:</td>
+          <td style="padding: 2px 6px; text-align: right; font-size: 9px;"></td>
+        </tr>
+        <tr>
+          <td colspan="3" style="border-right: 1px solid #000;"></td>
+          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
+          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">SGST @:</td>
+          <td style="padding: 2px 6px; text-align: right; font-size: 9px;"></td>
+        </tr>
+        <tr>
+          <td colspan="3" style="border-right: 1px solid #000;"></td>
+          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
+          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">IGST @: 18.00%</td>
+          <td style="padding: 2px 6px; text-align: right; font-size: 9px;">${igst.toFixed(2)}</td>
+        </tr>`
+        }
+        <tr>
+          <td colspan="3" style="border-right: 1px solid #000;"></td>
+          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">${rounding < 0 ? 'Less :' : 'Add :'}</td>
+          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">Rounded Off (+/-)</td>
+          <td style="padding: 2px 6px; text-align: right; font-size: 9px;">${rounding !== 0 ? Math.abs(rounding).toFixed(2) : '0.00'}</td>
+        </tr>
+        <tr style="border-top: 1.5px solid #000; border-bottom: 1px solid #000;">
+          <td colspan="4" style="border-right: 1px solid #000;"></td>
+          <td colspan="2" style="border-right: 1px solid #000; padding: 3px 4px; text-align: right; font-weight: 900; font-size: 10px;">
+            Grand Total
+          </td>
+          <td style="padding: 3px 6px; text-align: right; font-weight: 900; font-size: 10.5px;">
+            ${grandTotal.toFixed(2)}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- Invoice Value In Words -->
+    <div class="border-b" style="padding: 4px 6px; font-size: 9.5px;">
+      <strong>Invoice Value (In Words) :</strong> ${amountInWordsText}
     </div>
 
-    <!-- DISTINCT TAX INVOICE TERMS & CONDITIONS -->
-    <table style="border-top: 1px solid #000; font-size: 8.5px; padding: 6px 10px;">
+    <!-- Tax Rate Summary Table -->
+    <table class="border-b" style="font-size: 9px; text-align: center;">
+      <thead>
+        <tr style="border-bottom: 1px solid #000; background: #fafafa; font-weight: bold;">
+          <th style="padding: 3px; border-right: 1px solid #000; width: 14%;">Tax rate</th>
+          <th style="padding: 3px; border-right: 1px solid #000; width: 20%;">Taxable Amt.</th>
+          <th style="padding: 3px; border-right: 1px solid #000; width: 16%;">CGST</th>
+          <th style="padding: 3px; border-right: 1px solid #000; width: 16%;">SGST</th>
+          <th style="padding: 3px; border-right: 1px solid #000; width: 16%;">IGST</th>
+          <th style="padding: 3px; width: 18%;">Total tax Amt.</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding: 3px; border-right: 1px solid #000;">18%</td>
+          <td style="padding: 3px; border-right: 1px solid #000; text-align: right;">${totalTaxable.toFixed(2)}</td>
+          <td style="padding: 3px; border-right: 1px solid #000; text-align: right;">${isIntraState && cgst > 0 ? cgst.toFixed(2) : ''}</td>
+          <td style="padding: 3px; border-right: 1px solid #000; text-align: right;">${isIntraState && sgst > 0 ? sgst.toFixed(2) : ''}</td>
+          <td style="padding: 3px; border-right: 1px solid #000; text-align: right;">${!isIntraState && igst > 0 ? igst.toFixed(2) : ''}</td>
+          <td style="padding: 3px; text-align: right;">${totalTax.toFixed(2)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Bank Details -->
+    <div class="border-b" style="padding: 4px 6px; font-size: 9.5px; line-height: 1.4;">
+      <div style="font-weight: bold;">Bank Details: ${bank.bankName}</div>
+      <div>
+        <strong>A/C No.</strong> ${bank.accountNumber} &nbsp;&nbsp;&nbsp;&nbsp;
+        <strong>IFSC Code:</strong> ${bank.ifscCode}
+      </div>
+      <div>${bank.branchName || ''}</div>
+    </div>
+
+    <!-- Bottom 3 Columns: Terms & Conditions, Receiver's Signature, Authorised Signatory -->
+    <table class="border-b" style="font-size: 8.5px;">
       <tr>
-        <td style="width: 65%; padding-right: 10px;">
-          <div style="font-weight: 800; text-transform: uppercase; font-size: 9px; color: #000; margin-bottom: 2px;">
-            TERMS & CONDITIONS OF TAX INVOICE:
-          </div>
-          <ol style="margin: 0; padding-left: 14px; line-height: 1.35; color: #334155;">
-            <li><strong>Statutory Declaration:</strong> This Tax Invoice is issued under Section 31 of the CGST Act, 2017. Input Tax Credit (ITC) eligibility is contingent on GST portal matching.</li>
-            <li><strong>Overdue Interest:</strong> Interest @ 18% per annum will be charged on all unpaid balances overdue beyond the agreed credit payment period.</li>
-            <li><strong>Goods Once Sold:</strong> Custom cut-to-size cubicle boards and architectural hardware once supplied cannot be taken back, exchanged, or refunded.</li>
-            <li><strong>Discrepancy Period:</strong> Any billing discrepancy or rate query must be notified in writing within 7 calendar days of invoice date.</li>
-            <li><strong>Legal Jurisdiction:</strong> All contracts, supplies, and disputes are subject exclusively to the competent courts of Delhi / NCR.</li>
+        <!-- Terms & Conditions (45%) -->
+        <td style="width: 44%; padding: 4px 6px;" class="border-r">
+          <div style="font-weight: bold; text-decoration: underline; margin-bottom: 2px;">Terms & Conditions:</div>
+          <ol style="margin: 0; padding-left: 13px; line-height: 1.35;">
+            <li>Goods once sold will not be taken back or exchanged.</li>
+            <li>If the bill is not paid by the due date, interest will be charged at 18%.</li>
+            <li>The seller is not responsible for any loss or damage to goods in transit.</li>
+            <li>The buyer undertakes to submit the prescribed sales tax declaration form to the seller on demand.</li>
           </ol>
         </td>
-        <td style="width: 35%; text-align: right; vertical-align: bottom;">
-          <div style="font-size: 9px; color: #64748b;">For <strong>${data.companyName}</strong></div>
-          <div style="height: 38px; display: flex; align-items: center; justify-content: flex-end;">
-            ${data.signatureUrl ? `<img src="${data.signatureUrl}" height="32" alt="Sign" />` : '<span style="color: #cbd5e1; font-style: italic;">[Authorized Signature]</span>'}
+
+        <!-- Receiver's Signature & Stamp (26%) -->
+        <td style="width: 26%; padding: 4px 6px; text-align: center; vertical-align: top;" class="border-r">
+          <div style="font-weight: bold; line-height: 1.3;">
+            Receiver's Signature<br/>& Stamp
           </div>
-          <div style="font-size: 9px; font-weight: 800; border-top: 1px solid #000; display: inline-block; padding-top: 2px;">
-            ${data.signatoryName || 'Authorized Signatory'}
+        </td>
+
+        <!-- Authorised Signatory (30%) -->
+        <td style="width: 30%; padding: 4px 6px; text-align: center; vertical-align: top;">
+          <div style="font-size: 8px; line-height: 1.25;">
+            Certify that the particulars given<br/>above are true and correct
+          </div>
+          <div style="font-weight: bold; margin-top: 3px; font-size: 8.5px;">
+            For PACIFIC PRODUCTS & SOLUTIONS
+          </div>
+          <div style="height: 38px; display: flex; align-items: center; justify-content: center; margin: 2px 0;">
+            ${data.signatureUrl ? `<img src="${data.signatureUrl}" style="max-height: 34px; max-width: 120px;" alt="Signature" />` : ''}
+          </div>
+          <div style="font-weight: bold; font-size: 8.5px;">
+            (Authorised Signatory)
           </div>
         </td>
       </tr>
     </table>
+
+    <!-- Sub-footer: Jurisdiction & Computer Generated Note -->
+    <div style="padding: 3px 6px; text-align: center; font-size: 8.5px; line-height: 1.3; font-weight: bold;">
+      <div>${jurisdictionText}</div>
+      <div style="font-weight: normal; font-size: 8px;">This is computer generated invoice</div>
+    </div>
   </div>
 </body>
 </html>`;

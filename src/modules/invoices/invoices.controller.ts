@@ -41,6 +41,22 @@ export const invoicesController = {
       next(err);
     }
   },
+  async createFromPi(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await invoicesService.createFromPi(req.params.piId, (req as any).user?.id);
+      res.status(201).json({ success: true, data, message: 'Tax Invoice created from Proforma Invoice' });
+    } catch (err) {
+      next(err);
+    }
+  },
+  async recordPayment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await invoicesService.recordPayment(req.params.id, req.body, (req as any).user?.id);
+      res.status(201).json({ success: true, data, message: 'Payment recorded on Bill successfully' });
+    } catch (err) {
+      next(err);
+    }
+  },
   async getPdf(req: Request, res: Response, next: NextFunction) {
     try {
       const html = await invoicesService.getPdfHtml(req.params.id);
