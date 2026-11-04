@@ -124,7 +124,12 @@ export const ledgerService = {
           addresses: true,
           proformaInvoices: {
             where: { status: { notIn: ['CANCELLED'] } },
-            include: { order: true },
+            include: {
+              order: true,
+              paymentAllocations: {
+                include: { payment: true },
+              },
+            },
             orderBy: { piDate: 'asc' },
           },
           salesOrders: {
@@ -192,6 +197,19 @@ export const ledgerService = {
     // 1. Collect Proforma Invoices (Primary Debits)
     for (const pi of customer.proformaInvoices) {
       const piDueDate = new Date(new Date(pi.piDate).getTime() + paymentTermsDays * 24 * 60 * 60 * 1000);
+
+      // Determine cash payment received amount that was deducted pre-GST
+      const rawBasic = Number(pi.subtotal || 0) + Number(pi.freightAmount || 0) + Number(pi.installationCharge || 0);
+      const taxable = Number(pi.taxableAmount || 0);
+      const cashDeductionFromTax = Math.max(0, Math.round((rawBasic - taxable) * 100) / 100);
+      const cashFromAdvance = (pi.advancePaymentMode === 'CASH' && Number(pi.advanceReceivedAmount || 0) > 0)
+        ? Number(pi.advanceReceivedAmount)
+        : 0;
+      const cashPaymentAmount = cashDeductionFromTax > 0 ? cashDeductionFromTax : cashFromAdvance;
+
+      // In the customer statement, the Total Bill amount incorporates full basic + GST (adding back cash payment received)
+      const totalBill = Math.round((Number(pi.grandTotal || 0) + cashPaymentAmount) * 100) / 100;
+
       rawEntries.push({
         id: pi.id,
         date: new Date(pi.piDate),
@@ -199,10 +217,41 @@ export const ledgerService = {
         docRef: pi.piNumber,
         description: `Proforma Invoice ${pi.quotationRef ? `(Quotation: ${pi.quotationRef})` : ''}${pi.order?.orderNumber ? ` [Order: ${pi.order.orderNumber}]` : ''}`.trim(),
         dueDate: piDueDate,
-        debit: Number(pi.grandTotal || 0),
+        debit: totalBill,
         credit: 0,
         status: pi.status,
       });
+
+      // If cash payment was received on the PI, ensure it is credited in the customer statement.
+      // If the payment is already in customer.payments (via paymentAllocations or direct reference),
+      // it will be picked up by customer.payments below.
+      // Otherwise, add a credit entry here so that the statement remains reconciled.
+      if (cashPaymentAmount > 0) {
+        const hasExistingPayment =
+          ((pi as any).paymentAllocations && (pi as any).paymentAllocations.some((a: any) =>
+            a.payment?.paymentMethod === 'CASH' || Number(a.allocatedAmount) === cashPaymentAmount
+          )) ||
+          customer.payments.some((p: any) =>
+            p.paymentMethod === 'CASH' &&
+            (p.referenceNumber?.includes(pi.piNumber) ||
+             p.notes?.includes(pi.piNumber) ||
+             (Number(p.amount) === cashPaymentAmount && Math.abs(new Date(p.paymentDate).getTime() - new Date(pi.piDate).getTime()) < 30 * 24 * 60 * 60 * 1000))
+          );
+
+        if (!hasExistingPayment) {
+          rawEntries.push({
+            id: `PI-CASH-${pi.id}`,
+            date: pi.advancePaymentDate ? new Date(pi.advancePaymentDate) : new Date(pi.piDate),
+            docType: 'PAYMENT',
+            docRef: pi.advancePaymentReference || `CASH-${pi.piNumber}`,
+            description: `Cash payment received against Proforma Invoice ${pi.piNumber}`,
+            dueDate: null,
+            debit: 0,
+            credit: cashPaymentAmount,
+            status: 'CONFIRMED',
+          });
+        }
+      }
     }
 
     // 2. Collect Independent Sales Orders (Debits only if no preceding PI exists)

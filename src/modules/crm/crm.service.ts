@@ -163,8 +163,16 @@ export const crmService = {
     let openInvoicesCount = 0;
     pis.forEach((pi) => {
       if (pi.status !== 'CANCELLED') {
-        const grandTotal = Number(pi.grandTotal) || 0;
-        totalInvoiced += grandTotal;
+        const rawBasic = Number(pi.subtotal || 0) + Number(pi.freightAmount || 0) + Number(pi.installationCharge || 0);
+        const taxable = Number(pi.taxableAmount || 0);
+        const cashDeductionFromTax = Math.max(0, Math.round((rawBasic - taxable) * 100) / 100);
+        const cashFromAdvance = (pi.advancePaymentMode === 'CASH' && Number(pi.advanceReceivedAmount || 0) > 0)
+          ? Number(pi.advanceReceivedAmount)
+          : 0;
+        const cashPaymentAmount = cashDeductionFromTax > 0 ? cashDeductionFromTax : cashFromAdvance;
+        const totalBill = Math.round((Number(pi.grandTotal || 0) + cashPaymentAmount) * 100) / 100;
+
+        totalInvoiced += totalBill;
         if (['ISSUED', 'DRAFT'].includes(pi.status)) {
           openInvoicesCount++;
         }
@@ -232,6 +240,15 @@ export const crmService = {
     });
 
     pis.forEach((pi) => {
+      const rawBasic = Number(pi.subtotal || 0) + Number(pi.freightAmount || 0) + Number(pi.installationCharge || 0);
+      const taxable = Number(pi.taxableAmount || 0);
+      const cashDeductionFromTax = Math.max(0, Math.round((rawBasic - taxable) * 100) / 100);
+      const cashFromAdvance = (pi.advancePaymentMode === 'CASH' && Number(pi.advanceReceivedAmount || 0) > 0)
+        ? Number(pi.advanceReceivedAmount)
+        : 0;
+      const cashPaymentAmount = cashDeductionFromTax > 0 ? cashDeductionFromTax : cashFromAdvance;
+      const totalBill = Math.round((Number(pi.grandTotal || 0) + cashPaymentAmount) * 100) / 100;
+
       timeline.push({
         type: 'PI',
         id: pi.id,
@@ -239,7 +256,7 @@ export const crmService = {
         title: `Proforma Invoice`,
         date: pi.piDate.toISOString(),
         status: pi.status,
-        amount: Number(pi.grandTotal),
+        amount: totalBill,
       });
     });
 
