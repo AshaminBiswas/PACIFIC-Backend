@@ -39,10 +39,11 @@ export const invoicesService = {
           OR: [
             { invoiceNumber: { startsWith: 'PPSK/' } },
             { invoiceNumber: { contains: 'KOL' } },
+            { notes: { contains: 'a25090ef-f6c0-407f-8b1e-1da8d506308c' } },
+            { notes: { contains: 'Kolkata', mode: 'insensitive' } },
+            { notes: { contains: 'Bengal', mode: 'insensitive' } },
             { order: { orderNumber: { startsWith: 'PPSK/' } } },
             { order: { companyProfileId: 'a25090ef-f6c0-407f-8b1e-1da8d506308c' } },
-            { order: { companyProfile: { companyName: { contains: 'Kolkata' } } } },
-            { order: { companyProfile: { state: { contains: 'Bengal' } } } },
           ],
         });
       } else if (b === 'MAIN' || b === 'DELHI') {
@@ -50,10 +51,7 @@ export const invoicesService = {
           NOT: [
             { invoiceNumber: { startsWith: 'PPSK/' } },
             { invoiceNumber: { contains: 'KOL' } },
-            { order: { orderNumber: { startsWith: 'PPSK/' } } },
-            { order: { companyProfileId: 'a25090ef-f6c0-407f-8b1e-1da8d506308c' } },
-            { order: { companyProfile: { companyName: { contains: 'Kolkata' } } } },
-            { order: { companyProfile: { state: { contains: 'Bengal' } } } },
+            { notes: { contains: 'a25090ef-f6c0-407f-8b1e-1da8d506308c' } },
           ],
         });
       }
@@ -92,27 +90,50 @@ export const invoicesService = {
       items.map(async (inv) => {
         const meta = tryParseMetadata(inv.notes);
         let customerName = (inv.order as any)?.customer?.legalName;
+        let companyProfileId = (inv.order as any)?.companyProfileId || meta?.companyProfileId;
         let branchName = (inv.order as any)?.companyProfile?.companyName;
 
         if (!customerName && meta?.billTo?.partyName) {
           customerName = meta.billTo.partyName;
         }
 
-        if (inv.proformaInvoiceId && !customerName) {
+        if (inv.proformaInvoiceId) {
           const pi = await prisma.proformaInvoice.findUnique({
             where: { id: inv.proformaInvoiceId },
             include: { customer: true, companyProfile: true },
           });
           if (pi) {
-            customerName = pi.customer?.legalName;
-            branchName = pi.companyProfile?.companyName;
+            if (!customerName) customerName = pi.customer?.legalName;
+            if (!branchName) branchName = pi.companyProfile?.companyName;
+            if (!companyProfileId) companyProfileId = pi.companyProfileId;
+          }
+        }
+
+        if (!customerName && meta?.customerId) {
+          const cust = await prisma.businessParty.findUnique({
+            where: { id: meta.customerId },
+            select: { legalName: true },
+          });
+          if (cust?.legalName) customerName = cust.legalName;
+        }
+
+        if (!branchName && companyProfileId) {
+          const comp = await prisma.companyProfile.findUnique({
+            where: { id: companyProfileId },
+            select: { companyName: true, state: true, entityCode: true },
+          });
+          if (comp) {
+            branchName = comp.companyName;
           }
         }
 
         return {
           ...inv,
+          companyProfileId,
           customer: customerName ? { legalName: customerName } : (inv.order as any)?.customer,
-          companyProfile: branchName ? { companyName: branchName } : (inv.order as any)?.companyProfile,
+          companyProfile: branchName
+            ? { id: companyProfileId, companyName: branchName }
+            : (inv.order as any)?.companyProfile,
           metadata: meta,
         };
       })
@@ -331,7 +352,8 @@ export const invoicesService = {
     } = data;
 
     const targetCompanyProfileId = companyProfileId || await resolveDefaultCompanyProfileId();
-    const kolkataFlag = Boolean(isKolkata || branch?.toUpperCase() === 'KOLKATA');
+    const isKolkataCompany = targetCompanyProfileId === 'a25090ef-f6c0-407f-8b1e-1da8d506308c';
+    const kolkataFlag = Boolean(isKolkata || branch?.toUpperCase() === 'KOLKATA' || isKolkataCompany);
 
     let invoiceNumber = rest.invoiceNumber;
     if (!invoiceNumber) {
