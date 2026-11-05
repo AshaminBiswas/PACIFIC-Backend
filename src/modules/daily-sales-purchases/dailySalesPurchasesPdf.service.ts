@@ -757,11 +757,20 @@ export const dailySalesPurchasesPdfService = {
                     s.customer?.party?.legalName ||
                     'Customer';
                   const dStr = s.entryDate ? new Date(s.entryDate).toISOString().slice(0, 10) : '';
+                  let itemSummary = '';
+                  if (Array.isArray((s as any).items) && (s as any).items.length > 0) {
+                    itemSummary = (s as any).items
+                      .map((it: any) => `${it.name || it.description} (${it.quantity} ${it.unit} @ ₹${Number(it.rate || 0).toLocaleString('en-IN')})`)
+                      .join(', ');
+                  }
                   return `
             <tr>
               <td class="font-mono">${dStr}</td>
               <td class="font-mono font-bold" style="color: #15803d;">${s.referenceNo || '—'}</td>
-              <td class="font-bold">${party}</td>
+              <td class="font-bold">
+                ${party}
+                ${itemSummary ? `<div style="font-size: 8px; font-weight: normal; color: #475569; margin-top: 2px;">📦 ${itemSummary}</div>` : ''}
+              </td>
               <td>${s.category || 'General'}</td>
               <td class="font-mono">${s.paymentMode || 'CASH'}</td>
               <td class="text-center"><span class="badge badge-paid">${s.paymentStatus || 'PAID'}</span></td>
@@ -813,11 +822,20 @@ export const dailySalesPurchasesPdfService = {
                     p.vendor?.party?.legalName ||
                     'Supplier';
                   const dStr = p.entryDate ? new Date(p.entryDate).toISOString().slice(0, 10) : '';
+                  let itemSummary = '';
+                  if (Array.isArray((p as any).items) && (p as any).items.length > 0) {
+                    itemSummary = (p as any).items
+                      .map((it: any) => `${it.name || it.description} (${it.quantity} ${it.unit} @ ₹${Number(it.rate || 0).toLocaleString('en-IN')})`)
+                      .join(', ');
+                  }
                   return `
             <tr>
               <td class="font-mono">${dStr}</td>
               <td class="font-mono font-bold" style="color: #c2410c;">${p.referenceNo || '—'}</td>
-              <td class="font-bold">${party}</td>
+              <td class="font-bold">
+                ${party}
+                ${itemSummary ? `<div style="font-size: 8px; font-weight: normal; color: #475569; margin-top: 2px;">📦 ${itemSummary}</div>` : ''}
+              </td>
               <td>${p.category || 'General'}</td>
               <td class="font-mono">${p.paymentMode || 'CASH'}</td>
               <td class="text-center"><span class="badge badge-partial">${p.paymentStatus || 'PAID'}</span></td>

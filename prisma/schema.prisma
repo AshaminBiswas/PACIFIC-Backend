@@ -3436,6 +3436,7 @@ model DailySalesPurchase {
   vendor           VendorProfile?   @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   category         String?
   description      String?
+  items            Json?            @map("items")
   paymentMode      String           @default("CASH") @map("payment_mode")
   paymentStatus    String           @default("PAID") @map("payment_status")
   companyProfileId String?          @map("company_profile_id")

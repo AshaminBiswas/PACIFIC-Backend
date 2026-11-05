@@ -1,6 +1,15 @@
 import { prisma } from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
 
+export interface DailySalesPurchaseLineItemDto {
+  id?: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  amount: number;
+}
+
 export interface CreateDailySalesPurchaseDto {
   entryDate: string; // YYYY-MM-DD
   type: 'SALES' | 'PURCHASE';
@@ -13,6 +22,7 @@ export interface CreateDailySalesPurchaseDto {
   vendorId?: string;
   category?: string;
   description?: string;
+  items?: DailySalesPurchaseLineItemDto[] | any;
   paymentMode?: string;
   paymentStatus?: string;
   companyProfileId?: string;
@@ -30,6 +40,7 @@ export interface UpdateDailySalesPurchaseDto {
   vendorId?: string;
   category?: string;
   description?: string;
+  items?: DailySalesPurchaseLineItemDto[] | any;
   paymentMode?: string;
   paymentStatus?: string;
 }
@@ -177,11 +188,39 @@ export const dailySalesPurchasesService = {
       throw new AppError('INVALID_ENTRY_TYPE', "Entry type must be either 'SALES' or 'PURCHASE'", 400);
     }
 
-    const amount = Math.max(0, Number(dto.amount) || 0);
-    const taxAmount = Math.max(0, Number(dto.taxAmount) || 0);
-    const totalAmount = dto.totalAmount ? Number(dto.totalAmount) : Math.round((amount + taxAmount) * 100) / 100;
+    let calculatedAmount = Math.max(0, Number(dto.amount) || 0);
+    let sanitizedItems: any[] | null = null;
+    if (Array.isArray(dto.items) && dto.items.length > 0) {
+      sanitizedItems = dto.items
+        .filter((it: any) => it && (it.name || it.itemName || it.description || Number(it.rate) > 0 || Number(it.amount) > 0))
+        .map((it: any, idx: number) => {
+          const qty = Math.max(0, Number(it.quantity || it.qty) || 1);
+          const rate = Math.max(0, Number(it.rate) || 0);
+          const itemAmt = Number(it.amount) || Math.round(qty * rate * 100) / 100;
+          return {
+            id: it.id || `item_${idx + 1}`,
+            name: (it.name || it.itemName || it.description || `Item #${idx + 1}`).trim(),
+            quantity: qty,
+            unit: (it.unit || "NOS").trim().toUpperCase(),
+            rate: rate,
+            amount: itemAmt,
+          };
+        });
 
-    if (totalAmount <= 0 && amount <= 0) {
+      if (sanitizedItems.length > 0) {
+        const itemsSum = sanitizedItems.reduce((acc, it) => acc + it.amount, 0);
+        if (calculatedAmount <= 0 && itemsSum > 0) {
+          calculatedAmount = Math.round(itemsSum * 100) / 100;
+        }
+      } else {
+        sanitizedItems = null;
+      }
+    }
+
+    const taxAmount = Math.max(0, Number(dto.taxAmount) || 0);
+    const totalAmount = dto.totalAmount ? Number(dto.totalAmount) : Math.round((calculatedAmount + taxAmount) * 100) / 100;
+
+    if (totalAmount <= 0 && calculatedAmount <= 0) {
       throw new AppError('INVALID_AMOUNT', 'Total amount must be greater than zero', 400);
     }
 
@@ -214,7 +253,7 @@ export const dailySalesPurchasesService = {
       data: {
         entryDate: new Date(dto.entryDate),
         type: dto.type,
-        amount,
+        amount: calculatedAmount,
         taxAmount,
         totalAmount,
         referenceNo: dto.referenceNo?.trim() || null,
@@ -223,6 +262,7 @@ export const dailySalesPurchasesService = {
         vendorId: dto.type === 'PURCHASE' ? resolvedVendorId : null,
         category: dto.category || 'General',
         description: dto.description || null,
+        items: sanitizedItems ? (sanitizedItems as any) : undefined,
         paymentMode: dto.paymentMode || 'CASH',
         paymentStatus: dto.paymentStatus || 'PAID',
         companyProfileId: resolvedCompanyProfileId,
@@ -467,6 +507,27 @@ export const dailySalesPurchasesService = {
     if (dto.referenceNo !== undefined) updateData.referenceNo = dto.referenceNo || null;
     if (dto.category !== undefined) updateData.category = dto.category || null;
     if (dto.description !== undefined) updateData.description = dto.description || null;
+    if (dto.items !== undefined) {
+      if (Array.isArray(dto.items) && dto.items.length > 0) {
+        updateData.items = dto.items
+          .filter((it: any) => it && (it.name || it.itemName || it.description || Number(it.rate) > 0 || Number(it.amount) > 0))
+          .map((it: any, idx: number) => {
+            const qty = Math.max(0, Number(it.quantity || it.qty) || 1);
+            const rate = Math.max(0, Number(it.rate) || 0);
+            const itemAmt = Number(it.amount) || Math.round(qty * rate * 100) / 100;
+            return {
+              id: it.id || `item_${idx + 1}`,
+              name: (it.name || it.itemName || it.description || `Item #${idx + 1}`).trim(),
+              quantity: qty,
+              unit: (it.unit || "NOS").trim().toUpperCase(),
+              rate: rate,
+              amount: itemAmt,
+            };
+          });
+      } else {
+        updateData.items = null;
+      }
+    }
     if (dto.paymentMode !== undefined) updateData.paymentMode = dto.paymentMode;
     if (dto.paymentStatus !== undefined) updateData.paymentStatus = dto.paymentStatus;
 
