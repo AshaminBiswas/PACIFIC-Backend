@@ -2879,6 +2879,7 @@ model InstallerBill {
   travelExpenses    Decimal                @default(0) @map("travel_expenses") @db.Decimal(10, 2)
   siteAddress       String                 @map("site_address") @db.Text
   sitePin           String                 @map("site_pin") @db.VarChar(6)
+  customerName      String?                @map("customer_name")
 
   // Scope breakdown (Cubicle, UMP, Locker)
   cubicleQuantity   Int                    @default(0) @map("cubicle_quantity")
@@ -2941,17 +2942,18 @@ model InstallerBillItem {
   id                String        @id @default(uuid())
   billId            String        @map("bill_id")
   category          String        @default("CUBICLE")
-  modelId           String        @map("model_id")
+  modelId           String?       @map("model_id")
   modelName         String        @map("model_name")
   quantity          Int           @default(1)
   installationPrice Decimal       @map("installation_price") @db.Decimal(10, 2)
+  customerRate      Decimal?      @default(0.00) @map("customer_rate") @db.Decimal(10, 2)
   lineTotal         Decimal       @map("line_total") @db.Decimal(12, 2)
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
   // Relations
   bill              InstallerBill @relation(fields: [billId], references: [id], onDelete: Cascade)
-  model             CubicleModel  @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  model             CubicleModel? @relation(fields: [modelId], references: [id], onDelete: SetNull)
 
   @@index([billId])
   @@index([modelId])

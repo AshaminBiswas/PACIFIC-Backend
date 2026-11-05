@@ -72,6 +72,7 @@ export interface InstallerBillPdfData {
   billNo: string;
   installerName: string;
   installerEmail: string;
+  customerName?: string | null;
   installDate: Date | string;
   isNcr: boolean;
   travelExpenses: number;
@@ -94,6 +95,7 @@ export interface InstallerBillPdfData {
     modelName: string;
     quantity: number;
     installationPrice: number;
+    customerRate?: number;
     lineTotal: number;
   }>;
   payments?: Array<{
@@ -336,6 +338,9 @@ export async function generateInstallerBillPdf(data: InstallerBillPdfData): Prom
                   {
                     margin: [6, 6, 6, 6],
                     stack: [
+                      ...(data.customerName
+                        ? [{ text: [{ text: 'Customer / Client: ', bold: true }, data.customerName], margin: [0, 0, 0, 2] as [number, number, number, number] }]
+                        : []),
                       { text: [{ text: 'Site Address: ', bold: true }, data.siteAddress] },
                       { text: [{ text: 'Site Postal PIN: ', bold: true }, data.sitePin], margin: [0, 2, 0, 0] },
                       {

@@ -43,9 +43,12 @@ export type UpdateCubicleInstallerInput = z.infer<typeof UpdateCubicleInstallerS
 // ─── Bill Line Item Schema ───────────────────────────────────────────────────
 
 export const BillItemInputSchema = z.object({
-  modelId: z.string().min(1, 'Model ID is required'),
-  category: z.enum(['CUBICLE', 'UMP', 'LOCKER']).optional(),
+  modelId: z.string().optional(),
+  modelName: z.string().optional(),
+  category: z.enum(['CUBICLE', 'UMP', 'LOCKER', 'OTHER']).optional(),
   quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
+  unitPrice: z.coerce.number().min(0).optional(),
+  customerRate: z.coerce.number().min(0).optional(),
 });
 
 export type BillItemInput = z.infer<typeof BillItemInputSchema>;
@@ -57,6 +60,7 @@ export const CreateInstallerBillSchema = z
     installerId: z.string().optional(),
     installerName: z.string().min(1, 'Installer name is required').trim(),
     installerEmail: z.string().email('Valid installer email is required').trim().toLowerCase(),
+    customerName: z.string().trim().optional(),
     installDate: z.string().min(1, 'Date of installation is required'),
     isNcr: z.boolean().default(false),
     travelExpenses: z.coerce.number().min(0, 'Travel expenses cannot be negative').default(0),
@@ -65,7 +69,7 @@ export const CreateInstallerBillSchema = z
       .string()
       .regex(/^\d{6}$/, 'Site PIN must be a valid 6-digit Indian postal code')
       .trim(),
-    items: z.array(BillItemInputSchema).min(1, 'At least one cubicle model is required'),
+    items: z.array(BillItemInputSchema).min(1, 'At least one installation item or model is required'),
     umpQuantity: z.coerce.number().int().min(0).default(0).optional(),
     umpRate: z.coerce.number().min(0).default(0).optional(),
     deductionAmount: z.coerce.number().min(0, 'Deduction amount cannot be negative').default(0).optional(),
@@ -91,6 +95,7 @@ export type CreateInstallerBillInput = z.infer<typeof CreateInstallerBillSchema>
 export const UpdateInstallerBillSchema = z.object({
   installerName: z.string().min(1).trim().optional(),
   installerEmail: z.string().email().trim().toLowerCase().optional(),
+  customerName: z.string().trim().optional(),
   installDate: z.string().optional(),
   isNcr: z.boolean().optional(),
   travelExpenses: z.coerce.number().min(0).optional(),

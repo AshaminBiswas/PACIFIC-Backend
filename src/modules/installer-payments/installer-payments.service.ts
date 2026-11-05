@@ -363,17 +363,15 @@ export async function getInstallerBillById(id: string) {
 }
 
 export async function createInstallerBill(input: CreateInstallerBillInput, createdById?: string) {
-  // 1. Fetch active models to pull snapshot installation prices
-  const modelIds = input.items.map((i) => i.modelId);
-  const models = await prisma.cubicleModel.findMany({
-    where: { id: { in: modelIds } },
-  });
-
-  if (models.length !== modelIds.length) {
-    const error: any = new Error('One or more selected installation models were not found');
-    error.statusCode = 400;
-    throw error;
-  }
+  // 1. Fetch active models for any items that passed a valid modelId
+  const modelIds = input.items
+    .map((i) => i.modelId)
+    .filter((id): id is string => Boolean(id && typeof id === 'string' && id.trim()));
+  const models = modelIds.length > 0
+    ? await prisma.cubicleModel.findMany({
+        where: { id: { in: modelIds } },
+      })
+    : [];
 
   const modelMap = new Map<string, (typeof models)[0]>();
   for (const m of models) {
@@ -397,11 +395,27 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
   let umpTotal = 0;
   let lockerQuantity = 0;
   let lockerTotal = 0;
+  let otherQuantity = 0;
+  let otherTotal = 0;
 
   const itemsToCreate = input.items.map((item) => {
-    const model = modelMap.get(item.modelId)!;
-    const category = model.category || item.category || 'CUBICLE';
-    const unitPrice = Number(model.installationPrice);
+    const model = item.modelId ? modelMap.get(item.modelId) : null;
+    const category = item.category || model?.category || 'CUBICLE';
+    const resolvedModelName = (item.modelName || model?.modelName || 'Installation Scope Item').trim();
+
+    // Use custom unit price if supplied, otherwise fallback to model standard installation price
+    const unitPrice =
+      item.unitPrice !== undefined && item.unitPrice !== null
+        ? Number(item.unitPrice)
+        : model
+        ? Number(model.installationPrice)
+        : 0;
+
+    const customerRate =
+      item.customerRate !== undefined && item.customerRate !== null
+        ? Number(item.customerRate)
+        : 0;
+
     const lineTotal = unitPrice * item.quantity;
 
     if (category === 'CUBICLE') {
@@ -413,14 +427,18 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
     } else if (category === 'LOCKER') {
       lockerQuantity += item.quantity;
       lockerTotal += lineTotal;
+    } else {
+      otherQuantity += item.quantity;
+      otherTotal += lineTotal;
     }
 
     return {
-      modelId: item.modelId,
+      modelId: model ? model.id : null,
       category,
-      modelName: model.modelName,
+      modelName: resolvedModelName,
       quantity: item.quantity,
       installationPrice: new Prisma.Decimal(unitPrice),
+      customerRate: new Prisma.Decimal(customerRate),
       lineTotal: new Prisma.Decimal(lineTotal),
     };
   });
@@ -433,7 +451,7 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
     umpTotal = legacyUmpQty * legacyUmpRate;
   }
 
-  const subtotal = cubicleTotal + umpTotal + lockerTotal;
+  const subtotal = cubicleTotal + umpTotal + lockerTotal + otherTotal;
 
   // 4. Deductions, NCR travel expense logic, and totals calculation
   const travelExpenses = input.isNcr ? 0 : Number(input.travelExpenses || 0);
@@ -459,6 +477,7 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
         installerId: input.installerId || null,
         installerName: input.installerName,
         installerEmail: input.installerEmail,
+        customerName: input.customerName ? input.customerName.trim() : null,
         installDate: new Date(input.installDate),
         isNcr: input.isNcr,
         travelExpenses: new Prisma.Decimal(travelExpenses),
@@ -749,6 +768,7 @@ export async function updateInstallerBill(
   const beforeSnapshot: FieldBefore = {};
   if (input.installerName !== undefined) beforeSnapshot.installerName = existing.installerName;
   if (input.installerEmail !== undefined) beforeSnapshot.installerEmail = existing.installerEmail;
+  if (input.customerName !== undefined) beforeSnapshot.customerName = existing.customerName;
   if (input.installDate !== undefined) beforeSnapshot.installDate = existing.installDate?.toISOString();
   if (input.siteAddress !== undefined) beforeSnapshot.siteAddress = existing.siteAddress;
   if (input.sitePin !== undefined) beforeSnapshot.sitePin = existing.sitePin;
@@ -763,6 +783,9 @@ export async function updateInstallerBill(
   const updateData: Prisma.InstallerBillUpdateInput = {};
   if (input.installerName !== undefined) updateData.installerName = input.installerName;
   if (input.installerEmail !== undefined) updateData.installerEmail = input.installerEmail;
+  if (input.customerName !== undefined) {
+    updateData.customerName = input.customerName ? input.customerName.trim() : null;
+  }
   if (input.installDate !== undefined) updateData.installDate = new Date(input.installDate);
   if (input.siteAddress !== undefined) updateData.siteAddress = input.siteAddress;
   if (input.sitePin !== undefined) updateData.sitePin = input.sitePin;
@@ -918,6 +941,7 @@ export async function getBillPdfBuffer(billId: string): Promise<{ buffer: Buffer
     billNo: bill.billNo,
     installerName: bill.installerName,
     installerEmail: bill.installerEmail,
+    customerName: bill.customerName,
     installDate: bill.installDate,
     isNcr: bill.isNcr,
     travelExpenses: Number(bill.travelExpenses),
@@ -940,6 +964,7 @@ export async function getBillPdfBuffer(billId: string): Promise<{ buffer: Buffer
       modelName: i.modelName,
       quantity: i.quantity,
       installationPrice: Number(i.installationPrice),
+      customerRate: Number(i.customerRate || 0),
       lineTotal: Number(i.lineTotal),
     })),
     payments: bill.payments.map((p) => ({
