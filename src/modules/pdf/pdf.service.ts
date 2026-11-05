@@ -3639,6 +3639,7 @@ export const pdfService = {
     }>;
     subtotal: number;
     freightAmount?: number;
+    freightTerms?: string;
     installationCharge?: number;
     installationRatePerCubicle?: number;
     installationCubicleCount?: number;
@@ -3693,6 +3694,28 @@ export const pdfService = {
 
     const subtotal = Number(data.subtotal) || 0;
     const freight = Number(data.freightAmount) || 0;
+    const freightTerms = (data.freightTerms || '').trim();
+    const freightTermsLower = freightTerms.toLowerCase();
+    let freightLabel = 'Add : Freight';
+    let freightDisplay = '';
+
+    if (freight > 0) {
+      freightLabel = 'Add : Freight';
+      freightDisplay = freight.toFixed(2);
+    } else if (freightTermsLower.includes('actual') || freightTermsLower.includes('extra')) {
+      freightLabel = 'Add : Freight (Extra as Actual / To Pay)';
+      freightDisplay = '—';
+    } else if (freightTermsLower.includes('customer') || freightTermsLower.includes('scope')) {
+      freightLabel = 'Freight : Customer Scope';
+      freightDisplay = '—';
+    } else if (freightTermsLower.includes('included') || freightTermsLower.includes('inclusive')) {
+      freightLabel = 'Freight : Included in Basic Price';
+      freightDisplay = '—';
+    } else {
+      freightLabel = 'Add : Freight';
+      freightDisplay = '';
+    }
+
     const totalTaxable = subtotal + freight;
     const totalTax = Number(data.taxAmount) || 0;
 
@@ -3752,7 +3775,7 @@ export const pdfService = {
   <style>
     @page {
       size: A4 portrait;
-      margin: 8mm;
+      margin: 6mm;
     }
     * {
       box-sizing: border-box;
@@ -3769,7 +3792,7 @@ export const pdfService = {
     }
     .invoice-box {
       width: 100%;
-      max-width: 194mm;
+      max-width: 198mm;
       margin: 0 auto;
       border: 1.5px solid #000;
       background: #fff;
@@ -3794,10 +3817,10 @@ export const pdfService = {
     <!-- Top Header: Logo, Title & Company Address, Original Copy -->
     <table class="border-b">
       <tr>
-        <td style="width: 24%; padding: 6px 8px; vertical-align: middle;">
-          ${logoSrc ? `<img src="${logoSrc}" alt="Pacific Logo" style="max-height: 48px; max-width: 150px; object-fit: contain;" />` : ''}
+        <td style="width: 25%; padding: 6px 8px; vertical-align: middle;">
+          ${logoSrc ? `<img src="${logoSrc}" alt="Pacific Logo" style="max-height: 62px; max-width: 190px; object-fit: contain;" />` : ''}
         </td>
-        <td style="width: 58%; padding: 4px 4px; text-align: center; vertical-align: middle;">
+        <td style="width: 57%; padding: 4px 4px; text-align: center; vertical-align: middle;">
           <div style="font-size: 12px; font-weight: 800; letter-spacing: 0.5px;">TAX INVOICE</div>
           <div style="font-size: 15px; font-weight: 900; margin-top: 2px;">${data.companyName || 'PACIFIC PRODUCTS AND SOLUTIONS'}</div>
           <div style="font-size: 9px; line-height: 1.25; margin-top: 2px;">${companyAddr}</div>
@@ -3877,7 +3900,7 @@ export const pdfService = {
             </tr>
             <tr>
               <td style="font-weight: bold;">Vehicle No.</td>
-              <td>: ${data.vehicleNumber || ''}</td>
+              <td>: <strong>${data.vehicleNumber || ''}</strong></td>
             </tr>
             <tr>
               <td style="font-weight: bold;">GR/LR/RR No.</td>
@@ -3907,24 +3930,23 @@ export const pdfService = {
       <tfoot>
         <!-- Subtotal / Freight / Taxes / Rounding / Grand Total -->
         <tr>
-          <td colspan="5" style="border-right: 1px solid #000; border-top: 1px solid #000; padding: 2px;"></td>
-          <td style="border-right: 1px solid #000; border-top: 1px solid #000; padding: 3px 4px; text-align: right; font-weight: bold;"></td>
+          <td colspan="6" style="border-right: 1px solid #000; border-top: 1px solid #000; padding: 3px 6px; text-align: right; font-weight: bold;">
+            Subtotal
+          </td>
           <td style="padding: 3px 6px; text-align: right; font-weight: bold; border-top: 1px solid #000; border-bottom: 1px solid #000;">
             ${subtotal.toFixed(2)}
           </td>
         </tr>
         <tr>
-          <td colspan="4" style="border-right: 1px solid #000;"></td>
-          <td colspan="2" style="border-right: 1px solid #000; padding: 2px 4px; text-align: right; font-size: 9px;">
-            Add : Freight
+          <td colspan="6" style="border-right: 1px solid #000; padding: 2px 6px; text-align: right; font-size: 9px;">
+            ${freightLabel}
           </td>
           <td style="padding: 2px 6px; text-align: right; font-size: 9px;">
-            ${freight > 0 ? freight.toFixed(2) : ''}
+            ${freightDisplay}
           </td>
         </tr>
         <tr style="border-top: 1px solid #000; border-bottom: 1px solid #000;">
-          <td colspan="4" style="border-right: 1px solid #000;"></td>
-          <td colspan="2" style="border-right: 1px solid #000; padding: 2px 4px; text-align: right; font-weight: bold;">
+          <td colspan="6" style="border-right: 1px solid #000; padding: 2px 6px; text-align: right; font-weight: bold;">
             Total Amount
           </td>
           <td style="padding: 2px 6px; text-align: right; font-weight: bold;">
@@ -3935,52 +3957,51 @@ export const pdfService = {
           isIntraState
             ? `
         <tr>
-          <td colspan="3" style="border-right: 1px solid #000;"></td>
-          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
-          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">CGST @: 9.00%</td>
+          <td colspan="6" style="border-right: 1px solid #000; padding: 2px 6px; text-align: right; font-size: 9px;">
+            Add : CGST @: 9.00%
+          </td>
           <td style="padding: 2px 6px; text-align: right; font-size: 9px;">${cgst.toFixed(2)}</td>
         </tr>
         <tr>
-          <td colspan="3" style="border-right: 1px solid #000;"></td>
-          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
-          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">SGST @: 9.00%</td>
+          <td colspan="6" style="border-right: 1px solid #000; padding: 2px 6px; text-align: right; font-size: 9px;">
+            Add : SGST @: 9.00%
+          </td>
           <td style="padding: 2px 6px; text-align: right; font-size: 9px;">${sgst.toFixed(2)}</td>
         </tr>
         <tr>
-          <td colspan="3" style="border-right: 1px solid #000;"></td>
-          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
-          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">IGST @:</td>
+          <td colspan="6" style="border-right: 1px solid #000; padding: 2px 6px; text-align: right; font-size: 9px;">
+            Add : IGST @:
+          </td>
           <td style="padding: 2px 6px; text-align: right; font-size: 9px;"></td>
         </tr>`
             : `
         <tr>
-          <td colspan="3" style="border-right: 1px solid #000;"></td>
-          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
-          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">CGST @:</td>
+          <td colspan="6" style="border-right: 1px solid #000; padding: 2px 6px; text-align: right; font-size: 9px;">
+            Add : CGST @:
+          </td>
           <td style="padding: 2px 6px; text-align: right; font-size: 9px;"></td>
         </tr>
         <tr>
-          <td colspan="3" style="border-right: 1px solid #000;"></td>
-          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
-          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">SGST @:</td>
+          <td colspan="6" style="border-right: 1px solid #000; padding: 2px 6px; text-align: right; font-size: 9px;">
+            Add : SGST @:
+          </td>
           <td style="padding: 2px 6px; text-align: right; font-size: 9px;"></td>
         </tr>
         <tr>
-          <td colspan="3" style="border-right: 1px solid #000;"></td>
-          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">Add :</td>
-          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">IGST @: 18.00%</td>
+          <td colspan="6" style="border-right: 1px solid #000; padding: 2px 6px; text-align: right; font-size: 9px;">
+            Add : IGST @: 18.00%
+          </td>
           <td style="padding: 2px 6px; text-align: right; font-size: 9px;">${igst.toFixed(2)}</td>
         </tr>`
         }
         <tr>
-          <td colspan="3" style="border-right: 1px solid #000;"></td>
-          <td colspan="2" style="padding: 2px 4px; text-align: right; font-size: 9px;">${rounding < 0 ? 'Less :' : 'Add :'}</td>
-          <td style="border-right: 1px solid #000; padding: 2px 4px; text-align: left; font-size: 9px;">Rounded Off (+/-)</td>
+          <td colspan="6" style="border-right: 1px solid #000; padding: 2px 6px; text-align: right; font-size: 9px;">
+            ${rounding < 0 ? 'Less :' : 'Add :'} Rounded Off (+/-)
+          </td>
           <td style="padding: 2px 6px; text-align: right; font-size: 9px;">${rounding !== 0 ? Math.abs(rounding).toFixed(2) : '0.00'}</td>
         </tr>
         <tr style="border-top: 1.5px solid #000; border-bottom: 1px solid #000;">
-          <td colspan="4" style="border-right: 1px solid #000;"></td>
-          <td colspan="2" style="border-right: 1px solid #000; padding: 3px 4px; text-align: right; font-weight: 900; font-size: 10px;">
+          <td colspan="6" style="border-right: 1px solid #000; padding: 3px 6px; text-align: right; font-weight: 900; font-size: 10px;">
             Grand Total
           </td>
           <td style="padding: 3px 6px; text-align: right; font-weight: 900; font-size: 10.5px;">
@@ -4058,8 +4079,8 @@ export const pdfService = {
           <div style="font-weight: bold; margin-top: 3px; font-size: 8.5px;">
             For PACIFIC PRODUCTS & SOLUTIONS
           </div>
-          <div style="height: 38px; display: flex; align-items: center; justify-content: center; margin: 2px 0;">
-            ${data.signatureUrl ? `<img src="${data.signatureUrl}" style="max-height: 34px; max-width: 120px;" alt="Signature" />` : ''}
+          <div style="height: 75px; display: flex; align-items: center; justify-content: center; margin: 2px 0;">
+            ${data.signatureUrl ? `<img src="${data.signatureUrl}" style="max-height: 68px; max-width: 180px; object-fit: contain;" alt="Signature" />` : ''}
           </div>
           <div style="font-weight: bold; font-size: 8.5px;">
             (Authorised Signatory)

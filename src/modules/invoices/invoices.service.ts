@@ -240,13 +240,24 @@ export const invoicesService = {
       billToParty;
 
     // Resolve transport
-    const transport = metadata?.transport || {
-      modeOfTransport: linkedPi?.modeOfTransport || 'By Road',
-      vehicleNumber: linkedPi?.vehicleNumber || '',
-      grLrNumber: linkedPi?.grLrNumber || '',
-      placeOfSupply: linkedPi?.placeOfSupply || billToParty?.state || 'West Bengal',
-      placeOfSupplyStateCode: linkedPi?.placeOfSupplyStateCode || billToParty?.stateCode || '19',
-      reverseCharge: linkedPi?.reverseCharge || false,
+    const rawTransport = metadata?.transport || {};
+    const transport = {
+      modeOfTransport: rawTransport.modeOfTransport || metadata?.modeOfTransport || linkedPi?.modeOfTransport || 'By Road',
+      vehicleNumber:
+        rawTransport.vehicleNumber ||
+        rawTransport.vehicleNo ||
+        metadata?.vehicleNumber ||
+        metadata?.vehicleNo ||
+        linkedPi?.vehicleNumber ||
+        (invoice.order as any)?.vehicleNumber ||
+        '',
+      grLrNumber: rawTransport.grLrNumber || metadata?.grLrNumber || linkedPi?.grLrNumber || '',
+      placeOfSupply: rawTransport.placeOfSupply || metadata?.placeOfSupply || linkedPi?.placeOfSupply || billToParty?.state || 'West Bengal',
+      placeOfSupplyStateCode: rawTransport.placeOfSupplyStateCode || metadata?.placeOfSupplyStateCode || linkedPi?.placeOfSupplyStateCode || billToParty?.stateCode || '19',
+      reverseCharge:
+        rawTransport.reverseCharge !== undefined
+          ? rawTransport.reverseCharge
+          : (metadata?.reverseCharge !== undefined ? metadata?.reverseCharge : (linkedPi?.reverseCharge || false)),
     };
 
     // Resolve line items
@@ -314,8 +325,12 @@ export const invoicesService = {
       billTo: billToParty,
       shipTo: shipToParty,
       transport,
-      freightAmount: metadata?.freightAmount || (linkedPi ? Number(linkedPi.freightAmount) : 0),
-      roundingAdjustment: metadata?.roundingAdjustment || (linkedPi ? Number(linkedPi.roundingAdjustment) : 0),
+      freightAmount: metadata?.freightAmount !== undefined ? Number(metadata.freightAmount) : (linkedPi ? Number(linkedPi.freightAmount) : 0),
+      freightTerms:
+        metadata?.freightTerms ||
+        (linkedPi as any)?.freightTerms ||
+        (Number(metadata?.freightAmount || (linkedPi ? Number(linkedPi.freightAmount) : 0)) > 0 ? 'Fixed' : 'Extra as Actual / To pay'),
+      roundingAdjustment: metadata?.roundingAdjustment !== undefined ? Number(metadata.roundingAdjustment) : (linkedPi ? Number(linkedPi.roundingAdjustment) : 0),
       advanceReceived: totalAdvanceReceived,
       balanceDue,
       effectiveStatus,
@@ -346,6 +361,7 @@ export const invoicesService = {
       shipTo,
       transport,
       freightAmount,
+      freightTerms,
       roundingAdjustment,
       notes: userNotes,
       ...rest
@@ -364,6 +380,16 @@ export const invoicesService = {
       invoiceNumber = seq.number;
     }
 
+    const rawTr = transport || {};
+    const mergedTransport = {
+      modeOfTransport: data.modeOfTransport || rawTr.modeOfTransport || 'By Road',
+      vehicleNumber: data.vehicleNumber || rawTr.vehicleNumber || data.vehicleNo || rawTr.vehicleNo || '',
+      grLrNumber: data.grLrNumber || rawTr.grLrNumber || '',
+      placeOfSupply: data.placeOfSupply || rawTr.placeOfSupply || billTo?.state || 'West Bengal',
+      placeOfSupplyStateCode: data.placeOfSupplyStateCode || rawTr.placeOfSupplyStateCode || billTo?.stateCode || '19',
+      reverseCharge: data.reverseCharge !== undefined ? data.reverseCharge : (rawTr.reverseCharge || false),
+    };
+
     const metadata = {
       version: 2,
       userNotes: userNotes || '',
@@ -371,9 +397,10 @@ export const invoicesService = {
       companyProfileId: targetCompanyProfileId,
       billTo,
       shipTo,
-      transport,
+      transport: mergedTransport,
       items: items || [],
       freightAmount: Number(freightAmount || 0),
+      freightTerms: freightTerms || (Number(freightAmount || 0) > 0 ? 'Fixed' : 'Extra as Actual / To pay'),
       roundingAdjustment: Number(roundingAdjustment || 0),
     };
 
@@ -473,6 +500,7 @@ export const invoicesService = {
       },
       items,
       freightAmount: Number(pi.freightAmount || 0),
+      freightTerms: (pi as any).freightTerms || (Number(pi.freightAmount || 0) > 0 ? 'Fixed' : 'Extra as Actual / To pay'),
       roundingAdjustment: Number(pi.roundingAdjustment || 0),
     };
 
@@ -675,6 +703,7 @@ export const invoicesService = {
       items,
       subtotal: Number(invoice.subtotal),
       freightAmount: Number((invoice as any).freightAmount || 0),
+      freightTerms: (invoice as any).freightTerms,
       roundingAdjustment: Number((invoice as any).roundingAdjustment || 0),
       taxAmount: Number(invoice.taxAmount),
       grandTotal: Number(invoice.totalAmount),
@@ -703,13 +732,28 @@ export const invoicesService = {
     const existing = await this.getById(id);
     const existingMeta = existing.metadata || {};
 
+    const existingTransport = existingMeta.transport || (existing as any).transport || {};
+    const inputTransport = data.transport || {};
+    const updatedTransport = {
+      ...existingTransport,
+      ...inputTransport,
+      ...(data.vehicleNumber !== undefined ? { vehicleNumber: data.vehicleNumber } : {}),
+      ...(data.vehicleNo !== undefined ? { vehicleNumber: data.vehicleNo } : {}),
+      ...(data.modeOfTransport !== undefined ? { modeOfTransport: data.modeOfTransport } : {}),
+      ...(data.grLrNumber !== undefined ? { grLrNumber: data.grLrNumber } : {}),
+      ...(data.placeOfSupply !== undefined ? { placeOfSupply: data.placeOfSupply } : {}),
+      ...(data.placeOfSupplyStateCode !== undefined ? { placeOfSupplyStateCode: data.placeOfSupplyStateCode } : {}),
+      ...(data.reverseCharge !== undefined ? { reverseCharge: data.reverseCharge } : {}),
+    };
+
     const updatedMeta = {
       ...existingMeta,
       ...(data.items ? { items: data.items } : {}),
       ...(data.billTo ? { billTo: data.billTo } : {}),
       ...(data.shipTo ? { shipTo: data.shipTo } : {}),
-      ...(data.transport ? { transport: data.transport } : {}),
+      transport: updatedTransport,
       ...(data.freightAmount !== undefined ? { freightAmount: Number(data.freightAmount) } : {}),
+      ...(data.freightTerms !== undefined ? { freightTerms: data.freightTerms } : {}),
       ...(data.roundingAdjustment !== undefined ? { roundingAdjustment: Number(data.roundingAdjustment) } : {}),
       ...(data.userNotes ? { userNotes: data.userNotes } : {}),
     };
