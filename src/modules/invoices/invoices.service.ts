@@ -755,10 +755,18 @@ export const invoicesService = {
       ...(data.freightAmount !== undefined ? { freightAmount: Number(data.freightAmount) } : {}),
       ...(data.freightTerms !== undefined ? { freightTerms: data.freightTerms } : {}),
       ...(data.roundingAdjustment !== undefined ? { roundingAdjustment: Number(data.roundingAdjustment) } : {}),
-      ...(data.userNotes ? { userNotes: data.userNotes } : {}),
+      ...(data.userNotes !== undefined ? { userNotes: data.userNotes } : {}),
+      ...(data.customerId ? { customerId: data.customerId } : {}),
+      ...(data.companyProfileId ? { companyProfileId: data.companyProfileId } : {}),
+      ...(data.branch ? { branch: data.branch } : {}),
+      ...(data.isKolkata !== undefined ? { isKolkata: data.isKolkata } : {}),
+      ...(data.gstRate !== undefined ? { gstRate: Number(data.gstRate) } : {}),
     };
 
     const updatePayload: any = {};
+    if (data.invoiceNumber && data.invoiceNumber.trim() && data.invoiceNumber.trim() !== existing.invoiceNumber) {
+      updatePayload.invoiceNumber = data.invoiceNumber.trim();
+    }
     if (data.subtotal !== undefined) updatePayload.subtotal = data.subtotal;
     if (data.taxAmount !== undefined) updatePayload.taxAmount = data.taxAmount;
     if (data.totalAmount !== undefined) updatePayload.totalAmount = data.totalAmount;
