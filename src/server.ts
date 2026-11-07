@@ -26,6 +26,26 @@ const startServer = async () => {
     } catch (workerErr) {
       console.warn('⚠️ [MailOutboxWorker] Failed to start worker:', workerErr);
     }
+
+    // Initialize automated monthly employee leave accrual check (+1 CL, +1 EL)
+    try {
+      const { ensureMonthlyLeaveAccrual } = await import('./modules/employee-management/employee-management.service');
+      ensureMonthlyLeaveAccrual(undefined, undefined, true).then((res) => {
+        if (!res.skipped) {
+          console.log(`[LeaveAccrual] Monthly check completed for ${res.month}/${res.year}: CL added: ${res.clAccruedCount}, EL added: ${res.elAccruedCount}`);
+        }
+      }).catch((err) => {
+        console.warn('⚠️ [LeaveAccrual] Startup check warning:', err?.message || err);
+      });
+      // Setup interval check every 6 hours
+      setInterval(() => {
+        ensureMonthlyLeaveAccrual().catch((err) => {
+          console.warn('⚠️ [LeaveAccrual] Periodic check warning:', err?.message || err);
+        });
+      }, 6 * 60 * 60 * 1000);
+    } catch (leaveErr) {
+      console.warn('⚠️ [LeaveAccrual] Failed to initialize leave accrual runner:', leaveErr);
+    }
   } catch (error) {
     console.error('Failed to start server:', error);
     await disconnectDatabases();

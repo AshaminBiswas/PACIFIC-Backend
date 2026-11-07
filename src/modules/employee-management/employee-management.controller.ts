@@ -210,6 +210,16 @@ export const getLeaveLedgerHandler = async (req: Request, res: Response, next: N
   }
 };
 
+export const resetCleanSlateLeavesHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const recordedById = (req as any).user?.id;
+    const result = await employeeService.resetCleanSlateLeaves(recordedById);
+    sendSuccess(res, result, result.message);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ─── Advance Handlers ─────────────────────────────────────────────────────────
 export const createAdvanceHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {

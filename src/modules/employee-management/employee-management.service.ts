@@ -125,6 +125,7 @@ export async function createEmployee(data: CreateEmployeeInput, _createdById?: s
   });
 
   logger.info(`[Employee] Registered new employee ${employee.name} (${employee.employeeId}, email: ${employee.email})`);
+  await ensureMonthlyLeaveAccrual().catch(() => {});
   return employee;
 }
 
@@ -161,6 +162,7 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
 }
 
 export async function getEmployee(id: string) {
+  await ensureMonthlyLeaveAccrual().catch(() => {});
   return await prisma.employee.findUnique({
     where: { id },
     include: {
@@ -181,6 +183,7 @@ export async function getEmployee(id: string) {
 }
 
 export async function listEmployees(query: ListEmployeesQuery) {
+  await ensureMonthlyLeaveAccrual().catch(() => {});
   const { search, department, designation, status, page, limit } = query;
   const skip = (page - 1) * limit;
 
@@ -565,6 +568,7 @@ export async function deleteAttendance(employeeId: string, dateStr: string, dele
 }
 
 export async function listAttendance(query: ListAttendanceQuery) {
+  await ensureMonthlyLeaveAccrual().catch(() => {});
   const { month, year, employeeId } = query;
   const startDate = new Date(year, month - 1, 1);
   const totalDays = getDaysInMonth(year, month);
@@ -603,6 +607,130 @@ export async function listAttendance(query: ListAttendanceQuery) {
 }
 
 // ─── Leave Ledger Services ────────────────────────────────────────────────────
+let lastAccrualCheckTime = 0;
+const ACCRUAL_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes throttle for passive checks
+
+/**
+ * Ensures monthly leave accrual (+1.00 CL, +1.00 EL) has run for the target or current month.
+ * Idempotent: Active employees who already received accrual for the month are skipped.
+ */
+export async function ensureMonthlyLeaveAccrual(targetYear?: number, targetMonth?: number, force = false) {
+  const now = new Date();
+  const year = targetYear || now.getFullYear();
+  const month = targetMonth || (now.getMonth() + 1);
+
+  const currentTime = Date.now();
+  if (!force && !targetYear && !targetMonth && currentTime - lastAccrualCheckTime < ACCRUAL_CHECK_INTERVAL_MS) {
+    return { skipped: true, month, year, clAccruedCount: 0, elAccruedCount: 0 };
+  }
+  lastAccrualCheckTime = currentTime;
+
+  const activeEmployees = await prisma.employee.findMany({
+    where: { status: 'ACTIVE' },
+    select: { id: true, name: true, clBalance: true, elBalance: true },
+  });
+
+  if (activeEmployees.length === 0) {
+    return { skipped: false, month, year, clAccruedCount: 0, elAccruedCount: 0 };
+  }
+
+  const existingAccruals = await prisma.employeeLeaveLedger.findMany({
+    where: {
+      month,
+      year,
+      transactionType: 'ACCRUAL',
+      employeeId: { in: activeEmployees.map((e) => e.id) },
+    },
+    select: { employeeId: true, leaveType: true },
+  });
+
+  const accruedSet = new Set(existingAccruals.map((a) => `${a.employeeId}_${a.leaveType}`));
+  let clAccruedCount = 0;
+  let elAccruedCount = 0;
+
+  for (const emp of activeEmployees) {
+    const hasCl = accruedSet.has(`${emp.id}_CL`);
+    const hasEl = accruedSet.has(`${emp.id}_EL`);
+
+    if (!hasCl) {
+      const updatedCl = Number(emp.clBalance) + 1.0;
+      await prisma.employee.update({
+        where: { id: emp.id },
+        data: { clBalance: updatedCl },
+      });
+      await prisma.employeeLeaveLedger.create({
+        data: {
+          employeeId: emp.id,
+          leaveType: 'CL',
+          transactionType: 'ACCRUAL',
+          amount: new Prisma.Decimal(1.0),
+          balanceAfter: new Prisma.Decimal(updatedCl),
+          month,
+          year,
+          reason: `Automatic monthly Casual Leave accrual (+1.00) for ${String(month).padStart(2, '0')}/${year}`,
+        },
+      });
+      clAccruedCount++;
+    }
+
+    if (!hasEl) {
+      const latestEmp = await prisma.employee.findUnique({
+        where: { id: emp.id },
+        select: { elBalance: true },
+      });
+      const updatedEl = Number(latestEmp?.elBalance ?? emp.elBalance) + 1.0;
+      await prisma.employee.update({
+        where: { id: emp.id },
+        data: { elBalance: updatedEl },
+      });
+      await prisma.employeeLeaveLedger.create({
+        data: {
+          employeeId: emp.id,
+          leaveType: 'EL',
+          transactionType: 'ACCRUAL',
+          amount: new Prisma.Decimal(1.0),
+          balanceAfter: new Prisma.Decimal(updatedEl),
+          month,
+          year,
+          reason: `Automatic monthly Earned Leave accrual (+1.00) for ${String(month).padStart(2, '0')}/${year}`,
+        },
+      });
+      elAccruedCount++;
+    }
+  }
+
+  return { skipped: false, month, year, clAccruedCount, elAccruedCount };
+}
+
+/**
+ * Clean slate reset for leaves:
+ * Wipes all past EmployeeLeaveLedger rows, resets all employees' clBalance & elBalance to 0,
+ * and immediately runs ensureMonthlyLeaveAccrual for current month (November 2026 onwards).
+ * DOES NOT touch attendance, payroll runs, advances, deductions, or expenses.
+ */
+export async function resetCleanSlateLeaves(recordedById?: string) {
+  const deletedLedgers = await prisma.employeeLeaveLedger.deleteMany({});
+  const resetEmployees = await prisma.employee.updateMany({
+    data: {
+      clBalance: 0,
+      elBalance: 0,
+    },
+  });
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  const accrualResult = await ensureMonthlyLeaveAccrual(currentYear, currentMonth, true);
+
+  return {
+    message: `Clean slate leave reset complete. Cleared ${deletedLedgers.count} past leave ledger entries, reset balances for ${resetEmployees.count} employees, and auto-accrued ${accrualResult.clAccruedCount} CL and ${accrualResult.elAccruedCount} EL for month ${String(currentMonth).padStart(2, '0')}/${currentYear}.`,
+    deletedLedgersCount: deletedLedgers.count,
+    resetEmployeesCount: resetEmployees.count,
+    accrualResult,
+  };
+}
+
 export async function accrueMonthlyLeave(input: AccrueMonthlyLeaveInput, recordedById?: string) {
   const { month, year } = input;
   const activeEmployees = await prisma.employee.findMany({
@@ -646,7 +774,7 @@ export async function accrueMonthlyLeave(input: AccrueMonthlyLeaveInput, recorde
       clAccruedCount++;
     }
 
-    // Check if EL already accrued for this month & year (+0.25/month = 1 day every 4 months)
+    // Check if EL already accrued for this month & year (+1.00/month)
     const existingEl = await prisma.employeeLeaveLedger.findFirst({
       where: {
         employeeId: emp.id,
@@ -658,7 +786,7 @@ export async function accrueMonthlyLeave(input: AccrueMonthlyLeaveInput, recorde
     });
 
     if (!existingEl) {
-      const updatedEl = Number(emp.elBalance) + 0.25;
+      const updatedEl = Number(emp.elBalance) + 1.0;
       await prisma.employee.update({
         where: { id: emp.id },
         data: { elBalance: updatedEl },
@@ -668,11 +796,11 @@ export async function accrueMonthlyLeave(input: AccrueMonthlyLeaveInput, recorde
           employeeId: emp.id,
           leaveType: 'EL',
           transactionType: 'ACCRUAL',
-          amount: new Prisma.Decimal(0.25),
+          amount: new Prisma.Decimal(1.0),
           balanceAfter: new Prisma.Decimal(updatedEl),
           month,
           year,
-          reason: `Automatic monthly Earned Leave accrual (+0.25) for ${month}/${year}`,
+          reason: `Automatic monthly Earned Leave accrual (+1.00) for ${month}/${year}`,
           recordedById,
         },
       });
@@ -686,7 +814,7 @@ export async function accrueMonthlyLeave(input: AccrueMonthlyLeaveInput, recorde
     totalEmployees: activeEmployees.length,
     clAccruedCount,
     elAccruedCount,
-    message: `Leave accrual complete for ${month}/${year}. Added 1 CL to ${clAccruedCount} employees, 0.25 EL to ${elAccruedCount} employees.`,
+    message: `Leave accrual complete for ${month}/${year}. Added 1 CL to ${clAccruedCount} employees, 1 EL to ${elAccruedCount} employees.`,
   };
 }
 
@@ -739,6 +867,7 @@ export async function adjustLeave(employeeId: string, input: AdjustLeaveInput, r
 }
 
 export async function getLeaveLedger(employeeId: string) {
+  await ensureMonthlyLeaveAccrual().catch(() => {});
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
     select: { id: true, employeeId: true, name: true, clBalance: true, elBalance: true },
@@ -1856,6 +1985,7 @@ export async function calculateEmployeeMonthlyPayroll(
  * Total execution time: <200ms (down from 15-20+ seconds).
  */
 export async function calculatePayroll(input: CalculatePayrollInput, calculatedById?: string) {
+  await ensureMonthlyLeaveAccrual().catch(() => {});
   const { month, year, employeeId, previewOnly } = input;
 
   if (employeeId) {
@@ -3084,9 +3214,9 @@ export async function getMonthlyAttendanceReportPdfBuffer(params: {
   const filename = `PRC_Attendance_Register_${monthAbbr}_${year}${scopeSuffix}.pdf`;
 
   return { buffer, filename };
-}
-
-// ─── Site Visits & Convenience Expenses Services ──────────────────────────────
+}
+
+// ─── Site Visits & Convenience Expenses Services ──────────────────────────────
 
 export async function generateConveyanceVoucherNumber(visitDate = new Date()): Promise<string> {
   const d = new Date(visitDate);

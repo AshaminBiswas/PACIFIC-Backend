@@ -15,6 +15,7 @@ import {
   accrueMonthlyLeaveHandler,
   adjustLeaveHandler,
   getLeaveLedgerHandler,
+  resetCleanSlateLeavesHandler,
   createAdvanceHandler,
   updateAdvanceHandler,
   partialDeductAdvanceHandler,
@@ -138,6 +139,7 @@ router.delete(['/attendance', '/attendance/record'], authorize('attendance.mark'
 
 // ─── Leave Ledger ─────────────────────────────────────────────────────────────
 router.post(['/leave/accrue-monthly', '/leaves/accrue'], authorize('leaves.accrue'), accrueMonthlyLeaveHandler);
+router.post('/leaves/reset-clean-slate', authorize('leaves.adjust'), resetCleanSlateLeavesHandler);
 router.get(['/leaves/ledger/:id', '/:id/leave-ledger'], authorize('leaves.read'), getLeaveLedgerHandler);
 router.post(['/leaves/adjust/:id', '/:id/leave-ledger'], authorize('leaves.adjust'), adjustLeaveHandler);
 
