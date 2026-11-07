@@ -678,7 +678,7 @@ export async function ensureMonthlyLeaveAccrual(targetYear?: number, targetMonth
         where: { id: emp.id },
         select: { elBalance: true },
       });
-      const updatedEl = Number(latestEmp?.elBalance ?? emp.elBalance) + 1.0;
+      const updatedEl = Number(latestEmp?.elBalance ?? emp.elBalance) + 0.25;
       await prisma.employee.update({
         where: { id: emp.id },
         data: { elBalance: updatedEl },
@@ -688,11 +688,11 @@ export async function ensureMonthlyLeaveAccrual(targetYear?: number, targetMonth
           employeeId: emp.id,
           leaveType: 'EL',
           transactionType: 'ACCRUAL',
-          amount: new Prisma.Decimal(1.0),
+          amount: new Prisma.Decimal(0.25),
           balanceAfter: new Prisma.Decimal(updatedEl),
           month,
           year,
-          reason: `Automatic monthly Earned Leave accrual (+1.00) for ${String(month).padStart(2, '0')}/${year}`,
+          reason: `Automatic monthly Earned Leave accrual (+0.25) for ${String(month).padStart(2, '0')}/${year}`,
         },
       });
       elAccruedCount++;
@@ -774,7 +774,7 @@ export async function accrueMonthlyLeave(input: AccrueMonthlyLeaveInput, recorde
       clAccruedCount++;
     }
 
-    // Check if EL already accrued for this month & year (+1.00/month)
+    // Check if EL already accrued for this month & year (+0.25/month = 1 day every 4 months)
     const existingEl = await prisma.employeeLeaveLedger.findFirst({
       where: {
         employeeId: emp.id,
@@ -786,7 +786,7 @@ export async function accrueMonthlyLeave(input: AccrueMonthlyLeaveInput, recorde
     });
 
     if (!existingEl) {
-      const updatedEl = Number(emp.elBalance) + 1.0;
+      const updatedEl = Number(emp.elBalance) + 0.25;
       await prisma.employee.update({
         where: { id: emp.id },
         data: { elBalance: updatedEl },
@@ -796,11 +796,11 @@ export async function accrueMonthlyLeave(input: AccrueMonthlyLeaveInput, recorde
           employeeId: emp.id,
           leaveType: 'EL',
           transactionType: 'ACCRUAL',
-          amount: new Prisma.Decimal(1.0),
+          amount: new Prisma.Decimal(0.25),
           balanceAfter: new Prisma.Decimal(updatedEl),
           month,
           year,
-          reason: `Automatic monthly Earned Leave accrual (+1.00) for ${month}/${year}`,
+          reason: `Automatic monthly Earned Leave accrual (+0.25) for ${month}/${year}`,
           recordedById,
         },
       });
@@ -814,7 +814,7 @@ export async function accrueMonthlyLeave(input: AccrueMonthlyLeaveInput, recorde
     totalEmployees: activeEmployees.length,
     clAccruedCount,
     elAccruedCount,
-    message: `Leave accrual complete for ${month}/${year}. Added 1 CL to ${clAccruedCount} employees, 1 EL to ${elAccruedCount} employees.`,
+    message: `Leave accrual complete for ${month}/${year}. Added 1 CL to ${clAccruedCount} employees, 0.25 EL to ${elAccruedCount} employees.`,
   };
 }
 
