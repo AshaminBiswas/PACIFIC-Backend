@@ -3679,6 +3679,7 @@ export const pdfService = {
     modeOfTransport?: string;
     vehicleNumber?: string;
     grLrNumber?: string;
+    ewayBillNumber?: string;
     orderNumber?: string;
     piNumber?: string;
     items: Array<{
@@ -3959,6 +3960,10 @@ export const pdfService = {
             <tr>
               <td style="font-weight: bold;">GR/LR/RR No.</td>
               <td>: ${data.grLrNumber || ''}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: bold;">E-Way Bill No.</td>
+              <td>: <strong>${data.ewayBillNumber || ''}</strong></td>
             </tr>
           </table>
         </td>

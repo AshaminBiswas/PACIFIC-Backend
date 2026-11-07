@@ -252,6 +252,13 @@ export const invoicesService = {
         (invoice.order as any)?.vehicleNumber ||
         '',
       grLrNumber: rawTransport.grLrNumber || metadata?.grLrNumber || linkedPi?.grLrNumber || '',
+      ewayBillNumber:
+        rawTransport.ewayBillNumber ||
+        rawTransport.ewayBillNo ||
+        metadata?.ewayBillNumber ||
+        metadata?.ewayBillNo ||
+        linkedPi?.ewayBillNumber ||
+        '',
       placeOfSupply: rawTransport.placeOfSupply || metadata?.placeOfSupply || linkedPi?.placeOfSupply || billToParty?.state || 'West Bengal',
       placeOfSupplyStateCode: rawTransport.placeOfSupplyStateCode || metadata?.placeOfSupplyStateCode || linkedPi?.placeOfSupplyStateCode || billToParty?.stateCode || '19',
       reverseCharge:
@@ -385,6 +392,7 @@ export const invoicesService = {
       modeOfTransport: data.modeOfTransport || rawTr.modeOfTransport || 'By Road',
       vehicleNumber: data.vehicleNumber || rawTr.vehicleNumber || data.vehicleNo || rawTr.vehicleNo || '',
       grLrNumber: data.grLrNumber || rawTr.grLrNumber || '',
+      ewayBillNumber: data.ewayBillNumber || rawTr.ewayBillNumber || data.ewayBillNo || rawTr.ewayBillNo || '',
       placeOfSupply: data.placeOfSupply || rawTr.placeOfSupply || billTo?.state || 'West Bengal',
       placeOfSupplyStateCode: data.placeOfSupplyStateCode || rawTr.placeOfSupplyStateCode || billTo?.stateCode || '19',
       reverseCharge: data.reverseCharge !== undefined ? data.reverseCharge : (rawTr.reverseCharge || false),
@@ -494,6 +502,7 @@ export const invoicesService = {
         modeOfTransport: pi.modeOfTransport || 'By Road',
         vehicleNumber: pi.vehicleNumber || '',
         grLrNumber: pi.grLrNumber || '',
+        ewayBillNumber: (pi as any).ewayBillNumber || '',
         placeOfSupply: pi.placeOfSupply || 'West Bengal',
         placeOfSupplyStateCode: pi.placeOfSupplyStateCode || '19',
         reverseCharge: pi.reverseCharge || false,
@@ -698,6 +707,7 @@ export const invoicesService = {
       modeOfTransport: transport?.modeOfTransport || 'By Road',
       vehicleNumber: transport?.vehicleNumber || '',
       grLrNumber: transport?.grLrNumber || '',
+      ewayBillNumber: transport?.ewayBillNumber || '',
       orderNumber: (invoice.order as any)?.orderNumber || undefined,
       piNumber: invoice.linkedPi?.piNumber || undefined,
       items,
@@ -741,6 +751,8 @@ export const invoicesService = {
       ...(data.vehicleNo !== undefined ? { vehicleNumber: data.vehicleNo } : {}),
       ...(data.modeOfTransport !== undefined ? { modeOfTransport: data.modeOfTransport } : {}),
       ...(data.grLrNumber !== undefined ? { grLrNumber: data.grLrNumber } : {}),
+      ...(data.ewayBillNumber !== undefined ? { ewayBillNumber: data.ewayBillNumber } : {}),
+      ...(data.ewayBillNo !== undefined ? { ewayBillNumber: data.ewayBillNo } : {}),
       ...(data.placeOfSupply !== undefined ? { placeOfSupply: data.placeOfSupply } : {}),
       ...(data.placeOfSupplyStateCode !== undefined ? { placeOfSupplyStateCode: data.placeOfSupplyStateCode } : {}),
       ...(data.reverseCharge !== undefined ? { reverseCharge: data.reverseCharge } : {}),
@@ -782,7 +794,74 @@ export const invoicesService = {
     });
   },
 
+  async requestDeletion(id: string, reason: string, user: any) {
+    const existing = await this.getById(id);
+    const existingMeta = existing.metadata || {};
+
+    const updatedMeta = {
+      ...existingMeta,
+      deleteRequest: {
+        status: 'PENDING',
+        reason: reason || 'Bill deletion requested by user',
+        requestedById: user?.id || null,
+        requestedByName: user?.name || (user?.firstName ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : (user?.email || 'User')),
+        requestedByEmail: user?.email || '',
+        requestedAt: new Date().toISOString(),
+      },
+    };
+
+    return prisma.invoice.update({
+      where: { id },
+      data: { notes: JSON.stringify(updatedMeta) },
+    });
+  },
+
+  async rejectDeletion(id: string, reason: string | undefined, user: any) {
+    const existing = await this.getById(id);
+    const existingMeta = existing.metadata || {};
+
+    const updatedMeta = {
+      ...existingMeta,
+      deleteRequest: {
+        ...(existingMeta.deleteRequest || {}),
+        status: 'REJECTED',
+        rejectedById: user?.id || null,
+        rejectedByName: user?.name || (user?.firstName ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : (user?.email || 'Super Admin')),
+        rejectedAt: new Date().toISOString(),
+        rejectionReason: reason || 'Deletion request rejected by Super Admin',
+      },
+    };
+
+    return prisma.invoice.update({
+      where: { id },
+      data: { notes: JSON.stringify(updatedMeta) },
+    });
+  },
+
+  async cancelDeletion(id: string, user: any) {
+    const existing = await this.getById(id);
+    const existingMeta = existing.metadata || {};
+
+    const updatedMeta = {
+      ...existingMeta,
+      deleteRequest: {
+        ...(existingMeta.deleteRequest || {}),
+        status: 'CANCELLED',
+        cancelledAt: new Date().toISOString(),
+      },
+    };
+
+    return prisma.invoice.update({
+      where: { id },
+      data: { notes: JSON.stringify(updatedMeta) },
+    });
+  },
+
   async delete(id: string) {
+    await prisma.paymentAllocation.deleteMany({
+      where: { documentType: 'INVOICE', documentId: id },
+    }).catch(() => {});
+
     return prisma.invoice.delete({ where: { id } });
   },
 };

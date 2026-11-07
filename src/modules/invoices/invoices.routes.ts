@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { invoicesController } from './invoices.controller';
-import { requireAuth } from '../../middleware/auth.middleware';
+import { requireAuth, requireSuperAdmin } from '../../middleware/auth.middleware';
 
 const router = Router();
 
@@ -13,6 +13,9 @@ router.post('/:id/payment', requireAuth, invoicesController.recordPayment);
 router.post('/', requireAuth, invoicesController.create);
 router.put('/:id', requireAuth, invoicesController.update);
 router.patch('/:id', requireAuth, invoicesController.update);
-router.delete('/:id', requireAuth, invoicesController.delete);
+router.post('/:id/request-deletion', requireAuth, invoicesController.requestDeletion);
+router.post('/:id/reject-deletion', requireAuth, requireSuperAdmin, invoicesController.rejectDeletion);
+router.post('/:id/cancel-deletion', requireAuth, invoicesController.cancelDeletion);
+router.delete('/:id', requireAuth, requireSuperAdmin, invoicesController.delete);
 
 export default router;

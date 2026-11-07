@@ -73,6 +73,30 @@ export const invoicesController = {
       next(err);
     }
   },
+  async requestDeletion(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await invoicesService.requestDeletion(req.params.id, req.body.reason, (req as any).user);
+      res.json({ success: true, data, message: 'Bill deletion request submitted to Super Admin' });
+    } catch (err) {
+      next(err);
+    }
+  },
+  async rejectDeletion(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await invoicesService.rejectDeletion(req.params.id, req.body.reason, (req as any).user);
+      res.json({ success: true, data, message: 'Bill deletion request rejected' });
+    } catch (err) {
+      next(err);
+    }
+  },
+  async cancelDeletion(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await invoicesService.cancelDeletion(req.params.id, (req as any).user);
+      res.json({ success: true, data, message: 'Bill deletion request cancelled' });
+    } catch (err) {
+      next(err);
+    }
+  },
   async delete(req: Request, res: Response, next: NextFunction) {
     try {
       await invoicesService.delete(req.params.id);
