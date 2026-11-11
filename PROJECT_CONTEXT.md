@@ -234,3 +234,9 @@ D:\PACIFIC-Backend\
 
 ### Audit Trail
 - `GET    /api/v1/audit`
+
+
+### Branch Daily Expenses vs. UP Factory Expenses Separation
+- **Strict Separation**: Kolkata/Delhi branch petty cash expenses live exclusively in `expense_entries`, `expense_float_top_ups`, `expense_daily_ledgers`, `expense_daily_rollups`, `expense_monthly_rollups`, and `branch_cash_balances` (`/api/v1/expenses/*`). Uttar Pradesh (UP) factory expenses live exclusively in `up_expenses`, `up_cash_days`, `up_expense_categories`, and `up_expense_audit` (`/api/v1/up/*`, restricted to `SUPER_ADMIN`).
+- **Cleanup Script (`src/scripts/remove-up-from-kolkata.ts`)**: Idempotent script (supports `--dry-run` and `--backup <path>`) that verifies 100% presence in `up_expenses`, removes mistaken `EXP-YYYY-MM-UXXXX` records imported into `branch-kolkata` (`76` entries / `32,123,500` paise), and rebuilds `expense_daily_rollups` (`40`), `expense_monthly_rollups` (`20`), `expense_daily_ledgers` (`62`), and `branch_cash_balances` (`branch-kolkata` synchronized to `48,877,200 - 16,032,800 = 32,844,400` paise / `₹3,28,444.00` across `45` genuine Kolkata entries and `43` float top-ups).
+- **Re-Import Guard (`src/scripts/import-all-kolkata-expenses.ts`)**: Removed the `up_expenses.json` cross-import section so re-running the Kolkata seed/import script never merges UP records into `branch-kolkata`.

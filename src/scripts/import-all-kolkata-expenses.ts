@@ -32,19 +32,6 @@ async function run() {
   const catByName = new Map<string, string>();
   existingCategories.forEach((c) => catByName.set(c.name.toLowerCase().trim(), c.id));
 
-  // Category mapping for up_expenses
-  const catMapping: Record<string, string> = {
-    '130b71fd-416e-40fe-a892-1a3f4ec2f1cc': '04715712-d623-4424-afc1-4594842295ed', // Utilities -> Electricity & Utilities
-    '77cce05a-eb30-4d8b-9f6a-13a2f30255b2': '04715712-d623-4424-afc1-4594842295ed', // Electricity -> Electricity & Utilities
-    '0c32f449-924f-4f20-af7f-05445050cb59': '58c8b81e-670e-486f-a566-78920d6028d6', // Miscellaneous -> Miscellaneous Petty Cash
-    'f0050fbb-b3ea-4d21-92f8-6f078788a30d': '0fb1a8c9-9859-4c46-a74c-61367ff665fc', // Bike & Petrol -> Staff Local Travel
-    '48beecdb-8a16-4f31-87de-95193f27a672': '9e676c01-cc44-4c88-98f8-eff388e9d6df', // Machine Maintenance -> Tool & Machine Maintenance
-    '0a1d93df-42d2-4513-9472-961a68ac883d': '582687b0-23fb-470b-810e-7a774a79cded', // Wages / Labor -> Salaries & Wages
-    '8a944622-09c1-4db9-8acf-67c76b548a1d': 'b3ef4e2a-791d-4bab-9abe-9729b2e55d20', // Transport & Logistics -> Logistics & Cartage
-    '3a9b841a-482e-4b13-a534-95d9262b6cda': '33a15137-7c4f-4a80-8cff-f0299a41a9ff', // Raw Material Purchase -> Site Hardware & Supplies
-  };
-  const fallbackCatId = '58c8b81e-670e-486f-a566-78920d6028d6'; // Misc Petty Cash
-
   // Get admin user for authoring
   const adminUser = await prisma.user.findFirst({ select: { id: true } });
   const adminUserId = adminUser?.id || '8fa992fe-3967-448e-9924-741f1109c6d8';
@@ -115,76 +102,9 @@ async function run() {
   }
   console.log(`✓ Successfully updated ${expCount} expense_entries to Kolkata branch.`);
 
-  // 2. Process up_expenses.json (76 records)
-  const upExpenses = readJson('up_expenses.json');
-  console.log(`📦 Processing ${upExpenses.length} entries from up_expenses.json to Kolkata branch...`);
-  let upCount = 0;
-  for (let idx = 0; idx < upExpenses.length; idx++) {
-    const u = upExpenses[idx];
-    const rawAmt = parseFloat(u.amount || '0');
-    const paise = Math.round(rawAmt * 100);
-    const dateStr = u.expense_date ? u.expense_date.slice(0, 10) : '2026-09-01';
-    const yearMonth = dateStr.slice(0, 7);
-    const seqNum = String(idx + 1).padStart(4, '0');
-    const entryNumber = `EXP-${yearMonth}-U${seqNum}`;
-    const targetCatId = catMapping[u.category_id] || fallbackCatId;
-
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO expense_entries (
-        id, entry_number, date, time, amount, category_id, sub_category, payment_mode,
-        description, paid_to, paid_by, receipt_attachment, branch_id, department_id,
-        employee_id, added_by_id, status, approved_by_id, approved_at, rejection_reason,
-        is_void, void_reason, voided_by_id, voided_at, client_temp_id, created_at, updated_at
-      )
-      VALUES (
-        $1, $2, $3::date, $4, $5, $6, $7, $8,
-        $9, $10, $11, $12, 'branch-kolkata', $13,
-        $14, $15, $16, $17, $18::timestamptz, $19,
-        $20, $21, $22, $23::timestamptz, $24, $25::timestamptz, $26::timestamptz
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        entry_number = EXCLUDED.entry_number,
-        date = EXCLUDED.date,
-        amount = EXCLUDED.amount,
-        category_id = EXCLUDED.category_id,
-        payment_mode = EXCLUDED.payment_mode,
-        description = EXCLUDED.description,
-        paid_to = EXCLUDED.paid_to,
-        receipt_attachment = EXCLUDED.receipt_attachment,
-        branch_id = 'branch-kolkata',
-        status = EXCLUDED.status,
-        updated_at = EXCLUDED.updated_at
-    `,
-      u.id,
-      entryNumber,
-      dateStr,
-      '12:00:00',
-      paise,
-      targetCatId,
-      null,
-      (u.payment_mode || 'CASH').toUpperCase() === 'UPI' ? 'UPI' : 'CASH',
-      u.note || u.paid_to || 'Operational Expense',
-      u.paid_to || 'Vendor',
-      null,
-      u.receipt_path || null,
-      null,
-      null,
-      adminUserId,
-      'APPROVED',
-      adminUserId,
-      u.verified_at || u.updated_at || new Date().toISOString(),
-      null,
-      false,
-      null,
-      null,
-      null,
-      null,
-      u.created_at || new Date().toISOString(),
-      u.updated_at || new Date().toISOString()
-    );
-    upCount++;
-  }
-  console.log(`✓ Successfully imported ${upCount} additional entries from up_expenses to Kolkata branch.`);
+  // 2. Skip up_expenses.json intentionally: UP factory expenses belong exclusively in the dedicated
+  // `up_expenses` table (/admin/dashboard/up-expenses) and must NOT be imported into Kolkata branch (`branch-kolkata`).
+  console.log('ℹ️  Skipping up_expenses.json import: UP factory expenses remain strictly in the dedicated up_expenses module.');
 
   // 3. Process Float Top-Ups (31 records)
   const floatTopUps = readJson('expense_float_top_ups.json');
