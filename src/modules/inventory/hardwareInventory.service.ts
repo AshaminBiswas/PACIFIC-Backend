@@ -378,7 +378,9 @@ export class HardwareInventoryService {
 
     const sets: string[] = ['updated_at = NOW()'];
 
+    if (data.sku !== undefined) sets.push(`sku = '${data.sku.trim().toUpperCase().replace(/'/g, "''")}'`);
     if (data.name !== undefined) sets.push(`name = '${data.name.replace(/'/g, "''")}'`);
+    if (data.category !== undefined) sets.push(`category = '${data.category.replace(/'/g, "''")}'`);
     if (data.material !== undefined) sets.push(`material = '${data.material.replace(/'/g, "''")}'`);
     if (data.color !== undefined) sets.push(`color = '${data.color.replace(/'/g, "''")}'`);
     if (data.unit !== undefined) sets.push(`unit = '${data.unit.replace(/'/g, "''")}'`);
@@ -386,6 +388,10 @@ export class HardwareInventoryService {
     if (data.warehouse !== undefined) sets.push(`warehouse = '${data.warehouse.replace(/'/g, "''")}'`);
     if (data.vendorId !== undefined) sets.push(`vendor_id = ${sqlStringOrNull(data.vendorId)}`);
     if (data.vendorName !== undefined) sets.push(`vendor_name = ${sqlStringOrNull(data.vendorName)}`);
+    if (data.openingStock !== undefined) sets.push(`opening_stock = ${Number(data.openingStock) || 0}`);
+    if (data.currentStock !== undefined) sets.push(`current_stock = ${Number(data.currentStock) || 0}`);
+    if (data.totalInward !== undefined) sets.push(`total_inward = ${Number(data.totalInward) || 0}`);
+    if (data.totalIssued !== undefined) sets.push(`total_issued = ${Number(data.totalIssued) || 0}`);
     if (data.reorderLevel !== undefined) sets.push(`reorder_level = ${Number(data.reorderLevel) || 10}`);
     if (data.unitCost !== undefined) sets.push(`unit_cost = ${Number(data.unitCost) || 0}`);
     if (data.locationRack !== undefined) sets.push(`location_rack = ${sqlStringOrNull(data.locationRack)}`);
@@ -393,7 +399,14 @@ export class HardwareInventoryService {
     if (data.length !== undefined) sets.push(`length = ${sqlStringOrNull(data.length)}`);
     if (data.width !== undefined) sets.push(`width = ${sqlStringOrNull(data.width)}`);
     if (data.imageUrl !== undefined) sets.push(`image_url = ${sqlStringOrNull(data.imageUrl)}`);
-    if (data.status !== undefined) sets.push(`status = '${data.status.replace(/'/g, "''")}'`);
+    if (data.status !== undefined) {
+      sets.push(`status = '${data.status.replace(/'/g, "''")}'`);
+    } else if (data.currentStock !== undefined) {
+      const curr = Number(data.currentStock) || 0;
+      const reorder = data.reorderLevel !== undefined ? Number(data.reorderLevel) : Number(existing[0].reorder_level || 10);
+      const autoStatus = curr <= 0 ? 'OUT_OF_STOCK' : curr <= reorder ? 'LOW_STOCK' : 'ACTIVE';
+      sets.push(`status = '${autoStatus}'`);
+    }
     if (data.notes !== undefined) sets.push(`notes = ${sqlStringOrNull(data.notes)}`);
 
     await prisma.$queryRawUnsafe(`

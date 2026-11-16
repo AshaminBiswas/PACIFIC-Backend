@@ -344,6 +344,8 @@ export class BoardInventoryService {
       boardType?: string;
       openingStock?: number | string;
       currentStock?: number | string;
+      totalInward?: number | string;
+      totalIssued?: number | string;
       reorderLevel?: number | string;
       unitCost?: number | string;
       locationRack?: string;
@@ -360,6 +362,7 @@ export class BoardInventoryService {
     let newOpening = existing.openingStock;
     let newCurrent = existing.currentStock;
     let newTotalInward = existing.totalInward;
+    let newTotalIssued = existing.totalIssued;
 
     if (data.openingStock !== undefined && data.openingStock !== '') {
       const parsedOpening = Number(data.openingStock);
@@ -375,6 +378,20 @@ export class BoardInventoryService {
 
         const adjustedTotalInward = Math.max(0, Number(existing.totalInward) + openingDiff);
         newTotalInward = new Prisma.Decimal(adjustedTotalInward);
+      }
+    }
+
+    if (data.totalInward !== undefined && data.totalInward !== '') {
+      const parsedInward = Number(data.totalInward);
+      if (!isNaN(parsedInward) && parsedInward >= 0) {
+        newTotalInward = new Prisma.Decimal(parsedInward);
+      }
+    }
+
+    if (data.totalIssued !== undefined && data.totalIssued !== '') {
+      const parsedIssued = Number(data.totalIssued);
+      if (!isNaN(parsedIssued) && parsedIssued >= 0) {
+        newTotalIssued = new Prisma.Decimal(parsedIssued);
       }
     }
 
@@ -414,6 +431,7 @@ export class BoardInventoryService {
           openingStock: newOpening,
           currentStock: newCurrent,
           totalInward: newTotalInward,
+          totalIssued: newTotalIssued,
           reorderLevel: newReorder,
           unitCost: data.unitCost !== undefined && data.unitCost !== '' ? Number(data.unitCost) : undefined,
           locationRack: data.locationRack !== undefined ? data.locationRack?.trim() || null : undefined,
