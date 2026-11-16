@@ -1,6 +1,7 @@
 import { prisma } from '../../config/database';
 import { qrService } from '../qr/qr.service';
 import { auditService } from '../audit/audit.service';
+import { memoryCache } from '../../utils/cache';
 
 export const productsMasterService = {
   async list(query: {
@@ -201,23 +202,32 @@ export const productsMasterService = {
     return product;
   },
 
-  // Metadata catalogs
+  // Metadata catalogs (cached for 15 minutes with request coalescing)
   async getMaterials() {
-    return prisma.productMaterial.findMany({ orderBy: { name: 'asc' } });
+    return memoryCache.coalesce('products:materials', () =>
+      prisma.productMaterial.findMany({ orderBy: { name: 'asc' } }), 900
+    );
   },
 
   async getFinishes() {
-    return prisma.productFinish.findMany({ orderBy: { name: 'asc' } });
+    return memoryCache.coalesce('products:finishes', () =>
+      prisma.productFinish.findMany({ orderBy: { name: 'asc' } }), 900
+    );
   },
 
   async getUnits() {
-    return prisma.productUnit.findMany({ orderBy: { name: 'asc' } });
+    return memoryCache.coalesce('products:units', () =>
+      prisma.productUnit.findMany({ orderBy: { name: 'asc' } }), 900
+    );
   },
 
   async getSubcategories(categoryId?: string) {
-    return prisma.productSubcategory.findMany({
-      where: categoryId ? { categoryId } : undefined,
-      orderBy: { name: 'asc' },
-    });
+    const key = categoryId ? `products:subcategories:${categoryId}` : 'products:subcategories:all';
+    return memoryCache.coalesce(key, () =>
+      prisma.productSubcategory.findMany({
+        where: categoryId ? { categoryId } : undefined,
+        orderBy: { name: 'asc' },
+      }), 900
+    );
   },
 };

@@ -1771,6 +1771,31 @@ async function run() {
       console.warn('[fix-db] Warning creating up_employees tables:', upEmpErr.message);
     }
 
+    // High-performance Composite & Query Optimization Indexes
+    try {
+      await client.query(`
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+        -- Business Parties (CRM) search acceleration
+        CREATE INDEX IF NOT EXISTS idx_bp_phone ON business_parties(phone);
+        CREATE INDEX IF NOT EXISTS idx_bp_party_status ON business_parties("partyType", status);
+
+        -- Quotations & Sales Orders date & status composite indexes
+        CREATE INDEX IF NOT EXISTS idx_quotations_cust_date ON quotations("customerId", "createdAt" DESC);
+        CREATE INDEX IF NOT EXISTS idx_sales_quotations_status_date ON sales_quotations(status, date DESC);
+
+        -- Invoices composite indexes for balance lookups & dues
+        CREATE INDEX IF NOT EXISTS idx_invoices_status_amount ON invoices(status, "totalAmount");
+        CREATE INDEX IF NOT EXISTS idx_proforma_status_date ON proforma_invoices(status, "piDate" DESC);
+
+        -- UP Employees composite indexes for workforce queries
+        CREATE INDEX IF NOT EXISTS idx_up_emp_status_name ON up_employees(status, name ASC);
+      `);
+      console.log('[fix-db] Performance indexes verified.');
+    } catch (idxErr) {
+      console.warn('[fix-db] Performance indexes note:', idxErr.message);
+    }
+
     console.log('[fix-db] Schema auto-heal complete.');
   } catch (err) {
     console.error('[fix-db] Error during schema auto-heal:', err);

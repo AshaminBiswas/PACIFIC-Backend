@@ -1,33 +1,38 @@
 import { prisma } from '../../config/database';
 import { auditService } from '../audit/audit.service';
+import { memoryCache } from '../../utils/cache';
 
 export const companiesService = {
   async list() {
-    return prisma.companyProfile.findMany({
-      include: {
-        addresses: true,
-        bankAccounts: true,
-        signatories: true,
-        terms: true,
-        sequences: true,
-      },
-      orderBy: { createdAt: 'asc' },
-    });
+    return memoryCache.coalesce('companies:list', async () => {
+      return prisma.companyProfile.findMany({
+        include: {
+          addresses: true,
+          bankAccounts: true,
+          signatories: true,
+          terms: true,
+          sequences: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+    }, 1800); // 30m TTL
   },
 
   async getById(id: string) {
-    const profile = await prisma.companyProfile.findUnique({
-      where: { id },
-      include: {
-        addresses: true,
-        bankAccounts: true,
-        signatories: true,
-        terms: true,
-        sequences: true,
-      },
-    });
-    if (!profile) throw Object.assign(new Error('Company profile not found'), { status: 404 });
-    return profile;
+    return memoryCache.coalesce(`companies:detail:${id}`, async () => {
+      const profile = await prisma.companyProfile.findUnique({
+        where: { id },
+        include: {
+          addresses: true,
+          bankAccounts: true,
+          signatories: true,
+          terms: true,
+          sequences: true,
+        },
+      });
+      if (!profile) throw Object.assign(new Error('Company profile not found'), { status: 404 });
+      return profile;
+    }, 1800);
   },
 
   async create(data: any, userId?: string) {
@@ -53,6 +58,8 @@ export const companiesService = {
       },
     });
 
+    memoryCache.invalidate('companies:');
+
     await auditService.log({
       userId,
       action: 'CREATE',
@@ -72,6 +79,8 @@ export const companiesService = {
       data,
     });
 
+    memoryCache.invalidate('companies:');
+
     await auditService.log({
       userId,
       action: 'UPDATE',
@@ -86,26 +95,34 @@ export const companiesService = {
   },
 
   async addAddress(companyProfileId: string, data: any) {
-    return prisma.companyAddress.create({
+    const res = await prisma.companyAddress.create({
       data: { ...data, companyProfileId },
     });
+    memoryCache.invalidate('companies:');
+    return res;
   },
 
   async addBankAccount(companyProfileId: string, data: any) {
-    return prisma.companyBankAccount.create({
+    const res = await prisma.companyBankAccount.create({
       data: { ...data, companyProfileId },
     });
+    memoryCache.invalidate('companies:');
+    return res;
   },
 
   async addSignatory(companyProfileId: string, data: any) {
-    return prisma.companySignatory.create({
+    const res = await prisma.companySignatory.create({
       data: { ...data, companyProfileId },
     });
+    memoryCache.invalidate('companies:');
+    return res;
   },
 
   async addTerm(companyProfileId: string, data: any) {
-    return prisma.companyTerm.create({
+    const res = await prisma.companyTerm.create({
       data: { ...data, companyProfileId },
     });
+    memoryCache.invalidate('companies:');
+    return res;
   },
 };

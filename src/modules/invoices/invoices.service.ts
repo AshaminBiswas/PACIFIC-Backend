@@ -2,6 +2,7 @@ import { prisma } from '../../config/database';
 import { pdfService } from '../pdf/pdf.service';
 import { sequenceService } from '../sequences/sequence.service';
 import { financeService } from '../finance/finance.service';
+import { dashboardService } from '../dashboard/dashboard.service';
 
 async function resolveDefaultCompanyProfileId(): Promise<string> {
   const profile = await prisma.companyProfile.findFirst({
@@ -412,7 +413,7 @@ export const invoicesService = {
       roundingAdjustment: Number(roundingAdjustment || 0),
     };
 
-    return prisma.invoice.create({
+    const createdInvoice = await prisma.invoice.create({
       data: {
         ...rest,
         notes: JSON.stringify(metadata),
@@ -420,6 +421,8 @@ export const invoicesService = {
         status: rest.status || 'DRAFT',
       },
     });
+    dashboardService.invalidateStatsCache();
+    return createdInvoice;
   },
 
   /**
@@ -533,6 +536,7 @@ export const invoicesService = {
       data: { status: 'CONVERTED' },
     }).catch(() => {});
 
+    dashboardService.invalidateStatsCache();
     return invoice;
   },
 
@@ -586,6 +590,8 @@ export const invoicesService = {
       },
     });
 
+    dashboardService.invalidateStatsCache();
+
     return {
       payment,
       invoice: await this.getById(invoiceId),
@@ -634,6 +640,7 @@ export const invoicesService = {
       },
     });
 
+    dashboardService.invalidateStatsCache();
     return invoice;
   },
 
