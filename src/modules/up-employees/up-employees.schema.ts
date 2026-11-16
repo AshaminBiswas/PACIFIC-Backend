@@ -220,3 +220,155 @@ export const AccrueUpMonthlyLeaveSchema = z.object({
   body: AccrueUpMonthlyLeaveBodySchema,
 });
 export type AccrueUpMonthlyLeaveInput = z.infer<typeof AccrueUpMonthlyLeaveBodySchema>;
+
+// ─── Advance Updates ──────────────────────────────────────────────────────────
+export const UpdateUpAdvanceBodySchema = z.object({
+  amount: z.coerce.number().positive().optional(),
+  reason: z.string().trim().min(2).max(500).optional(),
+  recoveryMonth: z.coerce.number().int().min(1).max(12).optional(),
+  recoveryYear: z.coerce.number().int().min(2020).max(2050).optional(),
+  disbursedVia: z.enum(['CASH', 'BANK', 'UPI']).optional(),
+  isRecovered: z.boolean().optional(),
+});
+export const UpdateUpAdvanceSchema = z.object({
+  body: UpdateUpAdvanceBodySchema,
+  params: z.object({ id: z.string() }).optional(),
+});
+export type UpdateUpAdvanceInput = z.infer<typeof UpdateUpAdvanceBodySchema>;
+
+// ─── Deduction Updates ────────────────────────────────────────────────────────
+export const UpdateUpDeductionBodySchema = z.object({
+  amount: z.coerce.number().positive().optional(),
+  reason: z.string().trim().min(2).max(500).optional(),
+  applyMonth: z.coerce.number().int().min(1).max(12).optional(),
+  applyYear: z.coerce.number().int().min(2020).max(2050).optional(),
+  isApplied: z.boolean().optional(),
+});
+export const UpdateUpDeductionSchema = z.object({
+  body: UpdateUpDeductionBodySchema,
+  params: z.object({ id: z.string() }).optional(),
+});
+export type UpdateUpDeductionInput = z.infer<typeof UpdateUpDeductionBodySchema>;
+
+// ─── Salary Simulation Schema ─────────────────────────────────────────────────
+export const SimulateUpSalaryCalculationBodySchema = z.object({
+  employeeId: z.string().min(1),
+  month: z.coerce.number().int().min(1).max(12),
+  year: z.coerce.number().int().min(2020).max(2050),
+  monthlyCtc: z.coerce.number().min(0),
+  standardPayableDays: z.coerce.number().min(1).default(26),
+  standardWorkingHours: z.coerce.number().min(1).default(8),
+  regularPayableDays: z.coerce.number().min(0).default(0),
+  additionalSundayDutyCredits: z.coerce.number().min(0).default(0),
+  additionalDoubleDutyCredits: z.coerce.number().min(0).default(0),
+  approvedOvertimeHours: z.coerce.number().min(0).default(0),
+  overtimeMultiplier: z.coerce.number().min(0).default(1.0),
+  partialDeductions: z.coerce.number().min(0).default(0),
+  additionalAllowances: z.coerce.number().min(0).default(0),
+  saveToPayroll: z.boolean().default(false),
+});
+export const SimulateUpSalaryCalculationSchema = z.object({
+  body: SimulateUpSalaryCalculationBodySchema,
+});
+export type SimulateUpSalaryCalculationInput = z.infer<typeof SimulateUpSalaryCalculationBodySchema>;
+
+// ─── Report PDF Query Schema ──────────────────────────────────────────────────
+export const MonthlyAttendanceReportPdfQuerySchema = z.object({
+  month: z.coerce.number().int().min(1).max(12),
+  year: z.coerce.number().int().min(2020).max(2050),
+  workerOnly: z.preprocess((val) => val === 'true' || val === true, z.boolean()).optional(),
+  department: z.string().optional(),
+});
+export type MonthlyAttendanceReportPdfQuery = z.infer<typeof MonthlyAttendanceReportPdfQuerySchema>;
+
+// ─── UP Conveyance / Travel Expense Schemas ───────────────────────────────────
+export const UpConveyanceCategoryEnum = z.enum([
+  'PETROL',
+  'GARIVARA',
+  'MATERIAL_SHIFTING',
+  'TOLL_PARKING',
+  'FOOD_ALLOWANCE',
+  'HOTEL_STAY',
+  'OTHER',
+]);
+
+export const UpConveyancePurposeEnum = z.enum([
+  'SITE_MEASUREMENT',
+  'SITE_INSPECTION',
+  'MATERIAL_SHIFTING',
+  'INSTALLATION_SUPPORT',
+  'CLIENT_MEETING',
+  'SAMPLE_SUBMISSION',
+  'MAINTENANCE_SERVICE',
+  'OTHER',
+]);
+
+export const UpConveyancePaymentModeEnum = z.enum([
+  'PAID_BY_EMPLOYEE',
+  'COMPANY_CASH',
+  'COMPANY_UPI',
+  'COMPANY_CARD',
+]);
+
+export const UpConveyanceStatusEnum = z.enum([
+  'PENDING',
+  'APPROVED',
+  'REJECTED',
+  'REIMBURSED',
+]);
+
+export const CreateUpConveyanceExpenseSchema = z.object({
+  employeeId: z.string().min(1, 'Employee ID is required'),
+  visitDate: z.coerce.date(),
+  siteName: z.string().min(2, 'Site name is required'),
+  siteAddress: z.string().optional().nullable(),
+  clientName: z.string().optional().nullable(),
+  purpose: UpConveyancePurposeEnum.default('SITE_MEASUREMENT'),
+  category: UpConveyanceCategoryEnum.default('PETROL'),
+  amount: z.coerce.number().min(0.01, 'Amount must be greater than 0'),
+  paymentMode: UpConveyancePaymentModeEnum.default('PAID_BY_EMPLOYEE'),
+  startLocation: z.string().optional().nullable(),
+  endLocation: z.string().optional().nullable(),
+  transportMode: z.string().optional().nullable(),
+  distanceKm: z.coerce.number().optional().nullable(),
+  ratePerKm: z.coerce.number().optional().nullable(),
+  calculatedFare: z.coerce.number().optional().nullable(),
+  receiptUrl: z.string().optional().nullable(),
+  receiptFilename: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  branch: z.string().default('UP'),
+  projectName: z.string().optional().nullable(),
+  remarks: z.string().optional().nullable(),
+});
+export type CreateUpConveyanceExpenseInput = z.infer<typeof CreateUpConveyanceExpenseSchema>;
+
+export const UpdateUpConveyanceExpenseSchema = CreateUpConveyanceExpenseSchema.partial();
+export type UpdateUpConveyanceExpenseInput = z.infer<typeof UpdateUpConveyanceExpenseSchema>;
+
+export const ListUpConveyanceExpensesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(200).default(20),
+  employeeId: z.string().optional(),
+  category: UpConveyanceCategoryEnum.optional(),
+  purpose: UpConveyancePurposeEnum.optional(),
+  status: UpConveyanceStatusEnum.optional(),
+  paymentMode: UpConveyancePaymentModeEnum.optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  search: z.string().optional(),
+  branch: z.string().optional(),
+});
+export type ListUpConveyanceExpensesQuery = z.infer<typeof ListUpConveyanceExpensesQuerySchema>;
+
+export const ApproveUpConveyanceSchema = z.object({
+  notes: z.string().optional().nullable(),
+});
+
+export const RejectUpConveyanceSchema = z.object({
+  reason: z.string().min(2, 'Rejection reason is required'),
+});
+
+export const SettleUpConveyanceSchema = z.object({
+  paymentRef: z.string().min(1, 'Payment reference / transaction ID is required'),
+  reimbursedAmount: z.coerce.number().min(0.01).optional(),
+});

@@ -3460,6 +3460,7 @@ model UpEmployee {
   advances           UpEmployeeAdvance[]
   deductions         UpEmployeeDeduction[]
   payrollRuns        UpEmployeePayrollRun[]
+  conveyanceExpenses UpEmployeeConveyanceExpense[]
 
   @@index([employeeId])
   @@index([department])
@@ -3624,6 +3625,55 @@ model UpEmployeeIdSequence {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   @@map("up_employee_id_sequences")
+}
+
+model UpEmployeeConveyanceExpense {
+  id                 String                @id @default(uuid())
+  voucherNumber      String                @unique @map("voucher_number")
+  employeeId         String                @map("employee_id")
+  visitDate          DateTime              @map("visit_date") @db.Date
+  siteName           String                @map("site_name")
+  siteAddress        String?               @map("site_address")
+  clientName         String?               @map("client_name")
+  purpose            ConveyancePurpose     @default(SITE_MEASUREMENT)
+  category           ConveyanceCategory    @default(PETROL)
+  amount             Decimal               @db.Decimal(10, 2)
+  paymentMode        ConveyancePaymentMode @default(PAID_BY_EMPLOYEE) @map("payment_mode")
+  status             ConveyanceStatus      @default(PENDING)
+
+  startLocation      String?               @map("start_location")
+  endLocation        String?               @map("end_location")
+  transportMode      String?               @map("transport_mode")
+  distanceKm         Decimal?              @map("distance_km") @db.Decimal(6, 2)
+  ratePerKm          Decimal?              @map("rate_per_km") @db.Decimal(6, 2)
+  calculatedFare     Decimal?              @map("calculated_fare") @db.Decimal(10, 2)
+
+  receiptUrl         String?               @map("receipt_url")
+  receiptFilename    String?               @map("receipt_filename")
+  notes              String?               @db.Text
+  rejectionReason    String?               @map("rejection_reason") @db.Text
+
+  settledDate        DateTime?             @map("settled_date")
+  settledPaymentMode String?               @map("settled_payment_mode")
+  settledReference   String?               @map("settled_reference")
+  settlementNotes    String?               @map("settlement_notes") @db.Text
+
+  branch             String?               @default("UP")
+  projectName        String?               @map("project_name")
+  remarks            String?               @db.Text
+
+  createdById        String?               @map("created_by_id")
+  approvedById       String?               @map("approved_by_id")
+  settledById        String?               @map("settled_by_id")
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+
+  employee           UpEmployee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([visitDate])
+  @@index([status])
+  @@map("up_employee_conveyance_expenses")
 }
 
 model DailySalesPurchase {

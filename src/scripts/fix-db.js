@@ -1717,6 +1717,47 @@ async function run() {
           last_number INT NOT NULL DEFAULT 0,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+
+        CREATE TABLE IF NOT EXISTS up_employee_conveyance_expenses (
+          id TEXT PRIMARY KEY,
+          voucher_number TEXT UNIQUE NOT NULL,
+          employee_id TEXT NOT NULL REFERENCES up_employees(id) ON DELETE CASCADE,
+          visit_date DATE NOT NULL,
+          site_name TEXT NOT NULL,
+          site_address TEXT,
+          client_name TEXT,
+          purpose "ConveyancePurpose" NOT NULL DEFAULT 'SITE_MEASUREMENT',
+          category "ConveyanceCategory" NOT NULL DEFAULT 'PETROL',
+          amount NUMERIC(10, 2) NOT NULL,
+          payment_mode "ConveyancePaymentMode" NOT NULL DEFAULT 'PAID_BY_EMPLOYEE',
+          status "ConveyanceStatus" NOT NULL DEFAULT 'PENDING',
+          start_location TEXT,
+          end_location TEXT,
+          transport_mode TEXT,
+          distance_km NUMERIC(6, 2),
+          rate_per_km NUMERIC(6, 2),
+          calculated_fare NUMERIC(10, 2),
+          receipt_url TEXT,
+          receipt_filename TEXT,
+          notes TEXT,
+          rejection_reason TEXT,
+          settled_date TIMESTAMPTZ,
+          settled_payment_mode TEXT,
+          settled_reference TEXT,
+          settlement_notes TEXT,
+          branch TEXT DEFAULT 'UP',
+          project_name TEXT,
+          remarks TEXT,
+          created_by_id TEXT,
+          approved_by_id TEXT,
+          settled_by_id TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_up_conveyance_empid ON up_employee_conveyance_expenses(employee_id);
+        CREATE INDEX IF NOT EXISTS idx_up_conveyance_date ON up_employee_conveyance_expenses(visit_date);
+        CREATE INDEX IF NOT EXISTS idx_up_conveyance_status ON up_employee_conveyance_expenses(status);
       `);
     } catch (upEmpErr) {
       console.warn('[fix-db] Warning creating up_employees tables:', upEmpErr.message);

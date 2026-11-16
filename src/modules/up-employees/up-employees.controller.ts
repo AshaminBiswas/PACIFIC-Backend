@@ -116,6 +116,31 @@ export const deleteAttendanceHandler = async (req: AuthRequest, res: Response, n
   }
 };
 
+export const downloadMonthlyAttendanceReportPdfHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const month = parseInt(String(req.query.month || new Date().getMonth() + 1), 10);
+    const year = parseInt(String(req.query.year || new Date().getFullYear()), 10);
+    const workerOnly = req.query.workerOnly === 'true';
+    const department = req.query.department as string | undefined;
+    const generatedByName = (req.user as any)?.name || req.user?.email || 'Super Administrator';
+
+    const { buffer, filename } = await service.getUpMonthlyAttendanceReportPdfBuffer({
+      month,
+      year,
+      workerOnly,
+      department,
+      generatedByName,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ─── 4. Advances Handlers ─────────────────────────────────────────────────────
 export const listAdvancesHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -167,6 +192,39 @@ export const recoverAdvanceHandler = async (req: AuthRequest, res: Response, nex
   }
 };
 
+export const updateAdvanceHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.updateUpAdvance(req.params.id, req.body);
+    sendSuccess(res, data, 'Advance updated successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const deleteAdvanceHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.deleteUpAdvance(req.params.id);
+    sendSuccess(res, data, 'Advance deleted successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getAdvanceLedgerHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.getUpAdvanceLedger({
+      employeeId: req.query.employeeId as string | undefined,
+      status: (req.query.status as any) || 'ALL',
+      recoveryMonth: req.query.recoveryMonth ? parseInt(String(req.query.recoveryMonth), 10) : undefined,
+      recoveryYear: req.query.recoveryYear ? parseInt(String(req.query.recoveryYear), 10) : undefined,
+      search: req.query.search as string | undefined,
+    });
+    sendSuccess(res, data, 'UP Factory advance ledger retrieved successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ─── 5. Deductions Handlers ───────────────────────────────────────────────────
 export const listDeductionsHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -186,6 +244,15 @@ export const createDeductionHandler = async (req: AuthRequest, res: Response, ne
   try {
     const data = await service.createUpDeduction(req.body, req.user?.id);
     sendSuccess(res, data, 'Factory deduction recorded successfully', 201);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const updateDeductionHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.updateUpDeduction(req.params.id, req.body);
+    sendSuccess(res, data, 'Deduction updated successfully');
   } catch (err) {
     next(err);
   }
@@ -274,6 +341,154 @@ export const getLeaveLedgerHandler = async (req: AuthRequest, res: Response, nex
   try {
     const data = await service.getUpLeaveLedger(req.params.id);
     sendSuccess(res, data, 'Leave ledger history retrieved successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const resetCleanSlateLeavesHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.resetUpCleanSlateLeaves(req.user?.id);
+    sendSuccess(res, data, data.message);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Payroll Calculator & Document Generation Handlers ────────────────────────
+export const simulateSalaryCalculationHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.simulateUpSalaryCalculation(req.body, req.user?.id);
+    sendSuccess(res, data, 'Salary calculation simulated successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getEmployeeSalaryDefaultsHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const id = (req.params.id as string) || (req.query.employeeId as string);
+    if (!id) {
+      res.status(400).json({ success: false, message: 'Employee ID is required' });
+      return;
+    }
+    const month = parseInt(String(req.query.month || new Date().getMonth() + 1), 10);
+    const year = parseInt(String(req.query.year || new Date().getFullYear()), 10);
+    const data = await service.getUpEmployeeSalaryDefaults(id, month, year);
+    sendSuccess(res, data, 'Employee salary defaults retrieved successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const downloadPayslipPdfHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { buffer, filename } = await service.getUpPayslipPdfBuffer(req.params.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const resendPayslipEmailHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const success = await service.dispatchUpPayslipEmail(req.params.id, req.body?.recipientEmail);
+    if (success) {
+      sendSuccess(res, { success: true }, 'Payslip email dispatched successfully');
+    } else {
+      res.status(200).json({
+        success: true,
+        message: 'No external email configured for worker; payslip remains available via PDF download',
+      });
+    }
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── UP Factory Conveyance / Site Visit Expenses Handlers ─────────────────────
+export const listConveyanceExpensesHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.listUpConveyanceExpenses({
+      page: parseInt(String(req.query.page || '1'), 10) || 1,
+      limit: parseInt(String(req.query.limit || '20'), 10) || 20,
+      employeeId: req.query.employeeId as string | undefined,
+      category: req.query.category as any,
+      purpose: req.query.purpose as any,
+      status: req.query.status as any,
+      paymentMode: req.query.paymentMode as any,
+      startDate: req.query.startDate as string | undefined,
+      endDate: req.query.endDate as string | undefined,
+      search: req.query.search as string | undefined,
+      branch: req.query.branch as string | undefined,
+    });
+    sendSuccess(res, data, 'UP Factory conveyance expenses retrieved successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const createConveyanceExpenseHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.createUpConveyanceExpense(req.body, req.user?.id);
+    sendSuccess(res, data, 'Site visit conveyance expense recorded successfully', 201);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getConveyanceExpenseHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.getUpConveyanceExpense(req.params.id);
+    sendSuccess(res, data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const updateConveyanceExpenseHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.updateUpConveyanceExpense(req.params.id, req.body);
+    sendSuccess(res, data, 'Conveyance expense updated successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const deleteConveyanceExpenseHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.deleteUpConveyanceExpense(req.params.id);
+    sendSuccess(res, data, 'Conveyance expense deleted successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const approveConveyanceExpenseHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.approveUpConveyanceExpense(req.params.id, req.body?.notes, req.user?.id);
+    sendSuccess(res, data, 'Conveyance expense approved successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const rejectConveyanceExpenseHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.rejectUpConveyanceExpense(req.params.id, req.body?.reason, req.user?.id);
+    sendSuccess(res, data, 'Conveyance expense rejected');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const settleConveyanceExpenseHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const data = await service.settleUpConveyanceExpense(req.params.id, req.body, req.user?.id);
+    sendSuccess(res, data, 'Conveyance expense marked settled/reimbursed');
   } catch (err) {
     next(err);
   }

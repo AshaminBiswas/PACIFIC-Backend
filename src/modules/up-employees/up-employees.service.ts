@@ -1,5 +1,14 @@
 import prisma from '../../config/database';
 import { logger } from '../../config/logger';
+import { sendMail } from '../../utils/email.utils';
+import { generateEmployeePayslipPdf } from '../employee-management/employee-payslip-pdf.service';
+import {
+  generateMonthlyAttendanceReportPdf,
+  MonthlyAttendanceReportData,
+  MonthlyAttendanceReportEmployeeItem,
+  DailyAttendanceStatus,
+} from '../employee-management/employee-attendance-report-pdf.service';
+import { buildSalaryCalculationHistory } from '../employee-management/employee-management.service';
 import {
   CreateUpEmployeeInput,
   UpdateUpEmployeeInput,
@@ -8,15 +17,21 @@ import {
   BatchUpAttendanceInput,
   ListUpAttendanceQuery,
   CreateUpAdvanceInput,
+  UpdateUpAdvanceInput,
   PartialDeductUpAdvanceInput,
   ListUpAdvancesQuery,
   CreateUpDeductionInput,
+  UpdateUpDeductionInput,
   ListUpDeductionsQuery,
   CalculateUpPayrollInput,
   MarkUpPayrollPaidInput,
   ListUpPayrollQuery,
   AdjustUpLeaveInput,
   AccrueUpMonthlyLeaveInput,
+  SimulateUpSalaryCalculationInput,
+  CreateUpConveyanceExpenseInput,
+  UpdateUpConveyanceExpenseInput,
+  ListUpConveyanceExpensesQuery,
 } from './up-employees.schema';
 import { Prisma } from '@prisma/client';
 
@@ -548,6 +563,88 @@ export async function recoverUpAdvance(id: string) {
   });
 }
 
+export async function updateUpAdvance(id: string, data: UpdateUpAdvanceInput) {
+  const updateData: Prisma.UpEmployeeAdvanceUpdateInput = {};
+  if (data.amount !== undefined) updateData.amount = new Prisma.Decimal(data.amount);
+  if (data.reason !== undefined) updateData.reason = data.reason.trim();
+  if (data.recoveryMonth !== undefined) updateData.recoveryMonth = data.recoveryMonth;
+  if (data.recoveryYear !== undefined) updateData.recoveryYear = data.recoveryYear;
+  if (data.disbursedVia !== undefined) updateData.disbursedVia = data.disbursedVia;
+  if (data.isRecovered !== undefined) {
+    updateData.isRecovered = data.isRecovered;
+    if (data.isRecovered) updateData.recoveredAt = new Date();
+  }
+  return prisma.upEmployeeAdvance.update({
+    where: { id },
+    data: updateData,
+  });
+}
+
+export async function deleteUpAdvance(id: string) {
+  return prisma.upEmployeeAdvance.delete({
+    where: { id },
+  });
+}
+
+export async function getUpAdvanceLedger(query: ListUpAdvancesQuery & { search?: string }) {
+  const { employeeId, search } = query;
+  const recoveryMonth = query.recoveryMonth ? parseInt(String(query.recoveryMonth), 10) : undefined;
+  const recoveryYear = query.recoveryYear ? parseInt(String(query.recoveryYear), 10) : undefined;
+
+  const where: Prisma.UpEmployeeAdvanceWhereInput = {};
+  if (employeeId) where.employeeId = employeeId;
+  if (recoveryMonth) where.recoveryMonth = recoveryMonth;
+  if (recoveryYear) where.recoveryYear = recoveryYear;
+  if (search) {
+    where.OR = [
+      { reason: { contains: search, mode: 'insensitive' } },
+      { employee: { name: { contains: search, mode: 'insensitive' } } },
+      { employee: { employeeId: { contains: search, mode: 'insensitive' } } },
+    ];
+  }
+
+  const advances = await prisma.upEmployeeAdvance.findMany({
+    where,
+    include: {
+      employee: {
+        select: { id: true, employeeId: true, name: true, department: true, designation: true },
+      },
+    },
+    orderBy: { advanceDate: 'desc' },
+  });
+
+  const summary = await getUpAdvanceSummary();
+
+  const transactions = advances.map((adv) => {
+    const amt = Number(adv.amount || 0);
+    const isCarryForward = Boolean(adv.parentAdvanceId);
+
+    return {
+      id: adv.id,
+      advanceId: adv.id,
+      employeeId: adv.employeeId,
+      employee: adv.employee,
+      date: adv.advanceDate,
+      type: adv.isRecovered ? 'CREDIT' : 'DEBIT',
+      amount: amt,
+      balance: adv.isRecovered ? 0 : amt,
+      reason: adv.reason,
+      status: adv.isRecovered ? 'RECOVERED' : 'PENDING',
+      recoveryMonth: adv.recoveryMonth,
+      recoveryYear: adv.recoveryYear,
+      disbursedVia: adv.disbursedVia,
+      parentAdvanceId: adv.parentAdvanceId,
+      isCarryForward,
+      notes: adv.reason,
+    };
+  });
+
+  return {
+    summary,
+    transactions,
+  };
+}
+
 export async function listUpAdvances(query: ListUpAdvancesQuery) {
   const { employeeId, status = 'PENDING' } = query;
   const recoveryMonth = query.recoveryMonth ? parseInt(String(query.recoveryMonth), 10) : undefined;
@@ -627,6 +724,27 @@ export async function listUpDeductions(query: ListUpDeductionsQuery) {
   return prisma.upEmployeeDeduction.findMany({
     where,
     orderBy: [{ createdAt: 'desc' }],
+    include: {
+      employee: {
+        select: { id: true, employeeId: true, name: true, department: true, designation: true },
+      },
+    },
+  });
+}
+
+export async function updateUpDeduction(id: string, data: UpdateUpDeductionInput) {
+  const updateData: Prisma.UpEmployeeDeductionUpdateInput = {};
+  if (data.amount !== undefined) updateData.amount = new Prisma.Decimal(data.amount);
+  if (data.reason !== undefined) updateData.reason = data.reason.trim();
+  if (data.applyMonth !== undefined) updateData.applyMonth = data.applyMonth;
+  if (data.applyYear !== undefined) updateData.applyYear = data.applyYear;
+  if (data.isApplied !== undefined) {
+    updateData.isApplied = data.isApplied;
+    if (data.isApplied) updateData.appliedAt = new Date();
+  }
+  return prisma.upEmployeeDeduction.update({
+    where: { id },
+    data: updateData,
     include: {
       employee: {
         select: { id: true, employeeId: true, name: true, department: true, designation: true },
@@ -1073,5 +1191,871 @@ export async function getUpLeaveLedger(employeeId: string) {
   return prisma.upEmployeeLeaveLedger.findMany({
     where: { employeeId },
     orderBy: [{ createdAt: 'desc' }],
+  });
+}
+
+export async function resetUpCleanSlateLeaves(recordedById?: string) {
+  const activeEmployees = await prisma.upEmployee.findMany({
+    where: { status: 'ACTIVE' },
+    select: { id: true, clBalance: true, elBalance: true },
+  });
+
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+
+  await prisma.$transaction(async (tx) => {
+    for (const emp of activeEmployees) {
+      const prevCl = Number(emp.clBalance || 0);
+      const prevEl = Number(emp.elBalance || 0);
+
+      if (prevCl > 0) {
+        await tx.upEmployeeLeaveLedger.create({
+          data: {
+            employeeId: emp.id,
+            leaveType: 'CL',
+            transactionType: 'ADJUSTMENT',
+            amount: new Prisma.Decimal(-prevCl),
+            balanceAfter: new Prisma.Decimal(0),
+            month: currentMonth,
+            year: currentYear,
+            reason: 'Clean slate annual reset',
+            recordedById: recordedById || null,
+          },
+        });
+      }
+
+      if (prevEl > 0) {
+        await tx.upEmployeeLeaveLedger.create({
+          data: {
+            employeeId: emp.id,
+            leaveType: 'EL',
+            transactionType: 'ADJUSTMENT',
+            amount: new Prisma.Decimal(-prevEl),
+            balanceAfter: new Prisma.Decimal(0),
+            month: currentMonth,
+            year: currentYear,
+            reason: 'Clean slate annual reset',
+            recordedById: recordedById || null,
+          },
+        });
+      }
+
+      await tx.upEmployee.update({
+        where: { id: emp.id },
+        data: {
+          clBalance: new Prisma.Decimal(0),
+          elBalance: new Prisma.Decimal(0),
+        },
+      });
+    }
+  });
+
+  return {
+    success: true,
+    count: activeEmployees.length,
+    message: `Reset clean-slate leaves for ${activeEmployees.length} UP Factory employees`,
+  };
+}
+
+// ─── Salary Defaults & Simulation ─────────────────────────────────────────────
+export async function getUpEmployeeSalaryDefaults(employeeId: string, month: number, year: number) {
+  const employee = await prisma.upEmployee.findUnique({ where: { id: employeeId } });
+  if (!employee) {
+    throw new Error('UP Factory Employee not found');
+  }
+
+  const totalCalendarDays = getDaysInMonth(year, month);
+  const sundaysCount = countSundaysInMonth(year, month);
+  const standardPayableDays = Math.max(1, totalCalendarDays - sundaysCount);
+  const standardWorkingHours = 8;
+
+  const startDate = new Date(year, month - 1, 1);
+  const endDate = new Date(year, month - 1, totalCalendarDays);
+
+  const [attendances, advances, deductions, existingRun, allUnrecoveredAdvances] = await Promise.all([
+    prisma.upEmployeeAttendance.findMany({
+      where: {
+        employeeId: employee.id,
+        date: { gte: startDate, lte: endDate },
+      },
+    }),
+    prisma.upEmployeeAdvance.findMany({
+      where: {
+        employeeId: employee.id,
+        recoveryMonth: month,
+        recoveryYear: year,
+        isRecovered: false,
+      },
+    }),
+    prisma.upEmployeeDeduction.findMany({
+      where: {
+        employeeId: employee.id,
+        applyMonth: month,
+        applyYear: year,
+        isApplied: false,
+      },
+    }),
+    prisma.upEmployeePayrollRun.findUnique({
+      where: {
+        employeeId_year_month: {
+          employeeId: employee.id,
+          year,
+          month,
+        },
+      },
+    }),
+    prisma.upEmployeeAdvance.findMany({
+      where: {
+        employeeId: employee.id,
+        isRecovered: false,
+      },
+      orderBy: [{ advanceDate: 'asc' }, { createdAt: 'desc' }],
+    }),
+  ]);
+
+  const allRelevantAdvances = await prisma.upEmployeeAdvance.findMany({
+    where: {
+      employeeId: employee.id,
+      OR: [
+        { isRecovered: false },
+        ...(existingRun ? [{ payrollRunId: existingRun.id }] : []),
+      ],
+    },
+    orderBy: [{ advanceDate: 'asc' }, { createdAt: 'desc' }],
+  });
+
+  let presentDays = 0;
+  let doubleDutyDays = 0;
+  let clDays = 0;
+  let elDays = 0;
+  let halfDays = 0;
+  let holidayDays = 0;
+  let approvedSundays = 0;
+  let overtimeHours = 0;
+
+  for (const att of attendances) {
+    overtimeHours += Number(att.overtimeHours || 0);
+    if (att.isSunday) {
+      if (att.isSundayOverride) approvedSundays++;
+      continue;
+    }
+    switch (att.status) {
+      case 'DOUBLE_DUTY':
+        doubleDutyDays++;
+        break;
+      case 'PRESENT':
+        presentDays++;
+        break;
+      case 'CL':
+        clDays++;
+        break;
+      case 'EL':
+        elDays++;
+        break;
+      case 'HALF_DAY':
+        halfDays++;
+        break;
+      case 'HOLIDAY':
+        holidayDays++;
+        break;
+    }
+  }
+
+  const regularPayableDays = presentDays + clDays + elDays + holidayDays + 0.5 * halfDays + doubleDutyDays;
+  const advanceDeduction = advances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+  const otherDeductions = deductions.reduce((sum, d) => sum + Number(d.amount || 0), 0);
+  const totalPendingAdvance = allUnrecoveredAdvances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+
+  const initialDeduction = existingRun?.advanceDeduction !== undefined
+    ? Number(existingRun.advanceDeduction)
+    : advanceDeduction;
+
+  return {
+    employeeId: employee.id,
+    employeeName: employee.name,
+    month,
+    year,
+    monthlyCtc: Number(employee.monthlyCtc || 0),
+    standardPayableDays,
+    standardWorkingHours,
+    regularPayableDays,
+    additionalSundayDutyCredits: approvedSundays,
+    additionalDoubleDutyCredits: doubleDutyDays,
+    approvedOvertimeHours: overtimeHours,
+    overtimeMultiplier: existingRun?.overtimeMultiplier ? Number(existingRun.overtimeMultiplier) : 1.0,
+    partialDeductions: initialDeduction + otherDeductions,
+    totalPendingAdvance,
+    monthScheduledAdvance: initialDeduction,
+    pendingAdvancesCount: allRelevantAdvances.length,
+    pendingAdvancesList: allRelevantAdvances.map((a) => ({
+      id: a.id,
+      amount: Number(a.amount),
+      originalAmount: a.originalAmount ? Number(a.originalAmount) : Number(a.amount),
+      reason: a.reason,
+      recoveryMonth: a.recoveryMonth,
+      recoveryYear: a.recoveryYear,
+      advanceDate: a.advanceDate,
+      isRecovered: a.isRecovered,
+      isDeductedInThisRun: existingRun ? a.payrollRunId === existingRun.id : false,
+    })),
+    additionalAllowances: existingRun?.additionalAllowances ? Number(existingRun.additionalAllowances) : 0,
+  };
+}
+
+export async function simulateUpSalaryCalculation(
+  input: SimulateUpSalaryCalculationInput,
+  actorId?: string
+) {
+  const {
+    employeeId,
+    month,
+    year,
+    monthlyCtc,
+    standardPayableDays,
+    standardWorkingHours,
+    regularPayableDays,
+    additionalSundayDutyCredits,
+    additionalDoubleDutyCredits,
+    approvedOvertimeHours,
+    overtimeMultiplier,
+    partialDeductions,
+    additionalAllowances,
+    saveToPayroll,
+  } = input;
+
+  const perDaySalaryRaw = standardPayableDays > 0 ? monthlyCtc / standardPayableDays : 0;
+  const perHourSalaryRaw = standardWorkingHours > 0 ? perDaySalaryRaw / standardWorkingHours : 0;
+  const totalPayableDayEquivalents = regularPayableDays + additionalSundayDutyCredits + additionalDoubleDutyCredits;
+  const basePayableSalaryRaw = totalPayableDayEquivalents * perDaySalaryRaw;
+  const overtimePayRaw = approvedOvertimeHours * perHourSalaryRaw * overtimeMultiplier;
+  const grossEarningsRaw = basePayableSalaryRaw + overtimePayRaw + additionalAllowances;
+  const finalPayableSalaryRaw = Math.max(0, grossEarningsRaw - partialDeductions);
+
+  const perDaySalary = Number(perDaySalaryRaw.toFixed(2));
+  const perHourSalary = Number(perHourSalaryRaw.toFixed(2));
+  const basePayableSalary = Number(basePayableSalaryRaw.toFixed(2));
+  const overtimePay = Number(overtimePayRaw.toFixed(2));
+  const grossEarnings = Number((basePayableSalary + overtimePay + additionalAllowances).toFixed(2));
+  const finalPayableSalary = Math.max(0, Number((grossEarnings - partialDeductions).toFixed(2)));
+
+  const calculationHistory = buildSalaryCalculationHistory({
+    monthlyCtc,
+    standardPayableDays,
+    standardWorkingHours,
+    perDayRate: perDaySalaryRaw,
+    perHourRate: perHourSalaryRaw,
+    regularPayableDays,
+    additionalSundayDutyCredits,
+    additionalDoubleDutyCredits,
+    totalPayableDayEquivalents,
+    basePayableSalary: basePayableSalaryRaw,
+    approvedOvertimeHours,
+    overtimeMultiplier,
+    overtimePay: overtimePayRaw,
+    additionalAllowances,
+    grossSalary: grossEarnings,
+    totalDeductions: partialDeductions,
+    finalPayableSalary,
+  });
+
+  const breakdown = {
+    monthlySalaryBase: monthlyCtc,
+    standardPayableDays,
+    payableDays: standardPayableDays,
+    paidDays: totalPayableDayEquivalents,
+    perDaySalary,
+    perHourSalary,
+    regularPayableAttendance: regularPayableDays,
+    additionalSundayDutyCredit: additionalSundayDutyCredits,
+    additionalDoubleDutyCredit: additionalDoubleDutyCredits,
+    totalPayableDayEquivalents,
+    basePayableSalary,
+    approvedOvertimeHours,
+    overtimeMultiplier,
+    overtimePay,
+    additionalEarnings: additionalAllowances,
+    partialDeductions,
+    grossEarnings,
+    finalPayableSalary,
+    raw: {
+      perDaySalary: perDaySalaryRaw,
+      perHourSalary: perHourSalaryRaw,
+      basePayableSalary: basePayableSalaryRaw,
+      overtimePay: overtimePayRaw,
+      grossEarnings: grossEarningsRaw,
+      finalPayableSalary: finalPayableSalaryRaw,
+    },
+    calculationHistory,
+  };
+
+  if (saveToPayroll && employeeId) {
+    const employee = await prisma.upEmployee.findUnique({ where: { id: employeeId } });
+    if (!employee) throw new Error('UP Factory employee not found to save payroll run');
+
+    const totalCalendarDays = getDaysInMonth(year, month);
+    const sundaysCount = countSundaysInMonth(year, month);
+
+    const savedRun = await prisma.upEmployeePayrollRun.upsert({
+      where: {
+        employeeId_year_month: {
+          employeeId,
+          year,
+          month,
+        },
+      },
+      create: {
+        employeeId,
+        year,
+        month,
+        monthlyCtc: new Prisma.Decimal(monthlyCtc),
+        totalCalendarDays,
+        sundaysCount,
+        approvedSundays: additionalSundayDutyCredits,
+        payableDays: new Prisma.Decimal(standardPayableDays),
+        perDayRate: new Prisma.Decimal(perDaySalary),
+        presentDays: new Prisma.Decimal(regularPayableDays),
+        doubleDutyDays: new Prisma.Decimal(additionalDoubleDutyCredits),
+        clDays: new Prisma.Decimal(0),
+        elDays: new Prisma.Decimal(0),
+        halfDays: new Prisma.Decimal(0),
+        unpaidDays: new Prisma.Decimal(Math.max(0, standardPayableDays - regularPayableDays)),
+        holidayDays: new Prisma.Decimal(0),
+        paidDays: new Prisma.Decimal(totalPayableDayEquivalents),
+        overtimeHours: new Prisma.Decimal(approvedOvertimeHours),
+        overtimeRate: new Prisma.Decimal(perHourSalary),
+        overtimeMultiplier: new Prisma.Decimal(overtimeMultiplier),
+        overtimePay: new Prisma.Decimal(overtimePay),
+        workingHoursPerDay: new Prisma.Decimal(standardWorkingHours),
+        additionalAllowances: new Prisma.Decimal(additionalAllowances),
+        grossSalary: new Prisma.Decimal(grossEarnings),
+        advanceDeduction: new Prisma.Decimal(partialDeductions),
+        otherDeductions: new Prisma.Decimal(0),
+        netSalary: new Prisma.Decimal(finalPayableSalary),
+        status: 'DRAFT',
+        calculationHistory: calculationHistory as any,
+        createdById: actorId || null,
+      },
+      update: {
+        monthlyCtc: new Prisma.Decimal(monthlyCtc),
+        payableDays: new Prisma.Decimal(standardPayableDays),
+        perDayRate: new Prisma.Decimal(perDaySalary),
+        presentDays: new Prisma.Decimal(regularPayableDays),
+        doubleDutyDays: new Prisma.Decimal(additionalDoubleDutyCredits),
+        approvedSundays: additionalSundayDutyCredits,
+        paidDays: new Prisma.Decimal(totalPayableDayEquivalents),
+        overtimeHours: new Prisma.Decimal(approvedOvertimeHours),
+        overtimeRate: new Prisma.Decimal(perHourSalary),
+        overtimeMultiplier: new Prisma.Decimal(overtimeMultiplier),
+        overtimePay: new Prisma.Decimal(overtimePay),
+        additionalAllowances: new Prisma.Decimal(additionalAllowances),
+        grossSalary: new Prisma.Decimal(grossEarnings),
+        advanceDeduction: new Prisma.Decimal(partialDeductions),
+        netSalary: new Prisma.Decimal(finalPayableSalary),
+        calculationHistory: calculationHistory as any,
+      },
+    });
+
+    return { ...breakdown, savedPayrollRun: savedRun };
+  }
+
+  return breakdown;
+}
+
+// ─── PDF & Email Reports ──────────────────────────────────────────────────────
+export async function getUpMonthlyAttendanceReportPdfBuffer(params: {
+  month: number;
+  year: number;
+  workerOnly?: boolean;
+  department?: string;
+  generatedByName?: string;
+}): Promise<{ buffer: Buffer; filename: string }> {
+  const { month, year, workerOnly, department, generatedByName } = params;
+  const totalCalendarDays = getDaysInMonth(year, month);
+  const sundaysCount = countSundaysInMonth(year, month);
+  const workingDays = Math.max(0, totalCalendarDays - sundaysCount);
+
+  const startDate = new Date(year, month - 1, 1);
+  const endDate = new Date(year, month - 1, totalCalendarDays);
+
+  const empWhere: Prisma.UpEmployeeWhereInput = { status: 'ACTIVE' };
+  if (workerOnly) empWhere.workerType = { in: ['DAILY_WAGE', 'CONTRACT', 'MONTHLY'] };
+  if (department && department !== 'All Departments') empWhere.department = department;
+
+  const employees = await prisma.upEmployee.findMany({
+    where: empWhere,
+    orderBy: [{ department: 'asc' }, { name: 'asc' }],
+    include: {
+      attendances: {
+        where: { date: { gte: startDate, lte: endDate } },
+      },
+      payrollRuns: {
+        where: { month, year },
+      },
+      advances: {
+        where: { recoveryMonth: month, recoveryYear: year, isRecovered: false },
+      },
+      deductions: {
+        where: { applyMonth: month, applyYear: year, isApplied: false },
+      },
+    },
+  });
+
+  const items: MonthlyAttendanceReportEmployeeItem[] = employees.map((emp) => {
+    const attMap = new Map<number, (typeof emp.attendances)[0]>();
+    emp.attendances.forEach((a) => {
+      const d = new Date(a.date).getDate();
+      attMap.set(d, a);
+    });
+
+    let presentDays = 0;
+    let doubleDutyDays = 0;
+    let halfDays = 0;
+    let holidayDays = 0;
+    let paidLeaveDays = 0;
+    let unpaidDays = 0;
+    let approvedSundays = 0;
+    let overtimeHours = 0;
+
+    const dailyAttendance: DailyAttendanceStatus[] = [];
+    for (let day = 1; day <= totalCalendarDays; day++) {
+      const curDate = new Date(year, month - 1, day);
+      const isSunday = curDate.getDay() === 0;
+      const rec = attMap.get(day);
+
+      let code = '-';
+      if (isSunday) {
+        if (rec && rec.isSundayOverride) {
+          code = 'SW';
+          approvedSundays++;
+        } else {
+          code = 'WO';
+        }
+      } else if (rec) {
+        switch (rec.status) {
+          case 'PRESENT': code = 'P'; presentDays++; break;
+          case 'DOUBLE_DUTY': code = 'DD'; doubleDutyDays++; break;
+          case 'HALF_DAY': code = 'HD'; halfDays++; break;
+          case 'HOLIDAY': code = 'H'; holidayDays++; break;
+          case 'CL': code = 'CL'; paidLeaveDays++; break;
+          case 'EL': code = 'EL'; paidLeaveDays++; break;
+          case 'UL': code = 'A'; unpaidDays++; break;
+          case 'LEAVE': code = 'A'; unpaidDays++; break;
+          default: code = 'P'; presentDays++; break;
+        }
+      } else {
+        code = 'A';
+        unpaidDays++;
+      }
+
+      if (rec?.overtimeHours) overtimeHours += Number(rec.overtimeHours);
+
+      dailyAttendance.push({
+        day,
+        code,
+        isSunday,
+        isSundayOverride: rec?.isSundayOverride,
+        overtimeHours: rec ? Number(rec.overtimeHours) : 0,
+      });
+    }
+
+    const run = emp.payrollRuns[0];
+    const monthlyCtc = Number(emp.monthlyCtc || 0);
+    const perDayRate = workingDays > 0 ? Math.round((monthlyCtc / workingDays) * 100) / 100 : 0;
+    const paidDays = presentDays + doubleDutyDays + holidayDays + paidLeaveDays + 0.5 * halfDays + approvedSundays;
+
+    const advanceAmount = emp.advances.reduce((s, a) => s + Number(a.amount || 0), 0);
+    const deductionAmount = emp.deductions.reduce((s, d) => s + Number(d.amount || 0), 0);
+
+    return {
+      employeeId: emp.employeeId,
+      name: emp.name,
+      department: emp.department,
+      designation: emp.designation,
+      monthlyCtc,
+      perDayRate,
+      dailyAttendance,
+      presentDays,
+      doubleDutyDays,
+      halfDays,
+      holidayDays,
+      paidLeaveDays,
+      unpaidDays,
+      approvedSundays,
+      paidDays,
+      payableDays: workingDays,
+      overtimeHours,
+      overtimePay: run ? Number(run.overtimePay || 0) : 0,
+      advanceAmount: run ? Number(run.advanceDeduction || 0) : advanceAmount,
+      deductionAmount: run ? Number(run.otherDeductions || 0) : deductionAmount,
+      grossSalary: run ? Number(run.grossSalary || 0) : Math.round(paidDays * perDayRate),
+      netSalary: run ? Number(run.netSalary || 0) : Math.max(0, Math.round(paidDays * perDayRate - advanceAmount - deductionAmount)),
+    };
+  });
+
+  const reportData: MonthlyAttendanceReportData = {
+    month,
+    year,
+    totalCalendarDays,
+    sundaysCount,
+    workingDays,
+    filterLabel: department ? `UP Factory • ${department}` : 'UP Factory • All Workforce',
+    generatedAt: new Date(),
+    generatedByName: generatedByName || 'UP Factory Super Admin',
+    items,
+  };
+
+  const buffer = await generateMonthlyAttendanceReportPdf(reportData);
+  const filename = `UP_Factory_Attendance_Register_${month}_${year}.pdf`;
+  return { buffer, filename };
+}
+
+export async function getUpPayslipPdfBuffer(payrollRunId: string): Promise<{ buffer: Buffer; filename: string }> {
+  const run = await prisma.upEmployeePayrollRun.findUnique({
+    where: { id: payrollRunId },
+    include: { employee: true },
+  });
+  if (!run) throw new Error('UP Factory payroll run record not found');
+
+  const buffer = await generateEmployeePayslipPdf({
+    payrollRun: {
+      ...run,
+      monthlyCtc: run.monthlyCtc.toString(),
+      payableDays: run.payableDays.toString(),
+      perDayRate: run.perDayRate.toString(),
+      presentDays: run.presentDays.toString(),
+      doubleDutyDays: run.doubleDutyDays ? run.doubleDutyDays.toString() : '0',
+      clDays: run.clDays.toString(),
+      elDays: run.elDays.toString(),
+      halfDays: run.halfDays.toString(),
+      unpaidDays: run.unpaidDays.toString(),
+      holidayDays: run.holidayDays ? run.holidayDays.toString() : '0',
+      paidDays: run.paidDays.toString(),
+      overtimeHours: run.overtimeHours.toString(),
+      overtimeRate: run.overtimeRate.toString(),
+      overtimePay: run.overtimePay.toString(),
+      grossSalary: run.grossSalary.toString(),
+      advanceDeduction: run.advanceDeduction.toString(),
+      otherDeductions: run.otherDeductions.toString(),
+      netSalary: run.netSalary.toString(),
+    },
+    employee: {
+      ...run.employee,
+      department: `UP Factory - ${run.employee.department}`,
+      pan: run.employee.governmentIdType === 'PAN' ? run.employee.governmentIdNumber : null,
+      aadhaar: run.employee.governmentIdType === 'AADHAAR' ? run.employee.governmentIdNumber : null,
+    } as any,
+  });
+
+  const filename = `UP_Factory_Payslip_${run.employee.employeeId}_${run.month}_${run.year}.pdf`;
+  return { buffer, filename };
+}
+
+export async function dispatchUpPayslipEmail(payrollRunId: string, recipientEmail?: string): Promise<boolean> {
+  const run = await prisma.upEmployeePayrollRun.findUnique({
+    where: { id: payrollRunId },
+    include: { employee: true },
+  });
+  if (!run) throw new Error('UP Factory payroll run not found');
+
+  const toEmail = recipientEmail || run.employee.email;
+  if (!toEmail || toEmail.endsWith('@upfactory.prc')) {
+    logger.info(`[UP Payroll] Skipping email dispatch for ${run.employee.name} (${run.employee.employeeId}): no valid external email configured.`);
+    return false;
+  }
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+  const period = `${monthNames[run.month - 1]} ${run.year}`;
+
+  try {
+    const { buffer, filename } = await getUpPayslipPdfBuffer(payrollRunId);
+
+    const emailHtml = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+        <div style="background: #0f172a; padding: 24px; text-align: center;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">PACIFIC PRODUCTS & SOLUTIONS</h1>
+          <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 12px;">UP Factory Division • Compensation Advice</p>
+        </div>
+        <div style="padding: 24px;">
+          <p style="font-size: 15px; color: #1e293b; margin-top: 0;">Dear <strong>${run.employee.name}</strong>,</p>
+          <p style="font-size: 14px; color: #475569; line-height: 1.5;">Please find attached your salary payslip for <strong>${period}</strong>.</p>
+          <div style="background: #f1f5f9; border-radius: 6px; padding: 16px; margin: 20px 0;">
+            <p style="margin: 0; font-size: 14px; font-weight: 700; color: #0f172a;">Net Disbursed: ₹${Number(run.netSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    await sendMail({
+      to: toEmail,
+      subject: `UP Factory Salary Payslip - ${period} - ${run.employee.name} (${run.employee.employeeId})`,
+      html: emailHtml,
+      attachments: [{ filename, content: buffer, contentType: 'application/pdf' }],
+    });
+
+    return true;
+  } catch (err: any) {
+    logger.warn(`[UP Payroll] Email dispatch failed for ${payrollRunId}: ${err?.message || err}`);
+    return false;
+  }
+}
+
+// ─── UP Factory Conveyance & Travel Expenses ──────────────────────────────────
+export async function generateUpConveyanceVoucherNumber(date = new Date()): Promise<string> {
+  const ym = getYearMonthString(date.getFullYear(), date.getMonth() + 1);
+  const count = await prisma.upEmployeeConveyanceExpense.count({
+    where: { voucherNumber: { startsWith: `UPCV-${ym}` } },
+  });
+  return `UPCV-${ym}-${String(count + 1).padStart(3, '0')}`;
+}
+
+export async function createUpConveyanceExpense(data: CreateUpConveyanceExpenseInput, userId?: string) {
+  const employee = await prisma.upEmployee.findUnique({
+    where: { id: data.employeeId },
+    select: { id: true, name: true, employeeId: true },
+  });
+  if (!employee) throw new Error(`UP Employee with ID ${data.employeeId} not found`);
+
+  const voucherNumber = await generateUpConveyanceVoucherNumber(new Date(data.visitDate));
+
+  return prisma.upEmployeeConveyanceExpense.create({
+    data: {
+      voucherNumber,
+      employeeId: data.employeeId,
+      visitDate: new Date(data.visitDate),
+      siteName: data.siteName.trim(),
+      siteAddress: data.siteAddress?.trim() || null,
+      clientName: data.clientName?.trim() || null,
+      purpose: data.purpose as any,
+      category: data.category as any,
+      amount: new Prisma.Decimal(data.amount),
+      paymentMode: data.paymentMode as any,
+      status: 'PENDING',
+      startLocation: data.startLocation?.trim() || null,
+      endLocation: data.endLocation?.trim() || null,
+      transportMode: data.transportMode?.trim() || null,
+      distanceKm: data.distanceKm !== undefined && data.distanceKm !== null ? new Prisma.Decimal(data.distanceKm) : null,
+      ratePerKm: data.ratePerKm !== undefined && data.ratePerKm !== null ? new Prisma.Decimal(data.ratePerKm) : null,
+      calculatedFare: data.calculatedFare !== undefined && data.calculatedFare !== null ? new Prisma.Decimal(data.calculatedFare) : null,
+      receiptUrl: data.receiptUrl || null,
+      receiptFilename: data.receiptFilename || null,
+      notes: data.notes?.trim() || null,
+      branch: data.branch || 'UP',
+      projectName: data.projectName?.trim() || null,
+      remarks: data.remarks?.trim() || null,
+      createdById: userId || null,
+    },
+    include: {
+      employee: {
+        select: { id: true, employeeId: true, name: true, department: true, designation: true },
+      },
+    },
+  });
+}
+
+export async function listUpConveyanceExpenses(query: ListUpConveyanceExpensesQuery) {
+  const {
+    page = 1,
+    limit = 20,
+    employeeId,
+    category,
+    purpose,
+    status,
+    paymentMode,
+    startDate,
+    endDate,
+    search,
+  } = query;
+
+  const skip = (page - 1) * limit;
+  const where: Prisma.UpEmployeeConveyanceExpenseWhereInput = {};
+
+  if (employeeId) where.employeeId = employeeId;
+  if (category) where.category = category as any;
+  if (purpose) where.purpose = purpose as any;
+  if (status) where.status = status as any;
+  if (paymentMode) where.paymentMode = paymentMode as any;
+
+  if (startDate || endDate) {
+    where.visitDate = {};
+    if (startDate) where.visitDate.gte = new Date(startDate);
+    if (endDate) where.visitDate.lte = new Date(endDate);
+  }
+
+  if (search) {
+    where.OR = [
+      { siteName: { contains: search, mode: 'insensitive' } },
+      { voucherNumber: { contains: search, mode: 'insensitive' } },
+      { clientName: { contains: search, mode: 'insensitive' } },
+      { employee: { name: { contains: search, mode: 'insensitive' } } },
+      { employee: { employeeId: { contains: search, mode: 'insensitive' } } },
+    ];
+  }
+
+  const [total, items, agg] = await Promise.all([
+    prisma.upEmployeeConveyanceExpense.count({ where }),
+    prisma.upEmployeeConveyanceExpense.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { visitDate: 'desc' },
+      include: {
+        employee: {
+          select: { id: true, employeeId: true, name: true, department: true, designation: true },
+        },
+      },
+    }),
+    prisma.upEmployeeConveyanceExpense.findMany({
+      where,
+      select: { amount: true, status: true, category: true },
+    }),
+  ]);
+
+  let totalClaimedAmount = 0;
+  let totalApprovedAmount = 0;
+  let totalPendingAmount = 0;
+  let totalReimbursedAmount = 0;
+  let petrolAmount = 0;
+  let garivaraAmount = 0;
+  let materialShiftingAmount = 0;
+  let otherAmount = 0;
+
+  for (const item of agg) {
+    const amt = Number(item.amount || 0);
+    totalClaimedAmount += amt;
+    if (item.status === 'APPROVED') totalApprovedAmount += amt;
+    if (item.status === 'PENDING') totalPendingAmount += amt;
+    if (item.status === 'REIMBURSED') totalReimbursedAmount += amt;
+
+    if (item.category === 'PETROL') petrolAmount += amt;
+    else if (item.category === 'GARIVARA') garivaraAmount += amt;
+    else if (item.category === 'MATERIAL_SHIFTING') materialShiftingAmount += amt;
+    else otherAmount += amt;
+  }
+
+  return {
+    items,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    },
+    summary: {
+      totalCount: total,
+      totalClaimedAmount,
+      totalApprovedAmount,
+      totalPendingAmount,
+      totalReimbursedAmount,
+      petrolAmount,
+      garivaraAmount,
+      materialShiftingAmount,
+      otherAmount,
+    },
+  };
+}
+
+export async function getUpConveyanceExpense(id: string) {
+  const expense = await prisma.upEmployeeConveyanceExpense.findUnique({
+    where: { id },
+    include: {
+      employee: {
+        select: { id: true, employeeId: true, name: true, department: true, designation: true, phone: true },
+      },
+    },
+  });
+  if (!expense) throw new Error(`Conveyance expense record ${id} not found`);
+  return expense;
+}
+
+export async function updateUpConveyanceExpense(id: string, data: UpdateUpConveyanceExpenseInput) {
+  const updateData: Prisma.UpEmployeeConveyanceExpenseUpdateInput = {};
+  if (data.siteName) updateData.siteName = data.siteName.trim();
+  if (data.siteAddress !== undefined) updateData.siteAddress = data.siteAddress?.trim() || null;
+  if (data.clientName !== undefined) updateData.clientName = data.clientName?.trim() || null;
+  if (data.purpose) updateData.purpose = data.purpose as any;
+  if (data.category) updateData.category = data.category as any;
+  if (data.amount !== undefined) updateData.amount = new Prisma.Decimal(data.amount);
+  if (data.paymentMode) updateData.paymentMode = data.paymentMode as any;
+  if (data.startLocation !== undefined) updateData.startLocation = data.startLocation?.trim() || null;
+  if (data.endLocation !== undefined) updateData.endLocation = data.endLocation?.trim() || null;
+  if (data.transportMode !== undefined) updateData.transportMode = data.transportMode?.trim() || null;
+  if (data.distanceKm !== undefined) updateData.distanceKm = data.distanceKm !== null ? new Prisma.Decimal(data.distanceKm) : null;
+  if (data.ratePerKm !== undefined) updateData.ratePerKm = data.ratePerKm !== null ? new Prisma.Decimal(data.ratePerKm) : null;
+  if (data.calculatedFare !== undefined) updateData.calculatedFare = data.calculatedFare !== null ? new Prisma.Decimal(data.calculatedFare) : null;
+  if (data.receiptUrl !== undefined) updateData.receiptUrl = data.receiptUrl;
+  if (data.receiptFilename !== undefined) updateData.receiptFilename = data.receiptFilename;
+  if (data.notes !== undefined) updateData.notes = data.notes?.trim() || null;
+  if (data.remarks !== undefined) updateData.remarks = data.remarks?.trim() || null;
+
+  return prisma.upEmployeeConveyanceExpense.update({
+    where: { id },
+    data: updateData,
+    include: {
+      employee: {
+        select: { id: true, employeeId: true, name: true, department: true, designation: true },
+      },
+    },
+  });
+}
+
+export async function deleteUpConveyanceExpense(id: string) {
+  await prisma.upEmployeeConveyanceExpense.delete({ where: { id } });
+  return { deleted: true };
+}
+
+export async function approveUpConveyanceExpense(id: string, notes?: string, userId?: string) {
+  return prisma.upEmployeeConveyanceExpense.update({
+    where: { id },
+    data: {
+      status: 'APPROVED',
+      approvedById: userId || null,
+      remarks: notes?.trim() || null,
+    },
+    include: {
+      employee: {
+        select: { id: true, employeeId: true, name: true, department: true, designation: true },
+      },
+    },
+  });
+}
+
+export async function rejectUpConveyanceExpense(id: string, reason: string, userId?: string) {
+  return prisma.upEmployeeConveyanceExpense.update({
+    where: { id },
+    data: {
+      status: 'REJECTED',
+      approvedById: userId || null,
+      rejectionReason: reason.trim(),
+    },
+    include: {
+      employee: {
+        select: { id: true, employeeId: true, name: true, department: true, designation: true },
+      },
+    },
+  });
+}
+
+export async function settleUpConveyanceExpense(
+  id: string,
+  data: { paymentRef: string; reimbursedAmount?: number },
+  userId?: string
+) {
+  return prisma.upEmployeeConveyanceExpense.update({
+    where: { id },
+    data: {
+      status: 'REIMBURSED',
+      settledById: userId || null,
+      settledDate: new Date(),
+      settledReference: data.paymentRef.trim(),
+    },
+    include: {
+      employee: {
+        select: { id: true, employeeId: true, name: true, department: true, designation: true },
+      },
+    },
   });
 }
