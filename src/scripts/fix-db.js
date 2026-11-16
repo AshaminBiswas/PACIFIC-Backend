@@ -1585,6 +1585,14 @@ async function run() {
         CREATE INDEX IF NOT EXISTS idx_up_employees_dept ON up_employees(department);
         CREATE INDEX IF NOT EXISTS idx_up_employees_status ON up_employees(status);
 
+        ALTER TABLE up_employees ADD COLUMN IF NOT EXISTS gender VARCHAR(20) DEFAULT 'MALE';
+        ALTER TABLE up_employees ADD COLUMN IF NOT EXISTS whatsapp_no VARCHAR(20);
+        ALTER TABLE up_employees ADD COLUMN IF NOT EXISTS photo_url TEXT;
+
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS gender VARCHAR(20) DEFAULT 'MALE';
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS whatsapp_no VARCHAR(20);
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS photo_url TEXT;
+
         CREATE TABLE IF NOT EXISTS up_employee_attendances (
           id TEXT PRIMARY KEY,
           employee_id TEXT NOT NULL REFERENCES up_employees(id) ON DELETE CASCADE,

@@ -3044,6 +3044,9 @@ model Employee {
   name               String
   email              String           @unique
   phone              String
+  whatsappNo         String?          @map("whatsapp_no")
+  gender             String?          @default("MALE")
+  photoUrl           String?          @map("photo_url") @db.Text
   address            String           @db.Text
   governmentIdType   GovernmentIdType @map("government_id_type")
   governmentIdNumber String           @map("government_id_number")
@@ -3431,6 +3434,9 @@ model UpEmployee {
   name               String
   email              String?                    @unique
   phone              String
+  whatsappNo         String?                    @map("whatsapp_no")
+  gender             String?                    @default("MALE")
+  photoUrl           String?                    @map("photo_url") @db.Text
   address            String                     @db.Text
   governmentIdType   GovernmentIdType           @default(AADHAAR) @map("government_id_type")
   governmentIdNumber String                     @map("government_id_number")

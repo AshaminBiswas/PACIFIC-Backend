@@ -98,6 +98,9 @@ export async function createUpEmployee(data: CreateUpEmployeeInput, _createdById
       name: data.name.trim(),
       email: finalEmail,
       phone: cleanPhone,
+      whatsappNo: data.whatsappNo ? data.whatsappNo.replace(/[\s-]/g, '').trim() : cleanPhone,
+      gender: data.gender ? data.gender.trim().toUpperCase() : 'MALE',
+      photoUrl: data.photoUrl?.trim() || null,
       address: data.address.trim(),
       governmentIdType: data.governmentIdType as any,
       governmentIdNumber: data.governmentIdNumber.trim().toUpperCase(),
@@ -135,6 +138,9 @@ export async function updateUpEmployee(id: string, data: UpdateUpEmployeeInput) 
   if (data.name !== undefined) updateData.name = data.name.trim();
   if (data.email !== undefined && data.email !== null) updateData.email = data.email.trim().toLowerCase();
   if (data.phone !== undefined) updateData.phone = data.phone.replace(/[\s-]/g, '').trim();
+  if (data.whatsappNo !== undefined) updateData.whatsappNo = data.whatsappNo ? data.whatsappNo.replace(/[\s-]/g, '').trim() : null;
+  if (data.gender !== undefined) updateData.gender = data.gender ? data.gender.trim().toUpperCase() : 'MALE';
+  if (data.photoUrl !== undefined) updateData.photoUrl = data.photoUrl?.trim() || null;
   if (data.address !== undefined) updateData.address = data.address.trim();
   if (data.governmentIdType !== undefined) updateData.governmentIdType = data.governmentIdType;
   if (data.governmentIdNumber !== undefined) updateData.governmentIdNumber = data.governmentIdNumber.trim().toUpperCase();
