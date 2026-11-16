@@ -186,8 +186,11 @@ export async function getUpEmployee(id: string) {
 }
 
 export async function listUpEmployees(query: ListUpEmployeesQuery) {
-  const { page = 1, limit = 50, search, department, designation, status, workerType, paymentMode } = query;
+  const page = Math.max(1, parseInt(String(query.page || 1), 10) || 1);
+  const limit = Math.max(1, parseInt(String(query.limit || 50), 10) || 50);
   const skip = (page - 1) * limit;
+
+  const { search, department, designation, status, workerType, paymentMode } = query;
 
   const where: Prisma.UpEmployeeWhereInput = {};
 
@@ -416,7 +419,9 @@ export async function batchRecordUpAttendance(data: BatchUpAttendanceInput, mark
 }
 
 export async function listUpAttendance(query: ListUpAttendanceQuery) {
-  const { month, year, employeeId } = query;
+  const month = parseInt(String(query.month), 10);
+  const year = parseInt(String(query.year), 10);
+  const employeeId = query.employeeId;
   const startDate = new Date(year, month - 1, 1);
   const endDate = new Date(year, month, 0, 23, 59, 59, 999);
 
@@ -544,7 +549,9 @@ export async function recoverUpAdvance(id: string) {
 }
 
 export async function listUpAdvances(query: ListUpAdvancesQuery) {
-  const { employeeId, status = 'PENDING', recoveryMonth, recoveryYear } = query;
+  const { employeeId, status = 'PENDING' } = query;
+  const recoveryMonth = query.recoveryMonth ? parseInt(String(query.recoveryMonth), 10) : undefined;
+  const recoveryYear = query.recoveryYear ? parseInt(String(query.recoveryYear), 10) : undefined;
   const where: Prisma.UpEmployeeAdvanceWhereInput = {};
 
   if (employeeId) where.employeeId = employeeId;
@@ -606,7 +613,9 @@ export async function createUpDeduction(data: CreateUpDeductionInput, createdByI
 }
 
 export async function listUpDeductions(query: ListUpDeductionsQuery) {
-  const { employeeId, applyMonth, applyYear, isApplied } = query;
+  const { employeeId, isApplied } = query;
+  const applyMonth = query.applyMonth ? parseInt(String(query.applyMonth), 10) : undefined;
+  const applyYear = query.applyYear ? parseInt(String(query.applyYear), 10) : undefined;
   const where: Prisma.UpEmployeeDeductionWhereInput = {};
 
   if (employeeId) where.employeeId = employeeId;
@@ -925,7 +934,10 @@ export async function markUpPayrollPaid(id: string, data: MarkUpPayrollPaidInput
 }
 
 export async function listUpPayroll(query: ListUpPayrollQuery) {
-  const { month, year, status = 'ALL', employeeId } = query;
+  const month = parseInt(String(query.month), 10);
+  const year = parseInt(String(query.year), 10);
+  const status = query.status || 'ALL';
+  const employeeId = query.employeeId;
   const where: Prisma.UpEmployeePayrollRunWhereInput = {
     month,
     year,

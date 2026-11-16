@@ -16,7 +16,18 @@ export const getStatsHandler = async (req: AuthRequest, res: Response, next: Nex
 // ─── 2. Master Employees CRUD ─────────────────────────────────────────────────
 export const listEmployeesHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const data = await service.listUpEmployees(req.query as any);
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+    const limit = Math.max(1, Math.min(500, parseInt(String(req.query.limit || '50'), 10) || 50));
+    const data = await service.listUpEmployees({
+      page,
+      limit,
+      search: req.query.search as string | undefined,
+      department: req.query.department as string | undefined,
+      designation: req.query.designation as string | undefined,
+      status: req.query.status as string | undefined,
+      workerType: req.query.workerType as string | undefined,
+      paymentMode: req.query.paymentMode as string | undefined,
+    });
     sendSuccess(res, data, 'UP Factory employees retrieved successfully');
   } catch (err) {
     next(err);
@@ -108,7 +119,12 @@ export const deleteAttendanceHandler = async (req: AuthRequest, res: Response, n
 // ─── 4. Advances Handlers ─────────────────────────────────────────────────────
 export const listAdvancesHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const data = await service.listUpAdvances(req.query as any);
+    const data = await service.listUpAdvances({
+      employeeId: req.query.employeeId as string | undefined,
+      status: (req.query.status as any) || 'PENDING',
+      recoveryMonth: req.query.recoveryMonth ? parseInt(String(req.query.recoveryMonth), 10) : undefined,
+      recoveryYear: req.query.recoveryYear ? parseInt(String(req.query.recoveryYear), 10) : undefined,
+    });
     sendSuccess(res, data, 'UP Factory advances retrieved successfully');
   } catch (err) {
     next(err);
@@ -154,7 +170,12 @@ export const recoverAdvanceHandler = async (req: AuthRequest, res: Response, nex
 // ─── 5. Deductions Handlers ───────────────────────────────────────────────────
 export const listDeductionsHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const data = await service.listUpDeductions(req.query as any);
+    const data = await service.listUpDeductions({
+      employeeId: req.query.employeeId as string | undefined,
+      applyMonth: req.query.applyMonth ? parseInt(String(req.query.applyMonth), 10) : undefined,
+      applyYear: req.query.applyYear ? parseInt(String(req.query.applyYear), 10) : undefined,
+      isApplied: req.query.isApplied as string | undefined,
+    });
     sendSuccess(res, data, 'UP Factory deductions retrieved successfully');
   } catch (err) {
     next(err);
