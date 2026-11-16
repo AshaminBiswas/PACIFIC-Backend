@@ -240,3 +240,14 @@ D:\PACIFIC-Backend\
 - **Strict Separation**: Kolkata/Delhi branch petty cash expenses live exclusively in `expense_entries`, `expense_float_top_ups`, `expense_daily_ledgers`, `expense_daily_rollups`, `expense_monthly_rollups`, and `branch_cash_balances` (`/api/v1/expenses/*`). Uttar Pradesh (UP) factory expenses live exclusively in `up_expenses`, `up_cash_days`, `up_expense_categories`, and `up_expense_audit` (`/api/v1/up/*`, restricted to `SUPER_ADMIN`).
 - **Cleanup Script (`src/scripts/remove-up-from-kolkata.ts`)**: Idempotent script (supports `--dry-run` and `--backup <path>`) that verifies 100% presence in `up_expenses`, removes mistaken `EXP-YYYY-MM-UXXXX` records imported into `branch-kolkata` (`76` entries / `32,123,500` paise), and rebuilds `expense_daily_rollups` (`40`), `expense_monthly_rollups` (`20`), `expense_daily_ledgers` (`62`), and `branch_cash_balances` (`branch-kolkata` synchronized to `48,877,200 - 16,032,800 = 32,844,400` paise / `₹3,28,444.00` across `45` genuine Kolkata entries and `43` float top-ups).
 - **Re-Import Guard (`src/scripts/import-all-kolkata-expenses.ts`)**: Removed the `up_expenses.json` cross-import section so re-running the Kolkata seed/import script never merges UP records into `branch-kolkata`.
+
+### UP Factory Employee & Wage Management System (Super Admin Exclusive)
+- **Strict Isolation**: UP Factory employees, daily shift attendance, factory cash advances, scrap deductions, and monthly payroll runs are completely isolated in dedicated PostgreSQL tables (`up_employees`, `up_employee_attendances`, `up_employee_leave_ledgers`, `up_employee_advances`, `up_employee_deductions`, `up_employee_payroll_runs`, `up_employee_id_sequences`).
+- **Access Control**: All endpoints (`/api/v1/up/employees/*` and `/api/v1/up-employees/*`) are strictly guarded by `requireUPSuperAdmin`, requiring the `SUPER_ADMIN` role. Corporate HR or branch admins cannot view, query, or leak UP Factory worker records.
+- **Key Modules**:
+  - Worker Master (`UPFE202611001` auto-generated ID, daily wage / monthly CTC, overtime hourly rate, payment mode: Cash/Bank).
+  - Shift Attendance (Present, Double Duty 2x daily wage, Half Day, Overtime hours, Sunday shift override).
+  - Factory Cash Advances (Direct disbursements from UP Cash Box, partial recovery & full recovery tracking).
+  - Penalties & Deductions (Material scrap fines, PPE safety violations).
+  - Wage Payroll Engine (Automated computation of payable days, 2x double duty, OT pay, advance deductions, gross wage & net cash wages, printable payslips).
+  - Leave Ledger (CL/EL balance tracking, monthly accruals).

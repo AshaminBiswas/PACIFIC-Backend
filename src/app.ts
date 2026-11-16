@@ -48,6 +48,7 @@ import hardwareInventoryRoutes from './modules/inventory/hardwareInventory.route
 import installerPaymentsRoutes from './modules/installer-payments/installer-payments.routes';
 import employeeManagementRoutes from './modules/employee-management/employee-management.routes';
 import upRoutes from './modules/up/up.routes';
+import upEmployeeRoutes from './modules/up-employees/up-employees.routes';
 import wacrmRoutes from './modules/wacrm/wacrm.routes';
 import mailRoutes from './modules/mail/mail.routes';
 import analyticsRoutes from './modules/analytics/analytics.routes';
@@ -255,6 +256,8 @@ app.use(`${prefix}/employees`, employeeManagementRoutes);
 app.use(`${prefix}/roles`, rolesRoutes);
 app.use(`${prefix}/users`, usersRoutes);
 app.use(`${prefix}/up`, upRoutes);
+app.use(`${prefix}/up/employees`, upEmployeeRoutes);
+app.use(`${prefix}/up-employees`, upEmployeeRoutes);
 app.use(`${prefix}/wacrm`, wacrmRoutes);
 app.use(`${prefix}/mail`, mailRoutes);
 app.use(`${prefix}/daily-sales-purchases`, dailySalesPurchasesRoutes);
