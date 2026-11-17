@@ -1763,7 +1763,7 @@ export const pdfService = {
    */
   formatQuotationAccessoriesHtml(rawText?: string): string {
     if (!rawText || !rawText.trim()) {
-      return '<div style="padding: 6px 8px; font-size: 9px; color: #555;">Standard Grade 304 Stainless Steel hardware package included.</div>';
+      return '';
     }
     // Remove legacy tag, and ensure any inline '--- HEADER ---' gets broken onto a new line
     let cleaned = rawText
@@ -1832,55 +1832,34 @@ export const pdfService = {
 
     const termsList: Array<{ label: string; text: string }> = [];
 
-    if (data.generalTerms) {
-      let gText = data.generalTerms;
-      if (!/installation/i.test(gText)) {
-        const installTerm = Number(data.installationCharge || 0) > 0
-          ? `4. Installation: Cubicle installation is charged @ ${data.currency || '₹'} ${(data.installationRatePerCubicle || 1000).toLocaleString('en-IN')}/cubicle.`
-          : `4. Installation: Cubicle installation is INCLUDED in the quoted basic price. Site readiness (finished floor level and plumb walls) required prior to installation.`;
-        gText = `${gText.trim()}\n${installTerm}`;
+    if (data.generalTerms && data.generalTerms.trim()) {
+      let gText = data.generalTerms.trim();
+      if (!/installation/i.test(gText) && Number(data.installationCharge || 0) > 0) {
+        const installTerm = `Installation: Cubicle installation is charged @ ${data.currency || '₹'} ${(data.installationRatePerCubicle || 1000).toLocaleString('en-IN')}/cubicle.`;
+        gText = `${gText}\n${installTerm}`;
       }
       termsList.push({ label: 'General Terms', text: gText });
-    } else {
-      const cubCount = data.installationCubicleCount || data.items
-        .filter(isCubiclePdfItem)
-        .reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
-      const ratePerCub = data.installationRatePerCubicle || (cubCount > 0 && data.installationCharge ? Math.round(Number(data.installationCharge) / cubCount) : 0);
-      const installTerm = ratePerCub > 0 && cubCount > 0
-        ? `4. Installation: Cubicle installation is charged @ ${data.currency || '₹'} ${ratePerCub.toLocaleString('en-IN')}/cubicle for ${cubCount} cubicle${cubCount === 1 ? '' : 's'}. Site readiness (finished flooring, plumb walls, civil unloading, and electricity) required prior to installation.`
-        : `4. Installation: Cubicle installation is INCLUDED in the quoted basic price. Site readiness (finished floor level and plumb walls) required prior to installation.`;
-      termsList.push({
-        label: 'General Terms',
-        text: `1. Price Basis: Ex-works New Delhi factory.\n2. Taxes: GST as applicable at the time of invoice.\n3. Unloading & Safe Storage: In buyer’s scope at site.\n${installTerm}`,
-      });
     }
 
-    if (data.paymentTerms) {
-      termsList.push({ label: 'Payment Terms', text: data.paymentTerms });
-    } else {
-      termsList.push({
-        label: 'Payment Terms',
-        text: '50% Advance along with confirmed Purchase Order. Balance 50% prior to dispatch.',
-      });
+    if (data.paymentTerms && data.paymentTerms.trim()) {
+      termsList.push({ label: 'Payment Terms', text: data.paymentTerms.trim() });
     }
 
-    if (data.deliveryTerms) {
-      termsList.push({ label: 'Delivery & Lead Time', text: data.deliveryTerms });
-    } else {
-      termsList.push({
-        label: 'Delivery & Lead Time',
-        text: '2-3 weeks from receipt of advance, approved shop drawings, and color confirmation.',
-      });
+    if (data.deliveryTerms && data.deliveryTerms.trim()) {
+      termsList.push({ label: 'Delivery & Lead Time', text: data.deliveryTerms.trim() });
     }
 
-    if (data.otherTerms) {
-      termsList.push({ label: 'Other Terms', text: data.otherTerms });
+    if (data.otherTerms && data.otherTerms.trim()) {
+      const cleanOther = data.otherTerms.replace(/\s*\[(?:QUOTATION_SCOPE|QUOTATION_TYPE|PI_SCOPE|SCOPE):[^\]]+\]/gi, '').trim();
+      if (cleanOther) {
+        termsList.push({ label: 'Other Terms', text: cleanOther });
+      }
     }
 
-    if (data.isSezExempt && data.statutoryComplianceTerms) {
+    if (data.isSezExempt && data.statutoryComplianceTerms && data.statutoryComplianceTerms.trim()) {
       termsList.push({
         label: 'Statutory Compliance (SEZ)',
-        text: `${data.statutoryComplianceTerms} ${data.sezCertificateRef ? `[Ref: ${data.sezCertificateRef}]` : ''}`,
+        text: `${data.statutoryComplianceTerms.trim()} ${data.sezCertificateRef ? `[Ref: ${data.sezCertificateRef}]` : ''}`,
       });
     }
 
@@ -1889,19 +1868,11 @@ export const pdfService = {
       ? 'Standard Inclusions & Hardware Accessories'
       : 'System Inclusions & Technical Specifications';
 
-    let accessoriesContentHtml = this.formatQuotationAccessoriesHtml(data.accessoriesText);
-    if (!hasCubicleItems && (!data.accessoriesText || data.accessoriesText.includes('Gravity Hinges'))) {
-      accessoriesContentHtml = `
-        <div style="font-size: 9.5px; line-height: 1.5; padding: 2px 0;">
-          <div style="margin-bottom: 4px;">• <strong>Technical Hardware &amp; Mountings:</strong> High-grade architectural fittings, brackets, and structural anchors selected specifically for the quoted custom systems.</div>
-          <div style="margin-bottom: 4px;">• <strong>Precision Fabrication:</strong> Engineered CNC machining, fine edge banding, and stringent factory dimensional tolerances.</div>
-          <div style="margin-bottom: 4px;">• <strong>Workmanship Standard:</strong> Commercial heavy-duty specifications designed for high performance, durability, and aesthetics.</div>
-        </div>
-      `;
-    }
-
+    const hasAccessoriesText = Boolean(data.accessoriesText && data.accessoriesText.trim());
+    const accessoriesContentHtml = hasAccessoriesText ? this.formatQuotationAccessoriesHtml(data.accessoriesText) : '';
     const modelImages = (data.modelImages || []).filter((img) => img && img.imageUrl);
     const hasModelImages = modelImages.length > 0;
+    const hasAccessoriesSection = hasAccessoriesText || hasModelImages;
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -2261,7 +2232,6 @@ export const pdfService = {
             const displayBoardColor = !isHardware ? (item.boardColor || customSpecs.colorFinish || customSpecs.boardColor) : undefined;
             const displayHardware = item.hardwarePackage || customSpecs.hardwareType || customSpecs.hardwarePackage;
             const displayNotes = customSpecs.notes || (item as any).notes;
-            const displayHsn = (item as any).hsnSac || customSpecs.hsnSac;
 
             const sizeLabel = isUrinal ? 'Partition Size' : isLocker ? 'Locker Dimension' : isCubicle ? 'Cubicle / Depth Size' : 'Dimensions';
             const doorLabel = isLocker ? 'Compartment / Door' : 'Door Size';
@@ -2286,13 +2256,51 @@ export const pdfService = {
               !item.description.trim().toLowerCase().startsWith(customModel.trim().toLowerCase())
             );
 
-            const hasSpecs = Boolean(
-              isLocker ||
-              showCustomModel ||
-              (!isHardware && (item.make || displayBoardType || displaySize || displayBoardColor || displayBoardThickness || showDoor || displayHeight)) ||
-              showHardware ||
-              displayNotes
-            );
+            const specItems: string[] = [];
+            if (isLocker) {
+              if (item.quantity && tierRows) {
+                specItems.push(`<div>• <strong>Configuration:</strong> ${item.quantity} Column(s) × ${tierRows} Tier(s) (${item.quantity * tierRows} Total Doors)</div>`);
+              }
+              if (showCustomModel) specItems.push(`<div>• <strong>Model / System:</strong> ${customModel}</div>`);
+              if (!isHardware && item.make && item.make.trim()) specItems.push(`<div>• <strong>Make:</strong> ${item.make.trim()}</div>`);
+              if (displayBoardType && displayBoardType.trim()) specItems.push(`<div>• <strong>Board Type:</strong> ${displayBoardType.trim()}</div>`);
+              if (displayBoardThickness && displayBoardThickness.trim()) specItems.push(`<div>• <strong>Board Thickness:</strong> ${displayBoardThickness.trim()}</div>`);
+              if (displayBoardColor && displayBoardColor.trim()) specItems.push(`<div>• <strong>Color / Finish:</strong> ${displayBoardColor.trim()}</div>`);
+              if (tierRows > 1 && displayOverallSize) specItems.push(`<div>• <strong>Overall Locker Dimension:</strong> ${displayOverallSize}</div>`);
+              if (displayCompSize) specItems.push(`<div>• <strong>${tierRows > 1 ? 'Compartment Dimension' : 'Locker Dimension'}:</strong> ${displayCompSize}</div>`);
+              if (displayDoor && displayDoor.trim()) specItems.push(`<div>• <strong>Compartment / Door Size:</strong> ${displayDoor.trim()}</div>`);
+              if (showHardware && displayHardware && displayHardware.trim()) specItems.push(`<div>• <strong>Hardware / Fittings:</strong> ${displayHardware.trim()}</div>`);
+              if (displayNotes && displayNotes.trim()) specItems.push(`<div>• <strong>Fabrication Notes:</strong> ${displayNotes.trim()}</div>`);
+            } else {
+              if (showCustomModel) specItems.push(`<div>• <strong>Model / System:</strong> ${customModel}</div>`);
+              if (!isHardware && item.make && item.make.trim()) specItems.push(`<div>• <strong>Make:</strong> ${item.make.trim()}</div>`);
+              if (!isHardware && displayBoardType && displayBoardType.trim()) {
+                specItems.push(`<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${displayBoardType.trim()}</div>`);
+              }
+              if (!isHardware && displayBoardThickness && displayBoardThickness.trim()) {
+                specItems.push(`<div>• <strong>Board Thickness:</strong> ${displayBoardThickness.trim()}</div>`);
+              }
+              if (!isHardware && displayBoardColor && displayBoardColor.trim()) {
+                specItems.push(`<div>• <strong>Color / Finish:</strong> ${displayBoardColor.trim()}</div>`);
+              }
+              if (!isHardware && displaySize && displaySize.trim()) {
+                specItems.push(`<div>• <strong>${sizeLabel}:</strong> ${displaySize.trim()}</div>`);
+              }
+              if (!isHardware && showDoor && displayDoor && displayDoor.trim()) {
+                specItems.push(`<div>• <strong>${doorLabel}:</strong> ${displayDoor.trim()}</div>`);
+              }
+              if (!isHardware && displayHeight && displayHeight.trim()) {
+                specItems.push(`<div>• <strong>Overall Height:</strong> ${displayHeight.trim()}</div>`);
+              }
+              if (showHardware && displayHardware && displayHardware.trim()) {
+                specItems.push(`<div>• <strong>${isHardware ? 'Material / Specs' : 'Hardware / Fittings'}:</strong> ${displayHardware.trim()}</div>`);
+              }
+              if (displayNotes && displayNotes.trim()) {
+                specItems.push(`<div>• <strong>Fabrication Notes:</strong> ${displayNotes.trim()}</div>`);
+              }
+            }
+
+            const hasSpecs = specItems.length > 0;
 
             return `
             <tr>
@@ -2301,32 +2309,7 @@ export const pdfService = {
                 <div style="font-weight: bold; font-size: 11px;">${item.description}</div>
                 ${hasSpecs ? `
                   <div class="spec-box">
-                    ${isLocker ? `
-                      <div>• <strong>Configuration:</strong> ${item.quantity} Column(s) × ${tierRows} Tier(s) (${item.quantity * tierRows} Total Doors)</div>
-                      ${showCustomModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
-                      ${(!isHardware && item.make) ? `<div>• <strong>Make:</strong> ${item.make}</div>` : ''}
-                      <div>• <strong>Board Type:</strong> ${displayBoardType || 'HPL'}</div>
-                      <div>• <strong>Board Thickness:</strong> ${displayBoardThickness || '12mm'}</div>
-                      ${displayBoardColor ? `<div>• <strong>Color / Finish:</strong> ${displayBoardColor}</div>` : ''}
-                      ${tierRows > 1 ? `<div>• <strong>Overall Locker Dimension:</strong> ${displayOverallSize}</div>` : ''}
-                      <div>• <strong>${tierRows > 1 ? 'Compartment Dimension' : 'Locker Dimension'}:</strong> ${displayCompSize}</div>
-                      <div>• <strong>Compartment / Door Size:</strong> ${displayDoor}</div>
-                      ${showHardware ? `<div>• <strong>Hardware / Fittings:</strong> ${displayHardware}</div>` : ''}
-                      ${displayHsn ? `<div>• <strong>HSN/SAC:</strong> ${displayHsn}</div>` : ''}
-                      ${displayNotes ? `<div>• <strong>Fabrication Notes:</strong> ${displayNotes}</div>` : ''}
-                    ` : `
-                      ${showCustomModel ? `<div>• <strong>Model / System:</strong> ${customModel}</div>` : ''}
-                      ${(!isHardware && item.make) ? `<div>• <strong>Make:</strong> ${item.make}</div>` : ''}
-                      ${(!isHardware && displayBoardType) ? `<div>• <strong>${isCustom ? 'Material / Board' : 'Board Type'}:</strong> ${displayBoardType}</div>` : ''}
-                      ${(!isHardware && displayBoardThickness) ? `<div>• <strong>Board Thickness:</strong> ${displayBoardThickness}</div>` : ''}
-                      ${(!isHardware && displayBoardColor) ? `<div>• <strong>Color / Finish:</strong> ${displayBoardColor}</div>` : ''}
-                      ${(!isHardware && displaySize) ? `<div>• <strong>${sizeLabel}:</strong> ${displaySize}</div>` : ''}
-                      ${(!isHardware && showDoor) ? `<div>• <strong>${doorLabel}:</strong> ${displayDoor}</div>` : ''}
-                      ${(!isHardware && displayHeight) ? `<div>• <strong>Overall Height:</strong> ${displayHeight}</div>` : ''}
-                      ${showHardware ? `<div>• <strong>${isHardware ? 'Material / Specs' : 'Hardware / Fittings'}:</strong> ${displayHardware}</div>` : ''}
-                      ${displayHsn ? `<div>• <strong>HSN/SAC:</strong> ${displayHsn}</div>` : ''}
-                      ${displayNotes ? `<div>• <strong>Fabrication Notes:</strong> ${displayNotes}</div>` : ''}
-                    `}
+                    ${specItems.join('\n')}
                   </div>
                 ` : ''}
               </td>
@@ -2363,35 +2346,34 @@ export const pdfService = {
               `;
             }
 
+            const isBoardOrHwOnly = (data as any).quotationScope === 'BOARD' || (data as any).quotationScope === 'HARDWARE';
             const rawOpt = (data.installationOption || '').trim();
-            const lines = (data.generalTerms || '').split('\n');
-            const installLine = lines.find((l: string) => /installation/i.test(l)) || '';
-            const target = (rawOpt || installLine || data.generalTerms || '').toLowerCase();
+            if (isBoardOrHwOnly || !rawOpt || rawOpt === 'Not Applicable' || rawOpt === 'None' || rawOpt.toLowerCase().includes('not applicable')) {
+              return '';
+            }
 
-            let optLabel = 'Included in Basic Price (Free of Cost)';
-            let optBadge = 'Included';
+            let optLabel = '';
+            let optBadge = '';
             let badgeColor = '#166534'; // green
 
-            if (rawOpt === 'Included' || (!rawOpt && (target.includes('included') || target.includes('f.o.c') || target.includes('free of cost')))) {
+            if (rawOpt === 'Included') {
               optLabel = 'Included in Basic Price (Free of Cost)';
               optBadge = 'Included';
               badgeColor = '#166534';
-            } else if (rawOpt === 'Extra to Pay' || (!rawOpt && (target.includes('extra to pay') || target.includes('payable extra') || target.includes('at actuals')))) {
+            } else if (rawOpt === 'Extra to Pay') {
               optLabel = 'Extra to Pay (Payable at actuals by client)';
               optBadge = 'Extra to Pay';
               badgeColor = '#b45309';
-            } else if (rawOpt === 'Client Scope' || (!rawOpt && (target.includes("client's scope") || target.includes('client scope') || target.includes("buyer's scope") || target.includes("buyer’s scope")))) {
+            } else if (rawOpt === 'Client Scope') {
               optLabel = "In Client's / Buyer's Scope (Pacific supply only)";
               optBadge = "Client's Scope";
-              badgeColor = '#475569';
-            } else if (rawOpt === 'Not Applicable' || (!rawOpt && (target.includes('not applicable') || target.includes('supply only')))) {
-              optLabel = 'Not Applicable (Material Supply Only)';
-              optBadge = 'N/A';
               badgeColor = '#475569';
             } else if (rawOpt === 'Custom') {
               optLabel = data.installationCustomNote ? data.installationCustomNote : 'Custom Terms / Scope';
               optBadge = '-';
               badgeColor = '#475569';
+            } else {
+              return '';
             }
 
             return `
@@ -2403,12 +2385,24 @@ export const pdfService = {
               </tr>
             `;
           })()}
-          <tr>
-            <td colspan="5" style="text-align: right;">
-              Freight: ${data.freightTerms} ${data.freightAmount ? `(${data.currency} ${data.freightAmount.toLocaleString('en-IN')})` : ''}
-            </td>
-            <td style="text-align: right;">${data.freightAmount ? data.freightAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}</td>
-          </tr>
+          ${(() => {
+            const fAmt = Number(data.freightAmount || 0);
+            const fTerms = (data.freightTerms || '').trim();
+            const hasFreightTerms = Boolean(fTerms && fTerms !== 'N/A' && fTerms !== 'None' && !fTerms.toLowerCase().includes('not applicable'));
+
+            if (fAmt <= 0 && !hasFreightTerms) {
+              return '';
+            }
+
+            return `
+              <tr>
+                <td colspan="5" style="text-align: right;">
+                  Freight / Transport${hasFreightTerms ? `: ${fTerms}` : ''}${fAmt > 0 && hasFreightTerms ? ` (${data.currency} ${fAmt.toLocaleString('en-IN')})` : ''}:
+                </td>
+                <td style="text-align: right;">${fAmt > 0 ? fAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : (hasFreightTerms ? fTerms : '-')}</td>
+              </tr>
+            `;
+          })()}
           ${
             data.isSezExempt
               ? `<tr>
@@ -2441,7 +2435,7 @@ export const pdfService = {
 
     <!-- Page 1 Continuation Notice -->
     <div style="border-top: 1px dashed #000000; padding: 6px 10px; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; background: #fafafa; font-weight: bold;">
-      [ Continued on Page 2 for Hardware Accessories, Warranty, Commercial Terms &amp; Acceptance Sign-off ]
+      [ Continued on Page 2 for ${hasAccessoriesSection ? 'Inclusions &amp; Specifications, ' : ''}${data.warrantyText?.trim() ? 'Warranty, ' : ''}${termsList.length > 0 ? 'Commercial Terms &amp; ' : ''}Acceptance Sign-off ]
     </div>
 
     <!-- Page 1 Footer -->
@@ -2466,7 +2460,7 @@ export const pdfService = {
           </div>
         </td>
         <td style="width: 48%; vertical-align: top; text-align: right;">
-          <div class="title-badge" style="background: #fafafa;">ANNEXURE — HARDWARE &amp; TERMS</div>
+          <div class="title-badge" style="background: #fafafa;">ANNEXURE — SPECIFICATIONS, TERMS &amp; ACCEPTANCE</div>
           <div style="margin: 4px 0 1px 0; font-size: 11px; font-family: monospace; font-weight: bold;">Ref: ${data.referenceNumber}</div>
           <div style="font-size: 9.5px;">Date: ${formattedDate} &nbsp;|&nbsp; Project: <strong>${data.projectName}</strong></div>
           <div style="font-size: 10px; font-weight: bold; margin-top: 3px;">
@@ -2478,73 +2472,81 @@ export const pdfService = {
 
     <div class="body-wrapper">
       <!-- Standard Inclusions & Hardware Accessories + Model Visuals -->
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 2px;">
-        <tr>
-          <td style="width: ${hasModelImages ? '65%' : '100%'}; vertical-align: bottom;">
-            <div class="section-title-p2" style="margin: 6px 0 2px 0;">${accessoriesSectionTitle}</div>
-          </td>
-          ${hasModelImages ? `
-          <td style="width: 35%; vertical-align: bottom; text-align: right;">
-            <div class="section-title-p2" style="margin: 6px 0 2px 0; border-bottom: 1.5px solid #7FB706; text-align: right; color: #000000;">
-              ${modelImages.length === 1 && modelImages[0].modelName ? modelImages[0].modelName : `System Model Visual${modelImages.length > 1 ? 's' : ''}`}
-            </div>
-          </td>
-          ` : ''}
-        </tr>
-      </table>
-
-      <div class="accessories-box-p2" style="padding: 0; overflow: hidden; margin-bottom: 4px;">
-        <table style="width: 100%; border-collapse: collapse;">
+      ${hasAccessoriesSection ? `
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 2px;">
           <tr>
-            <td style="width: ${hasModelImages ? '65%' : '100%'}; vertical-align: top; padding: 6px 10px; ${hasModelImages ? 'border-right: 1.5px solid #000000;' : ''}">
-              ${accessoriesContentHtml}
+            <td style="width: ${hasModelImages ? '65%' : '100%'}; vertical-align: bottom;">
+              <div class="section-title-p2" style="margin: 6px 0 2px 0;">${accessoriesSectionTitle}</div>
             </td>
             ${hasModelImages ? `
-            <td style="width: 35%; vertical-align: middle; padding: 6px 8px; background: #fafbfc; text-align: center;">
-              <table style="width: 100%; border-collapse: collapse;">
-                ${modelImages.map((img) => `
-                  <tr>
-                    <td style="padding: 3px 0;">
-                      <div style="border: 1.5px solid #7FB706; border-radius: 4px; overflow: hidden; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">
-                        <div style="background: #7FB706; color: #ffffff; padding: 3px 6px; font-size: 8.5px; font-weight: bold; letter-spacing: 0.3px; text-transform: uppercase; text-align: center;">
-                          <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">${img.modelName || 'Model Visual'}</span>
-                        </div>
-                        <div style="padding: 4px; background: #ffffff; display: flex; align-items: center; justify-content: center; min-height: ${modelImages.length > 1 ? '70px' : '110px'}; max-height: ${modelImages.length > 1 ? '90px' : '140px'}; overflow: hidden;">
-                          <img src="${img.imageUrl}" alt="${img.modelName || 'Model'}" style="max-width: 100%; max-height: ${modelImages.length > 1 ? '85px' : '135px'}; object-fit: contain; display: block; margin: 0 auto;" />
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                `).join('')}
-              </table>
+            <td style="width: 35%; vertical-align: bottom; text-align: right;">
+              <div class="section-title-p2" style="margin: 6px 0 2px 0; border-bottom: 1.5px solid #7FB706; text-align: right; color: #000000;">
+                ${modelImages.length === 1 && modelImages[0].modelName ? modelImages[0].modelName : `System Model Visual${modelImages.length > 1 ? 's' : ''}`}
+              </div>
             </td>
             ` : ''}
           </tr>
         </table>
-      </div>
+
+        <div class="accessories-box-p2" style="padding: 0; overflow: hidden; margin-bottom: 4px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              ${hasAccessoriesText ? `
+              <td style="width: ${hasModelImages ? '65%' : '100%'}; vertical-align: top; padding: 6px 10px; ${hasModelImages ? 'border-right: 1.5px solid #000000;' : ''}">
+                ${accessoriesContentHtml}
+              </td>
+              ` : ''}
+              ${hasModelImages ? `
+              <td style="width: ${hasAccessoriesText ? '35%' : '100%'}; vertical-align: middle; padding: 6px 8px; background: #fafbfc; text-align: center;">
+                <table style="width: 100%; border-collapse: collapse;">
+                  ${modelImages.map((img) => `
+                    <tr>
+                      <td style="padding: 3px 0;">
+                        <div style="border: 1.5px solid #7FB706; border-radius: 4px; overflow: hidden; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">
+                          <div style="background: #7FB706; color: #ffffff; padding: 3px 6px; font-size: 8.5px; font-weight: bold; letter-spacing: 0.3px; text-transform: uppercase; text-align: center;">
+                            <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">${img.modelName || 'Model Visual'}</span>
+                          </div>
+                          <div style="padding: 4px; background: #ffffff; display: flex; align-items: center; justify-content: center; min-height: ${modelImages.length > 1 ? '70px' : '110px'}; max-height: ${modelImages.length > 1 ? '90px' : '140px'}; overflow: hidden;">
+                            <img src="${img.imageUrl}" alt="${img.modelName || 'Model'}" style="max-width: 100%; max-height: ${modelImages.length > 1 ? '85px' : '135px'}; object-fit: contain; display: block; margin: 0 auto;" />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </table>
+              </td>
+              ` : ''}
+            </tr>
+          </table>
+        </div>
+      ` : ''}
 
       <!-- Warranty Commitment -->
-      <div class="section-title-p2" style="margin-top: 10px;">Warranty Commitment</div>
-      <div class="warranty-box-p2">
-        ${data.warrantyText || 'We provide ten (10) years of warranty for partitions against any moisture-related defects and one (1) year warranty for workmanship and hardware against manufacturing defects.'}
-      </div>
+      ${data.warrantyText && data.warrantyText.trim() ? `
+        <div class="section-title-p2" style="margin-top: 10px;">Warranty Commitment</div>
+        <div class="warranty-box-p2">
+          ${data.warrantyText.trim()}
+        </div>
+      ` : ''}
 
       <!-- Commercial Terms & Conditions -->
-      <div class="section-title-p2" style="margin-top: 10px;">Commercial Terms &amp; Conditions</div>
-      <div class="terms-box-p2">
-        <table style="width: 100%; border-collapse: collapse;">
-          <tbody>
-            ${termsList.map((t, idx) => `
-              <tr>
-                <td style="width: 20px; vertical-align: top; font-weight: bold; padding: 2.5px 0; font-size: 9.5px;">${idx + 1}.</td>
-                <td style="padding: 2.5px 0; font-size: 9px; line-height: 1.45;">
-                  <strong>${t.label}:</strong> ${t.text}
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
+      ${termsList.length > 0 ? `
+        <div class="section-title-p2" style="margin-top: 10px;">Commercial Terms &amp; Conditions</div>
+        <div class="terms-box-p2">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tbody>
+              ${termsList.map((t, idx) => `
+                <tr>
+                  <td style="width: 20px; vertical-align: top; font-weight: bold; padding: 2.5px 0; font-size: 9.5px;">${idx + 1}.</td>
+                  <td style="padding: 2.5px 0; font-size: 9px; line-height: 1.45;">
+                    <strong>${t.label}:</strong> ${t.text}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
     </div>
 
     <!-- Sign-off Block on Page 2 -->

@@ -436,7 +436,7 @@ export const quotationsService = {
         grandTotal,
         amountInWords,
         accessoriesText: data.accessoriesText || null,
-        warrantyText: data.warrantyText || 'We provide ten (10) years of warranty for partitions against any moisture-related defects and one (1) year warranty for workmanship and hardware against manufacturing defects.',
+        warrantyText: data.warrantyText || null,
         generalTerms: data.generalTerms || null,
         otherTerms: (() => {
           const s = (data.quotationScope || (data.quotationType === 'custom_hardware' ? 'HARDWARE' : data.quotationType === 'custom_board' ? 'BOARD' : data.quotationType === 'custom_item' ? 'CUSTOM_ITEM' : 'CUBICLE')) as string;
@@ -783,7 +783,7 @@ export const quotationsService = {
         } else if (target.includes('not applicable') || target.includes('supply only')) {
           installationOption = 'Not Applicable';
         } else {
-          installationOption = 'Included';
+          installationOption = undefined as any;
         }
       }
     }
