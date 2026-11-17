@@ -176,6 +176,31 @@ export const downloadMonthlyAttendanceReportPdfHandler = async (req: Request, re
   }
 };
 
+export const downloadEmployeeDirectoryPdfHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { department, designation, status, search } = req.query;
+    const generatedByName =
+      (req as any).user?.firstName
+        ? `${(req as any).user.firstName} ${(req as any).user.lastName || ''}`.trim()
+        : (req as any).user?.email || 'HR Administrator';
+
+    const { buffer, filename } = await employeeService.getEmployeeDirectoryPdfBuffer({
+      department: department ? String(department) : undefined,
+      designation: designation ? String(designation) : undefined,
+      status: status ? String(status) : undefined,
+      search: search ? String(search) : undefined,
+      generatedByName,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ─── Leave Handlers ───────────────────────────────────────────────────────────
 export const accrueMonthlyLeaveHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {

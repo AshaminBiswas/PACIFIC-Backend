@@ -12,6 +12,7 @@ import {
   listAttendanceHandler,
   deleteAttendanceHandler,
   downloadMonthlyAttendanceReportPdfHandler,
+  downloadEmployeeDirectoryPdfHandler,
   accrueMonthlyLeaveHandler,
   adjustLeaveHandler,
   getLeaveLedgerHandler,
@@ -127,6 +128,7 @@ router.use(authenticate);
 router.use(requireAdminOrSuperAdmin);
 
 // ─── Employee Master Data ─────────────────────────────────────────────────────
+router.get(['/export-pdf', '/directory-pdf'], authorize('employees.read'), downloadEmployeeDirectoryPdfHandler);
 router.get(['/', '/all'], authorize('employees.read'), listEmployeesHandler);
 router.post('/', authorize('employees.create'), createEmployeeHandler);
 

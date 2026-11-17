@@ -493,3 +493,28 @@ export const settleConveyanceExpenseHandler = async (req: AuthRequest, res: Resp
     next(err);
   }
 };
+
+export const downloadUpEmployeeDirectoryPdfHandler = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { department, designation, status, search } = req.query;
+    const generatedByName =
+      (req as any).user?.firstName
+        ? `${(req as any).user.firstName} ${(req as any).user.lastName || ''}`.trim()
+        : (req as any).user?.email || 'HR Administrator';
+
+    const { buffer, filename } = await service.getUpEmployeeDirectoryPdfBuffer({
+      department: department ? String(department) : undefined,
+      designation: designation ? String(designation) : undefined,
+      status: status ? String(status) : undefined,
+      search: search ? String(search) : undefined,
+      generatedByName,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (error) {
+    next(error);
+  }
+};

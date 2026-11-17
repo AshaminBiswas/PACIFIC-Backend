@@ -2,6 +2,7 @@ import prisma from '../../config/database';
 import { logger } from '../../config/logger';
 import { sendMail } from '../../utils/email.utils';
 import { generateEmployeePayslipPdf } from './employee-payslip-pdf.service';
+import { generateEmployeeDirectoryPdf } from './employee-directory-pdf.service';
 import {
   generateMonthlyAttendanceReportPdf,
   MonthlyAttendanceReportEmployeeItem,
@@ -3558,5 +3559,89 @@ export async function settleConveyanceExpense(id: string, userId: string, input:
     },
   });
 }
+
+/**
+ * Generates an executive Master Employee Directory Register PDF Buffer
+ */
+export async function getEmployeeDirectoryPdfBuffer(params: {
+  department?: string;
+  designation?: string;
+  status?: string;
+  search?: string;
+  generatedByName?: string;
+}): Promise<{ buffer: Buffer; filename: string }> {
+  const where: Prisma.EmployeeWhereInput = {};
+  if (params.status && params.status !== 'ALL') {
+    where.status = params.status as any;
+  }
+  if (params.department && params.department !== 'All Departments' && params.department !== 'ALL') {
+    where.department = { equals: params.department, mode: 'insensitive' };
+  }
+  if (params.designation && params.designation !== 'All Designations' && params.designation !== 'ALL') {
+    where.designation = { equals: params.designation, mode: 'insensitive' };
+  }
+  if (params.search && params.search.trim()) {
+    const s = params.search.trim();
+    where.OR = [
+      { name: { contains: s, mode: 'insensitive' } },
+      { employeeId: { contains: s, mode: 'insensitive' } },
+      { email: { contains: s, mode: 'insensitive' } },
+      { phone: { contains: s, mode: 'insensitive' } },
+      { governmentIdNumber: { contains: s, mode: 'insensitive' } },
+    ];
+  }
+
+  const employees = await prisma.employee.findMany({
+    where,
+    orderBy: [{ status: 'asc' }, { employeeId: 'asc' }],
+  });
+
+  const pdfItems = employees.map((e) => ({
+    id: e.id,
+    employeeId: e.employeeId,
+    name: e.name,
+    gender: e.gender,
+    phone: e.phone,
+    whatsappNo: e.whatsappNo,
+    email: e.email,
+    designation: e.designation,
+    department: e.department,
+    joiningDate: e.joiningDate,
+    status: e.status,
+    governmentIdType: e.governmentIdType,
+    governmentIdNumber: e.governmentIdNumber,
+    bankName: e.bankName,
+    bankAccountNumber: e.bankAccountNumber,
+    bankIfsc: e.bankIfsc,
+    bankAccountHolder: e.bankAccountHolder,
+    monthlyCtc: Number(e.monthlyCtc || 0),
+    clBalance: Number(e.clBalance || 0),
+    elBalance: Number(e.elBalance || 0),
+    address: e.address,
+    emergencyContact: (e as any).emergencyContact || null,
+  }));
+
+  const filterParts = [];
+  if (params.department && params.department !== 'ALL' && params.department !== 'All Departments') {
+    filterParts.push(`Dept: ${params.department}`);
+  }
+  if (params.status && params.status !== 'ALL') {
+    filterParts.push(`Status: ${params.status}`);
+  }
+  const filterLabel = filterParts.length > 0 ? filterParts.join(' • ') : 'All Registered Employees';
+
+  const buffer = await generateEmployeeDirectoryPdf({
+    isUpFactory: false,
+    filterLabel,
+    generatedByName: params.generatedByName,
+    items: pdfItems,
+  });
+
+  const timestamp = new Date().toISOString().slice(0, 10);
+  const filename = `Pacific_Employee_Directory_${timestamp}.pdf`;
+
+  return { buffer, filename };
+}
+
 
 

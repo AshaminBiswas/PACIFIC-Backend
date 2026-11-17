@@ -84,6 +84,7 @@ router.post('/conveyance/:id/reject', controller.rejectConveyanceExpenseHandler)
 router.post('/conveyance/:id/settle', controller.settleConveyanceExpenseHandler);
 
 // ─── 8. Master Employees CRUD (ID wildcard must be last) ──────────────────────
+router.get(['/export-pdf', '/directory-pdf'], controller.downloadUpEmployeeDirectoryPdfHandler);
 router.get(['/detail/:id', '/:id'], controller.getEmployeeHandler);
 router.put(['/detail/:id', '/:id'], validate(UpdateUpEmployeeSchema), controller.updateEmployeeHandler);
 router.patch(['/detail/:id', '/:id'], validate(UpdateUpEmployeeSchema), controller.updateEmployeeHandler);
