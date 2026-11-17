@@ -11,8 +11,9 @@ router.get('/permissions', requireRole('SUPER_ADMIN', 'ADMIN'), rolesController.
 router.get('/', requireRole('SUPER_ADMIN', 'ADMIN'), rolesController.list);
 router.get('/:id', requireRole('SUPER_ADMIN', 'ADMIN'), rolesController.getById);
 
-// Creation, modification, and deletion are restricted to Super Admin
+// Creation, modification, duplication, and deletion are restricted to Super Admin
 router.post('/', requireRole('SUPER_ADMIN'), rolesController.create);
+router.post('/:id/duplicate', requireRole('SUPER_ADMIN'), rolesController.duplicate);
 router.patch('/:id', requireRole('SUPER_ADMIN'), rolesController.update);
 router.delete('/:id', requireRole('SUPER_ADMIN'), rolesController.delete);
 

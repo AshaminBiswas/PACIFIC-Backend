@@ -1,102 +1,32 @@
 import { prisma } from '../../config/database';
-
-export interface PermissionSeed {
-  code: string;
-  module: string;
-  description: string;
-}
-
-export const SYSTEM_PERMISSIONS: PermissionSeed[] = [
-  // ─── Sales & CRM ────────────────────────────────────────────────────────────
-  { code: 'quotations:view', module: 'Sales Quotations', description: 'View formal sales quotations and PDF letters' },
-  { code: 'quotations:create', module: 'Sales Quotations', description: 'Draft and create sales quotations' },
-  { code: 'quotations:edit', module: 'Sales Quotations', description: 'Modify and revise existing sales quotations' },
-  { code: 'quotations:delete', module: 'Sales Quotations', description: 'Permanently delete sales quotations' },
-  
-  { code: 'orders:view', module: 'Sales Orders', description: 'View central sales orders and timeline' },
-  { code: 'orders:create', module: 'Sales Orders', description: 'Create direct sales orders or convert from quotation' },
-  { code: 'orders:edit', module: 'Sales Orders', description: 'Edit sales order details and status transitions' },
-  { code: 'orders:delete', module: 'Sales Orders', description: 'Permanently delete sales orders' },
-
-  { code: 'pi:view', module: 'Proforma Invoices', description: 'View proforma invoices and tax breakdowns' },
-  { code: 'pi:create', module: 'Proforma Invoices', description: 'Create and duplicate proforma invoices' },
-  { code: 'pi:edit', module: 'Proforma Invoices', description: 'Edit proforma invoice terms, transport, and items' },
-  { code: 'pi:delete', module: 'Proforma Invoices', description: 'Permanently delete proforma invoices' },
-
-  { code: 'customers:view', module: 'B2B Customers', description: 'View customer 360 profiles and transaction history' },
-  { code: 'customers:create', module: 'B2B Customers', description: 'Add new B2B client and billing accounts' },
-  { code: 'customers:edit', module: 'B2B Customers', description: 'Update customer profiles, credit limits, and addresses' },
-  { code: 'customers:delete', module: 'B2B Customers', description: 'Delete or merge customer accounts' },
-
-  // ─── Logistics & Warehouse ──────────────────────────────────────────────────
-  { code: 'packing_lists:view', module: 'Packing Lists', description: 'View dispatch packing lists and consignment data' },
-  { code: 'packing_lists:create', module: 'Packing Lists', description: 'Generate packing lists with BOM explosion' },
-  { code: 'packing_lists:edit', module: 'Packing Lists', description: 'Update package items, packet counts, and signatories' },
-  { code: 'packing_lists:delete', module: 'Packing Lists', description: 'Permanently delete packing lists' },
-
-  { code: 'hardware_issues:view', module: 'Hardware Store', description: 'View hardware issue checklists' },
-  { code: 'hardware_issues:create', module: 'Hardware Store', description: 'Issue hardware pieces from the store catalog' },
-  { code: 'hardware_issues:edit', module: 'Hardware Store', description: 'Edit hardware store issues and piece counts' },
-  { code: 'hardware_issues:sign', module: 'Hardware Store', description: 'Sign sequential verification steps (Packed/Checked/Incharge)' },
-  { code: 'hardware_issues:delete', module: 'Hardware Store', description: 'Permanently delete hardware issues' },
-
-  { code: 'inventory:view', module: 'Products Master', description: 'View cubicle catalog, finishes, and hardware materials' },
-  { code: 'inventory:manage', module: 'Products Master', description: 'Create and update products, HSN/SAC codes, and prices' },
-
-  // ─── Global Trade & Export ──────────────────────────────────────────────────
-  { code: 'export:view', module: 'Export & Trade', description: 'View export quotations, orders, and vessel tracking' },
-  { code: 'export:create', module: 'Export & Trade', description: 'Create export quotations and international customer profiles' },
-  { code: 'export:edit', module: 'Export & Trade', description: 'Edit export shipping bills, containers, and Incoterms' },
-  { code: 'export:delete', module: 'Export & Trade', description: 'Delete export quotations, shipments, and orders' },
-  { code: 'export:realization', module: 'Export & Trade', description: 'Record IRM inward remittances and DGFT eBRC realization' },
-
-  // ─── Procurement & Suppliers ────────────────────────────────────────────────
-  { code: 'procurement:view', module: 'Purchase Orders', description: 'View vendor purchase orders and approvals' },
-  { code: 'procurement:create', module: 'Purchase Orders', description: 'Create purchase orders for raw materials and hardware' },
-  { code: 'procurement:edit', module: 'Purchase Orders', description: 'Edit purchase order terms and items' },
-  { code: 'procurement:approve', module: 'Purchase Orders', description: 'Authorize and approve vendor purchase orders' },
-  { code: 'procurement:delete', module: 'Purchase Orders', description: 'Permanently delete purchase orders' },
-
-  { code: 'vendors:view', module: 'Suppliers Master', description: 'View supplier directory and credit limits' },
-  { code: 'vendors:manage', module: 'Suppliers Master', description: 'Add, update, or deactivate suppliers' },
-
-  // ─── Finance & Payments ─────────────────────────────────────────────────────
-  { code: 'finance:view', module: 'Finance & Ledger', description: 'View payments ledger and invoice balance aging' },
-  { code: 'finance:record', module: 'Finance & Ledger', description: 'Record customer and vendor payments' },
-  { code: 'finance:allocate', module: 'Finance & Ledger', description: 'Allocate payment receipts across outstanding PIs' },
-
-  // ─── CMS & Marketing ────────────────────────────────────────────────────────
-  { code: 'cms:view', module: 'Website CMS', description: 'View website content, blogs, solutions, and catalogs' },
-  { code: 'cms:manage', module: 'Website CMS', description: 'Create, publish, and edit website pages and media' },
-  { code: 'leads:view', module: 'Leads & Enquiries', description: 'View visitor leads and 3D configurator designs' },
-  { code: 'leads:manage', module: 'Leads & Enquiries', description: 'Assign leads, update status, and convert to quotes' },
-
-  // ─── Administration & Security ──────────────────────────────────────────────
-  { code: 'users:view', module: 'Admin Users', description: 'View administrator and staff directory' },
-  { code: 'users:manage', module: 'Admin Users', description: 'Create admins, update roles, and reset passwords' },
-  { code: 'roles:view', module: 'Roles & Security', description: 'View custom and system roles and permission sets' },
-  { code: 'roles:manage', module: 'Roles & Security', description: 'Create custom roles and configure permission matrices' },
-  { code: 'settings:manage', module: 'Company Settings', description: 'Configure entity GST, banks, and authorized signatories' },
-  { code: 'audit:view', module: 'Audit Logs', description: 'View immutable security and compliance audit logs' },
-];
+import { COMPLETE_PERMISSION_CATALOG, PermissionDefinition } from './permissions.constants';
 
 export const rolesService = {
   /**
-   * Auto-seed baseline permissions and standard system roles
+   * Seed all permissions from the comprehensive Pacific Admin Permissions Catalog
+   * and configure default system roles.
    */
   async seedDefaultRolesAndPermissions() {
     try {
-      // 1. Seed Permissions
-      for (const perm of SYSTEM_PERMISSIONS) {
+      console.log(`[RBAC] Seeding ${COMPLETE_PERMISSION_CATALOG.length} granular permissions...`);
+
+      // 1. Upsert every permission in catalog
+      for (const perm of COMPLETE_PERMISSION_CATALOG) {
         await prisma.permission.upsert({
           where: { code: perm.code },
           create: {
             code: perm.code,
             module: perm.module,
+            submodule: perm.submodule,
+            action: perm.action,
+            category: perm.category,
             description: perm.description,
           },
           update: {
             module: perm.module,
+            submodule: perm.submodule,
+            action: perm.action,
+            category: perm.category,
             description: perm.description,
           },
         });
@@ -105,89 +35,161 @@ export const rolesService = {
       const allPerms = await prisma.permission.findMany();
       const permMap = new Map<string, string>(allPerms.map((p) => [p.code, p.id]));
 
-      // 2. Define baseline system roles
+      // 2. Define baseline system role templates
       const defaultRoles = [
         {
           code: 'SUPER_ADMIN',
-          name: 'Super Administrator',
-          description: 'Full master platform authority, system configuration, and exclusive deletion privileges across all modules',
+          name: 'Super Admin',
+          department: 'Executive',
+          category: 'System',
+          description: 'Unrestricted master platform authority across all modules, administrative settings, and security controls',
           isSystem: true,
           perms: allPerms.map((p) => p.id),
         },
         {
-          code: 'ADMIN',
-          name: 'Administrator',
-          description: 'Complete operational and management access across all ERP, CRM, and CMS modules without deletion rights',
+          code: 'MANAGER',
+          name: 'Manager',
+          department: 'Operations',
+          category: 'Management',
+          description: 'High-level operational management across orders, products, inventory, customers, and business reports',
           isSystem: true,
           perms: allPerms
-            .filter((p) => !p.code.endsWith(':delete'))
+            .filter((p) =>
+              [
+                'dashboard.',
+                'orders.',
+                'products.',
+                'categories.',
+                'brands.',
+                'collections.',
+                'customers.',
+                'inventory.',
+                'reports.',
+                'quotations.',
+                'pi.',
+                'packing_lists.',
+                'hardware_issues.',
+              ].some((prefix) => p.code.startsWith(prefix)) &&
+              !p.code.endsWith('.delete') &&
+              !p.code.startsWith('admins.') &&
+              !p.code.startsWith('roles.') &&
+              !p.code.startsWith('settings.')
+            )
             .map((p) => p.id),
         },
         {
           code: 'SALES_MANAGER',
           name: 'Sales Manager',
-          description: 'Full management of Sales Quotations, Sales Orders, Proforma Invoices, and B2B Customers',
+          department: 'Sales & Marketing',
+          category: 'Sales',
+          description: 'Full management of CRM, Sales Quotations, Proforma Invoices, Sales Orders, B2B Clients, and Sales Reports',
           isSystem: true,
           perms: allPerms
-            .filter((p) => ['quotations:', 'orders:', 'pi:', 'customers:'].some((prefix) => p.code.startsWith(prefix)))
-            .filter((p) => !p.code.endsWith(':delete'))
+            .filter((p) =>
+              [
+                'dashboard.view',
+                'dashboard.sales_overview',
+                'dashboard.orders_summary',
+                'orders.',
+                'quotations.',
+                'pi.',
+                'customers.',
+                'reports.',
+              ].some((prefix) => p.code.startsWith(prefix)) &&
+              !p.code.endsWith('.delete')
+            )
             .map((p) => p.id),
         },
         {
-          code: 'WAREHOUSE_MANAGER',
-          name: 'Warehouse & Logistics Manager',
-          description: 'Dispatches, packing lists, BOM auto-explosion, store hardware checklist sign-off, and inventory',
+          code: 'INVENTORY_MANAGER',
+          name: 'Inventory Manager',
+          department: 'Logistics & Warehouse',
+          category: 'Logistics',
+          description: 'Complete control of raw materials, board & hardware stock registries, warehouses, suppliers, and store issues',
           isSystem: true,
           perms: allPerms
-            .filter((p) => ['packing_lists:', 'hardware_issues:', 'inventory:'].some((prefix) => p.code.startsWith(prefix)))
-            .filter((p) => !p.code.endsWith(':delete'))
+            .filter((p) =>
+              [
+                'dashboard.view',
+                'dashboard.inventory_summary',
+                'inventory.',
+                'packing_lists.',
+                'hardware_issues.',
+                'procurement.',
+                'products.read',
+              ].some((prefix) => p.code.startsWith(prefix)) &&
+              !p.code.endsWith('.delete')
+            )
             .map((p) => p.id),
         },
         {
-          code: 'FINANCE_OFFICER',
-          name: 'Finance & Accounts Officer',
-          description: 'Payment recording, invoice reconciliation, aging ledgers, and bank realization',
+          code: 'CONTENT_MANAGER',
+          name: 'Content Manager',
+          department: 'Digital Marketing',
+          category: 'Content',
+          description: 'Management of website CMS, blog articles, media library, hero banners, categories, and product listings',
           isSystem: true,
           perms: allPerms
-            .filter((p) => ['finance:', 'pi:view', 'export:realization'].some((prefix) => p.code.startsWith(prefix)))
+            .filter((p) =>
+              [
+                'cms.',
+                'blogs.',
+                'media.',
+                'banners.',
+                'categories.',
+                'collections.',
+                'products.',
+                'seo.',
+                'reviews.',
+              ].some((prefix) => p.code.startsWith(prefix)) &&
+              !p.code.endsWith('.delete')
+            )
             .map((p) => p.id),
         },
         {
-          code: 'PROCUREMENT_MANAGER',
-          name: 'Procurement Manager',
-          description: 'Vendor supplier master, purchase order creation, and supplier authorization',
+          code: 'CUSTOMER_SUPPORT',
+          name: 'Customer Support',
+          department: 'Support & CRM',
+          category: 'Support',
+          description: 'Customer communication, review responses, lead inquiry tracking, and order status lookups',
           isSystem: true,
           perms: allPerms
-            .filter((p) => ['procurement:', 'vendors:'].some((prefix) => p.code.startsWith(prefix)))
-            .filter((p) => !p.code.endsWith(':delete'))
+            .filter((p) =>
+              [
+                'customers.read',
+                'customers.view_details',
+                'customers.view_orders',
+                'orders.read',
+                'orders.details',
+                'reviews.read',
+                'reviews.reply',
+                'notifications.read',
+              ].some((code) => p.code === code)
+            )
             .map((p) => p.id),
         },
         {
-          code: 'EXPORT_MANAGER',
-          name: 'Export & Trade Manager',
-          description: 'International buyer CRM, export quotations, ocean logistics, and container seal tracking',
+          code: 'MARKETING_MANAGER',
+          name: 'Marketing Manager',
+          department: 'Growth & Strategy',
+          category: 'Marketing',
+          description: 'Management of offers, volume discounts, coupons, banners, visitor analytics, and SEO campaigns',
           isSystem: true,
           perms: allPerms
-            .filter((p) => p.code.startsWith('export:'))
-            .filter((p) => !p.code.endsWith(':delete'))
-            .map((p) => p.id),
-        },
-        {
-          code: 'EDITOR',
-          name: 'Content Editor',
-          description: 'CMS management, commercial project portfolios, blogs, catalogs, and media gallery',
-          isSystem: true,
-          perms: allPerms
-            .filter((p) => ['cms:', 'leads:view'].some((prefix) => p.code.startsWith(prefix)))
-            .map((p) => p.id),
-        },
-        {
-          code: 'VIEWER',
-          name: 'Read-Only Observer',
-          description: 'Read-only visibility across ERP, CRM, and website activities',
-          isSystem: true,
-          perms: allPerms
-            .filter((p) => p.code.endsWith(':view'))
+            .filter((p) =>
+              [
+                'dashboard.view',
+                'dashboard.sales_overview',
+                'offers.',
+                'coupons.',
+                'banners.',
+                'collections.',
+                'analytics.',
+                'seo.',
+                'blogs.',
+              ].some((prefix) => p.code.startsWith(prefix)) &&
+              !p.code.endsWith('.delete')
+            )
             .map((p) => p.id),
         },
       ];
@@ -198,13 +200,19 @@ export const rolesService = {
           create: {
             code: r.code,
             name: r.name,
+            department: r.department,
+            category: r.category,
             description: r.description,
             isSystem: r.isSystem,
+            status: 'ACTIVE',
           },
           update: {
             name: r.name,
+            department: r.department,
+            category: r.category,
             description: r.description,
             isSystem: r.isSystem,
+            status: 'ACTIVE',
           },
         });
 
@@ -231,17 +239,35 @@ export const rolesService = {
         }
       }
 
-      console.log(`[RBAC] Seeded ${allPerms.length} permissions and ${defaultRoles.length} baseline roles.`);
+      console.log(`[RBAC] Seeded ${allPerms.length} permissions and ${defaultRoles.length} default roles.`);
     } catch (err: any) {
       console.warn('[RBAC] Note during permissions seeding:', err.message);
     }
   },
 
   /**
-   * List all roles with permission count and assigned user count
+   * List all roles with permission count, assigned admin count, department, and category
    */
-  async listRoles() {
+  async listRoles(filter?: { search?: string; category?: string; status?: string }) {
+    const where: any = {};
+    if (filter?.search && filter.search.trim()) {
+      const q = filter.search.trim();
+      where.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { code: { contains: q, mode: 'insensitive' } },
+        { description: { contains: q, mode: 'insensitive' } },
+        { department: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+    if (filter?.category && filter.category !== 'ALL') {
+      where.category = filter.category;
+    }
+    if (filter?.status && filter.status !== 'ALL') {
+      where.status = filter.status;
+    }
+
     const roles = await prisma.role.findMany({
+      where,
       orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
       include: {
         permissions: {
@@ -262,6 +288,9 @@ export const rolesService = {
       code: r.code,
       name: r.name,
       description: r.description,
+      department: r.department || 'General',
+      category: r.category || (r.isSystem ? 'System' : 'Custom'),
+      status: r.status || 'ACTIVE',
       isSystem: r.isSystem,
       permissionCount: r.permissions.length,
       assignedUsersCount: r._count.userRoles,
@@ -272,7 +301,7 @@ export const rolesService = {
   },
 
   /**
-   * Get role details with full permissions
+   * Get role details with full permissions and assigned users
    */
   async getRoleById(id: string) {
     const role = await prisma.role.findUnique({
@@ -288,11 +317,16 @@ export const rolesService = {
             user: {
               select: {
                 id: true,
+                adminId: true,
                 email: true,
                 firstName: true,
                 lastName: true,
                 role: true,
+                status: true,
                 isActive: true,
+                department: true,
+                designation: true,
+                profilePhoto: true,
               },
             },
           },
@@ -309,8 +343,12 @@ export const rolesService = {
       code: role.code,
       name: role.name,
       description: role.description,
+      department: role.department || 'General',
+      category: role.category || (role.isSystem ? 'System' : 'Custom'),
+      status: role.status || 'ACTIVE',
       isSystem: role.isSystem,
       permissions: role.permissions.map((rp) => rp.permission),
+      permissionCodes: role.permissions.map((rp) => rp.permission.code),
       users: role.userRoles.map((ur) => ur.user),
       createdAt: role.createdAt,
       updatedAt: role.updatedAt,
@@ -318,17 +356,34 @@ export const rolesService = {
   },
 
   /**
-   * List all available permissions grouped by functional module
+   * List all available permissions grouped by functional module and submodule
    */
   async listPermissions() {
     const perms = await prisma.permission.findMany({
-      orderBy: [{ module: 'asc' }, { code: 'asc' }],
+      orderBy: [{ module: 'asc' }, { submodule: 'asc' }, { code: 'asc' }],
     });
 
-    const grouped: Record<string, typeof perms> = {};
+    const grouped: Record<string, {
+      module: string;
+      submodules: Record<string, typeof perms>;
+      permissions: typeof perms;
+    }> = {};
+
     for (const p of perms) {
-      if (!grouped[p.module]) grouped[p.module] = [];
-      grouped[p.module].push(p);
+      if (!grouped[p.module]) {
+        grouped[p.module] = {
+          module: p.module,
+          submodules: {},
+          permissions: [],
+        };
+      }
+      grouped[p.module].permissions.push(p);
+
+      const subKey = p.submodule || 'General';
+      if (!grouped[p.module].submodules[subKey]) {
+        grouped[p.module].submodules[subKey] = [];
+      }
+      grouped[p.module].submodules[subKey].push(p);
     }
 
     return {
@@ -340,19 +395,25 @@ export const rolesService = {
   },
 
   /**
-   * Create a custom role
+   * Create a custom role with optional initial permissions and audit logging
    */
   async createRole(data: {
     name: string;
     code?: string;
     description?: string;
+    department?: string;
+    category?: string;
     permissionIds?: string[];
-  }) {
+  }, actorId?: string) {
     const name = data.name.trim();
     if (!name) throw Object.assign(new Error('Role name is required'), { status: 400 });
 
     const rawCode = (data.code || name).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
     const code = rawCode.startsWith('ROLE_') ? rawCode : rawCode;
+
+    if (code === 'SUPER_ADMIN') {
+      throw Object.assign(new Error('Cannot create another role with SUPER_ADMIN code'), { status: 400 });
+    }
 
     const existing = await prisma.role.findFirst({
       where: {
@@ -368,7 +429,10 @@ export const rolesService = {
         name,
         code,
         description: data.description?.trim() || null,
+        department: data.department?.trim() || 'General',
+        category: data.category?.trim() || 'Custom',
         isSystem: false,
+        status: 'ACTIVE',
       },
     });
 
@@ -387,25 +451,81 @@ export const rolesService = {
       }
     }
 
+    // Log in admin_activity_logs
+    if (actorId) {
+      await prisma.adminActivityLog.create({
+        data: {
+          actorId,
+          targetType: 'ROLE',
+          targetId: role.id,
+          action: 'CREATE_ROLE',
+          details: `Created custom role "${role.name}" (${role.code}) with ${data.permissionIds?.length || 0} permissions`,
+          newState: {
+            id: role.id,
+            name: role.name,
+            code: role.code,
+            permissionsCount: data.permissionIds?.length || 0,
+          },
+        },
+      }).catch(() => {});
+    }
+
     return this.getRoleById(role.id);
   },
 
   /**
-   * Update a custom or system role
+   * Duplicate an existing role into a new custom template
+   */
+  async duplicateRole(id: string, newName?: string, actorId?: string) {
+    const sourceRole = await this.getRoleById(id);
+    const targetName = (newName || `${sourceRole.name} (Copy)`).trim();
+    const targetCode = `${sourceRole.code}_COPY_${Date.now().toString().slice(-4)}`;
+
+    const newRole = await this.createRole(
+      {
+        name: targetName,
+        code: targetCode,
+        description: `Duplicated from ${sourceRole.name}. ${sourceRole.description || ''}`,
+        department: sourceRole.department,
+        category: 'Custom',
+        permissionIds: sourceRole.permissions.map((p) => p.id),
+      },
+      actorId
+    );
+
+    return newRole;
+  },
+
+  /**
+   * Update a role's metadata, permissions, or status
    */
   async updateRole(
     id: string,
     data: {
       name?: string;
       description?: string;
+      department?: string;
+      category?: string;
+      status?: string;
       permissionIds?: string[];
-    }
+    },
+    actorId?: string
   ) {
-    const existing = await prisma.role.findUnique({ where: { id } });
+    const existing = await prisma.role.findUnique({
+      where: { id },
+      include: {
+        permissions: {
+          include: { permission: true },
+        },
+      },
+    });
     if (!existing) throw Object.assign(new Error('Role not found'), { status: 404 });
 
     const updateData: any = {};
     if (data.name && data.name.trim() !== existing.name) {
+      if (existing.code === 'SUPER_ADMIN') {
+        throw Object.assign(new Error('The Super Admin role name cannot be changed'), { status: 400 });
+      }
       const duplicate = await prisma.role.findFirst({
         where: { name: data.name.trim(), id: { not: id } },
       });
@@ -415,17 +535,32 @@ export const rolesService = {
     if (data.description !== undefined) {
       updateData.description = data.description.trim() || null;
     }
+    if (data.department !== undefined) {
+      updateData.department = data.department.trim() || 'General';
+    }
+    if (data.category !== undefined) {
+      updateData.category = data.category.trim() || 'Custom';
+    }
+    if (data.status !== undefined) {
+      if (existing.code === 'SUPER_ADMIN' && data.status !== 'ACTIVE') {
+        throw Object.assign(new Error('Super Admin role cannot be deactivated'), { status: 400 });
+      }
+      updateData.status = data.status;
+    }
 
     await prisma.role.update({
       where: { id },
       data: updateData,
     });
 
+    const oldPermissionIds = existing.permissions.map((p) => p.permissionId);
+    let addedPermCount = 0;
+    let removedPermCount = 0;
+
     // Update permissions if supplied
     if (Array.isArray(data.permissionIds)) {
-      // Cannot remove all permissions from SUPER_ADMIN
       if (existing.code === 'SUPER_ADMIN' && data.permissionIds.length === 0) {
-        throw Object.assign(new Error('SUPER_ADMIN role must retain all permissions'), { status: 400 });
+        throw Object.assign(new Error('Super Admin role must retain all permissions'), { status: 400 });
       }
 
       await prisma.rolePermission.deleteMany({ where: { roleId: id } });
@@ -444,15 +579,41 @@ export const rolesService = {
           });
         }
       }
+
+      addedPermCount = data.permissionIds.filter((pid) => !oldPermissionIds.includes(pid)).length;
+      removedPermCount = oldPermissionIds.filter((pid) => !data.permissionIds!.includes(pid)).length;
+    }
+
+    // Log in admin_activity_logs
+    if (actorId) {
+      await prisma.adminActivityLog.create({
+        data: {
+          actorId,
+          targetType: 'ROLE',
+          targetId: id,
+          action: 'UPDATE_ROLE',
+          details: `Updated role "${existing.name}". (+${addedPermCount}/-${removedPermCount} permissions)`,
+          previousState: {
+            name: existing.name,
+            permissionsCount: oldPermissionIds.length,
+            status: existing.status,
+          },
+          newState: {
+            name: updateData.name || existing.name,
+            permissionsCount: data.permissionIds ? data.permissionIds.length : oldPermissionIds.length,
+            status: updateData.status || existing.status,
+          },
+        },
+      }).catch(() => {});
     }
 
     return this.getRoleById(id);
   },
 
   /**
-   * Delete a role (system or custom), protecting only SUPER_ADMIN
+   * Delete a role with safety checks (must have 0 assigned users, cannot delete system roles)
    */
-  async deleteRole(id: string) {
+  async deleteRole(id: string, actorId?: string) {
     const existing = await prisma.role.findUnique({
       where: { id },
       include: {
@@ -464,13 +625,38 @@ export const rolesService = {
 
     if (!existing) throw Object.assign(new Error('Role not found'), { status: 404 });
     if (existing.code === 'SUPER_ADMIN') {
-      throw Object.assign(new Error('The Master Super Administrator role is protected and cannot be deleted'), { status: 403 });
+      throw Object.assign(new Error('The Master Super Admin role is protected and cannot be deleted'), { status: 403 });
+    }
+    if (existing.isSystem) {
+      throw Object.assign(new Error(`System role "${existing.name}" is a default template and cannot be deleted. You can deactivate it instead.`), { status: 403 });
     }
 
-    // Cascade unassign any users from this role before deleting
-    await prisma.userRoleAssignment.deleteMany({ where: { roleId: id } });
+    if (existing._count.userRoles > 0) {
+      throw Object.assign(
+        new Error(`Cannot delete role "${existing.name}" because it is currently assigned to ${existing._count.userRoles} admin user(s). Reassign them first.`),
+        { status: 400 }
+      );
+    }
+
     await prisma.rolePermission.deleteMany({ where: { roleId: id } });
     await prisma.role.delete({ where: { id } });
+
+    if (actorId) {
+      await prisma.adminActivityLog.create({
+        data: {
+          actorId,
+          targetType: 'ROLE',
+          targetId: id,
+          action: 'DELETE_ROLE',
+          details: `Deleted custom role "${existing.name}" (${existing.code})`,
+          previousState: {
+            id: existing.id,
+            name: existing.name,
+            code: existing.code,
+          },
+        },
+      }).catch(() => {});
+    }
 
     return { success: true, message: `Role "${existing.name}" deleted successfully` };
   },

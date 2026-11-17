@@ -84,6 +84,18 @@ model User {
   lastLoginIp             String?
   sessions                AdminSession[]
 
+  // Admin Identification & Profile Additions
+  adminId                 String?          @unique
+  profilePhoto            String?
+  mobileNumber            String?
+  department              String?
+  designation             String?
+  status                  String           @default("ACTIVE") // ACTIVE, INACTIVE, SUSPENDED, PENDING
+  createdById             String?
+  createdBy               User?            @relation("UserCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdUsers            User[]           @relation("UserCreator")
+  performedActivities     AdminActivityLog[] @relation("ActivityActor")
+
   @@map("users")
 }
 
@@ -127,6 +139,9 @@ model Role {
   name        String           @unique
   code        String           @unique // e.g. SUPER_ADMIN, ENTITY_ADMIN, SALES_MANAGER, PROCUREMENT_MANAGER, ACCOUNTANT
   description String?
+  department  String?
+  category    String?
+  status      String           @default("ACTIVE") // ACTIVE, INACTIVE
   isSystem    Boolean          @default(false)
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
@@ -139,8 +154,11 @@ model Role {
 
 model Permission {
   id          String           @id @default(uuid())
-  code        String           @unique // e.g. crm:view, po:approve, pi:issue, qr:scan
-  module      String           // CRM, Procurement, Sales, Finance, QR, Inventory, Settings
+  code        String           @unique // e.g. products.create, products.read, orders.approve
+  module      String           // Dashboard, Orders, Products, Categories, Brands, Collections, etc.
+  submodule   String?          // e.g. Product Management, Product Publishing, Product Data
+  action      String?          // e.g. read, create, update, delete, approve, reject, publish, export, import, manage
+  category    String?          // Level 1, Level 2, Level 3 CRUD, Level 4 Advanced
   description String
   createdAt   DateTime         @default(now())
 
@@ -159,6 +177,27 @@ model RolePermission {
 
   @@id([roleId, permissionId])
   @@map("role_permissions")
+}
+
+model AdminActivityLog {
+  id            String   @id @default(uuid())
+  actorId       String
+  actor         User     @relation("ActivityActor", fields: [actorId], references: [id], onDelete: Cascade)
+  targetType    String   // "USER", "ROLE", "PERMISSION", "AUTH", "SECURITY"
+  targetId      String?
+  action        String   // "CREATE_ADMIN", "UPDATE_ADMIN", "DEACTIVATE_ADMIN", "ACTIVATE_ADMIN", "SUSPEND_ADMIN", "RESET_PASSWORD", "ASSIGN_ROLE", "REVOKE_ROLE", "CREATE_ROLE", "UPDATE_ROLE", "DELETE_ROLE", "UPDATE_PERMISSIONS", "REVOKE_SESSION", "LOGIN", "FAILED_LOGIN"
+  details       String?
+  previousState Json?
+  newState      Json?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("admin_activity_logs")
 }
 
 model UserRoleAssignment {

@@ -29,6 +29,97 @@ const verifyTempToken = (token: string, expectedPurpose: string): { id: string; 
   return decoded;
 };
 
+async function buildUserAuthPayload(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      adminId: true,
+      profilePhoto: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      mobileNumber: true,
+      department: true,
+      designation: true,
+      status: true,
+      role: true,
+      isActive: true,
+      mustChangePassword: true,
+      twoFactorEnabled: true,
+      isTwoFactorPending: true,
+      lastLoginAt: true,
+      lastLoginIp: true,
+      createdAt: true,
+      userRoles: {
+        include: {
+          role: {
+            include: {
+              permissions: {
+                include: {
+                  permission: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+
+  const roles = user.userRoles.map((ur) => ({
+    id: ur.role.id,
+    name: ur.role.name,
+    code: ur.role.code,
+    department: ur.role.department,
+    category: ur.role.category,
+    isSystem: ur.role.isSystem,
+    status: ur.role.status,
+  }));
+
+  const isSuperAdmin = user.role === 'SUPER_ADMIN' || roles.some((r) => r.code === 'SUPER_ADMIN');
+
+  const permissionCodesSet = new Set<string>();
+  if (isSuperAdmin) {
+    permissionCodesSet.add('*');
+  }
+  for (const ur of user.userRoles) {
+    if (ur.role.status && ur.role.status !== 'ACTIVE') continue;
+    for (const rp of ur.role.permissions) {
+      if (rp.permission?.code) {
+        permissionCodesSet.add(rp.permission.code);
+      }
+    }
+  }
+
+  return {
+    id: user.id,
+    adminId: user.adminId || 'ADM-PENDING',
+    profilePhoto: user.profilePhoto || null,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+    mobileNumber: user.mobileNumber || null,
+    department: user.department || 'General',
+    designation: user.designation || 'Staff',
+    status: user.status || (user.isActive ? 'ACTIVE' : 'INACTIVE'),
+    role: user.role,
+    isActive: user.isActive && user.status === 'ACTIVE',
+    mustChangePassword: user.mustChangePassword,
+    twoFactorEnabled: user.twoFactorEnabled,
+    isTwoFactorPending: user.isTwoFactorPending,
+    lastLoginAt: user.lastLoginAt,
+    lastLoginIp: user.lastLoginIp,
+    createdAt: user.createdAt,
+    roles,
+    permissions: Array.from(permissionCodesSet),
+    isSuperAdmin,
+  };
+}
+
 export const authService = {
   /**
    * Main login handler with multi-state detection (first-time password reset / 2FA / session creation)
@@ -101,18 +192,13 @@ export const authService = {
 
     await prisma.user.update({ where: { id: user.id }, data: { refreshToken } });
 
+    const userPayload = await buildUserAuthPayload(user.id);
+
     return {
       accessToken,
       refreshToken,
       sessionToken: session.sessionToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
-        twoFactorEnabled: user.twoFactorEnabled,
-      },
+      user: userPayload,
     };
   },
 
@@ -245,20 +331,15 @@ export const authService = {
 
     await prisma.user.update({ where: { id: user.id }, data: { refreshToken } });
 
+    const userPayload = await buildUserAuthPayload(user.id);
+
     return {
       success: true,
       message: 'Two-factor authentication successfully enabled. Welcome to Pacific Admin!',
       accessToken,
       refreshToken,
       sessionToken: session.sessionToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
-        twoFactorEnabled: true,
-      },
+      user: userPayload,
     };
   },
 
@@ -309,20 +390,15 @@ export const authService = {
 
     await prisma.user.update({ where: { id: user.id }, data: { refreshToken } });
 
+    const userPayload = await buildUserAuthPayload(user.id);
+
     return {
       success: true,
       accessToken,
       refreshToken,
       sessionToken: session.sessionToken,
       usedRecoveryCode,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
-        twoFactorEnabled: true,
-      },
+      user: userPayload,
     };
   },
 
@@ -483,24 +559,7 @@ export const authService = {
    * Retrieve current authenticated user profile
    */
   async getMe(userId: string) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        isActive: true,
-        mustChangePassword: true,
-        twoFactorEnabled: true,
-        isTwoFactorPending: true,
-        lastLoginAt: true,
-        lastLoginIp: true,
-      },
-    });
-    if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
-    return user;
+    return buildUserAuthPayload(userId);
   },
 
   /**

@@ -2,9 +2,14 @@ import { Request, Response, NextFunction } from 'express';
 import { rolesService } from './roles.service';
 
 export const rolesController = {
-  async list(_req: Request, res: Response, next: NextFunction) {
+  async list(req: Request, res: Response, next: NextFunction) {
     try {
-      const roles = await rolesService.listRoles();
+      const { search, category, status } = req.query;
+      const roles = await rolesService.listRoles({
+        search: search ? String(search) : undefined,
+        category: category ? String(category) : undefined,
+        status: status ? String(status) : undefined,
+      });
       res.json({
         success: true,
         data: roles,
@@ -40,7 +45,8 @@ export const rolesController = {
 
   async create(req: Request, res: Response, next: NextFunction) {
     try {
-      const role = await rolesService.createRole(req.body);
+      const actorId = (req as any).user?.id;
+      const role = await rolesService.createRole(req.body, actorId);
       res.status(201).json({
         success: true,
         data: role,
@@ -51,9 +57,24 @@ export const rolesController = {
     }
   },
 
+  async duplicate(req: Request, res: Response, next: NextFunction) {
+    try {
+      const actorId = (req as any).user?.id;
+      const role = await rolesService.duplicateRole(req.params.id, req.body?.name, actorId);
+      res.status(201).json({
+        success: true,
+        data: role,
+        message: 'Role duplicated successfully',
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async update(req: Request, res: Response, next: NextFunction) {
     try {
-      const role = await rolesService.updateRole(req.params.id, req.body);
+      const actorId = (req as any).user?.id;
+      const role = await rolesService.updateRole(req.params.id, req.body, actorId);
       res.json({
         success: true,
         data: role,
@@ -66,7 +87,8 @@ export const rolesController = {
 
   async delete(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await rolesService.deleteRole(req.params.id);
+      const actorId = (req as any).user?.id;
+      const result = await rolesService.deleteRole(req.params.id, actorId);
       res.json({
         success: true,
         message: result.message,

@@ -16,4 +16,23 @@ export const auditController = {
       next(err);
     }
   },
+
+  async listAdminActivity(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await auditService.listAdminActivity({
+        page: req.query.page ? Number(req.query.page) : undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+        actorId: req.query.actorId as string,
+        targetType: req.query.targetType as string,
+        targetId: req.query.targetId as string,
+        action: req.query.action as string,
+        search: req.query.search as string,
+        dateFrom: req.query.dateFrom as string,
+        dateTo: req.query.dateTo as string,
+      });
+      res.json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  },
 };
