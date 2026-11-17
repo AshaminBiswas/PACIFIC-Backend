@@ -558,12 +558,21 @@ export class ExpensesService {
     const effectiveUserId = await this.resolveEffectiveUserId(userId);
     const expense = await prisma.expenseEntry.findUnique({
       where: { id },
-      include: { category: true },
+      include: {
+        category: true,
+        branch: true,
+        addedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+        approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
     });
 
     if (!expense) throw new AppError('NOT_FOUND', 'Expense entry not found', 404);
-    if (expense.status === 'APPROVED') throw new AppError('BAD_REQUEST', 'Expense is already approved', 400);
     if (expense.isVoid) throw new AppError('BAD_REQUEST', 'Cannot approve a voided expense', 400);
+
+    // Idempotent: If already approved, return the approved expense without throwing 400 or double-deducting ledgers
+    if (expense.status === 'APPROVED') {
+      return expense;
+    }
 
     const amount = expense.amount;
     const date = expense.date;
@@ -649,9 +658,22 @@ export class ExpensesService {
   // ─── 7. Reject Expense ───────────────────────────────────────────────────────
   static async rejectExpense(id: string, reason: string, userId: string) {
     const effectiveUserId = await this.resolveEffectiveUserId(userId);
-    const expense = await prisma.expenseEntry.findUnique({ where: { id } });
+    const expense = await prisma.expenseEntry.findUnique({
+      where: { id },
+      include: {
+        category: true,
+        branch: true,
+        addedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+        approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+    });
     if (!expense) throw new AppError('NOT_FOUND', 'Expense entry not found', 404);
     if (expense.isVoid) throw new AppError('BAD_REQUEST', 'Cannot reject a voided entry', 400);
+
+    // Idempotent: If already rejected, return the record directly
+    if (expense.status === 'REJECTED') {
+      return expense;
+    }
 
     const [rec] = await prisma.$transaction([
       prisma.expenseEntry.update({
