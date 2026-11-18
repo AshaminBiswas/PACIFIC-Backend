@@ -146,7 +146,7 @@ export const listAdvancesHandler = async (req: AuthRequest, res: Response, next:
   try {
     const data = await service.listUpAdvances({
       employeeId: req.query.employeeId as string | undefined,
-      status: (req.query.status as any) || 'PENDING',
+      status: (req.query.status as any) || 'ALL',
       recoveryMonth: req.query.recoveryMonth ? parseInt(String(req.query.recoveryMonth), 10) : undefined,
       recoveryYear: req.query.recoveryYear ? parseInt(String(req.query.recoveryYear), 10) : undefined,
     });

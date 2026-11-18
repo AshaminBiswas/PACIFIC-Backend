@@ -140,7 +140,7 @@ export type PartialDeductUpAdvanceInput = z.infer<typeof PartialDeductUpAdvanceB
 
 export const ListUpAdvancesQuerySchema = z.object({
   employeeId: z.string().optional(),
-  status: z.enum(['PENDING', 'RECOVERED', 'ALL']).default('PENDING'),
+  status: z.enum(['PENDING', 'RECOVERED', 'ALL']).default('ALL'),
   recoveryMonth: z.coerce.number().int().min(1).max(12).optional(),
   recoveryYear: z.coerce.number().int().min(2020).max(2050).optional(),
 });

@@ -186,15 +186,19 @@ export async function getUpEmployee(id: string) {
         orderBy: { date: 'desc' },
       },
       advances: {
-        where: { isRecovered: false },
-        orderBy: { advanceDate: 'desc' },
+        orderBy: [{ advanceDate: 'desc' }, { createdAt: 'desc' }],
+        take: 100,
       },
       deductions: {
-        where: { isApplied: false },
+        orderBy: [{ applyYear: 'desc' }, { applyMonth: 'desc' }, { createdAt: 'desc' }],
+        take: 100,
+      },
+      leaveLedgers: {
         orderBy: { createdAt: 'desc' },
+        take: 50,
       },
       payrollRuns: {
-        take: 6,
+        take: 24,
         orderBy: [{ year: 'desc' }, { month: 'desc' }],
       },
     },
@@ -653,7 +657,7 @@ export async function getUpAdvanceLedger(query: ListUpAdvancesQuery & { search?:
 }
 
 export async function listUpAdvances(query: ListUpAdvancesQuery) {
-  const { employeeId, status = 'PENDING' } = query;
+  const { employeeId, status = 'ALL' } = query;
   const recoveryMonth = query.recoveryMonth ? parseInt(String(query.recoveryMonth), 10) : undefined;
   const recoveryYear = query.recoveryYear ? parseInt(String(query.recoveryYear), 10) : undefined;
   const where: Prisma.UpEmployeeAdvanceWhereInput = {};
@@ -666,7 +670,7 @@ export async function listUpAdvances(query: ListUpAdvancesQuery) {
 
   return prisma.upEmployeeAdvance.findMany({
     where,
-    orderBy: [{ advanceDate: 'desc' }],
+    orderBy: [{ advanceDate: 'desc' }, { createdAt: 'desc' }],
     include: {
       employee: {
         select: { id: true, employeeId: true, name: true, department: true, designation: true },

@@ -167,10 +167,10 @@ export async function getEmployee(id: string) {
   return await prisma.employee.findUnique({
     where: { id },
     include: {
-      advances: { orderBy: { createdAt: 'desc' }, take: 15 },
-      deductions: { orderBy: { createdAt: 'desc' }, take: 15 },
-      leaveLedgers: { orderBy: { createdAt: 'desc' }, take: 20 },
-      payrollRuns: { orderBy: { createdAt: 'desc' }, take: 12 },
+      advances: { orderBy: [{ advanceDate: 'desc' }, { createdAt: 'desc' }], take: 100 },
+      deductions: { orderBy: [{ applyYear: 'desc' }, { applyMonth: 'desc' }, { createdAt: 'desc' }], take: 100 },
+      leaveLedgers: { orderBy: { createdAt: 'desc' }, take: 50 },
+      payrollRuns: { orderBy: [{ year: 'desc' }, { month: 'desc' }], take: 24 },
       conveyanceExpenses: {
         orderBy: { visitDate: 'desc' },
         take: 50,
@@ -892,6 +892,7 @@ export async function createAdvance(data: CreateAdvanceInput, createdById?: stri
     data: {
       employeeId: data.employeeId,
       amount: new Prisma.Decimal(data.amount),
+      originalAmount: new Prisma.Decimal(data.amount),
       reason: data.reason.trim(),
       advanceDate: data.advanceDate ? new Date(data.advanceDate) : new Date(),
       recoveryMonth: data.recoveryMonth,
@@ -1216,7 +1217,7 @@ export async function listAdvances(query: ListAdvancesQuery) {
 
   return await prisma.employeeAdvance.findMany({
     where,
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ advanceDate: 'desc' }, { createdAt: 'desc' }],
     include: {
       employee: { select: { id: true, employeeId: true, name: true, department: true } },
     },

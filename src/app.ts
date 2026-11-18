@@ -176,8 +176,26 @@ app.use(cookieParser());
 // ─── Edge & HTTP Caching Middleware (Cached Egress & 304 Validation) ─────────
 app.use((req, res, next) => {
   if (req.method === 'GET') {
-    // Exclude dynamic auth & session routes from edge/browser caching
-    if (!req.path.includes('/auth/') && !req.path.includes('/health')) {
+    const hasAuth = Boolean(req.headers.authorization || req.headers['x-session-token']);
+    const isDynamicPrivateRoute =
+      hasAuth ||
+      req.path.includes('/auth/') ||
+      req.path.includes('/health') ||
+      req.path.includes('/employees') ||
+      req.path.includes('/up-employees') ||
+      req.path.includes('/up/') ||
+      req.path.includes('/expenses') ||
+      req.path.includes('/finance') ||
+      req.path.includes('/sales/') ||
+      req.path.includes('/users') ||
+      req.path.includes('/roles') ||
+      req.path.includes('/audit');
+
+    if (isDynamicPrivateRoute) {
+      // Never edge- or browser-cache authenticated / transactional ERP & HR data
+      res.set('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+      res.set('Pragma', 'no-cache');
+    } else {
       res.set('Cache-Control', 'public, max-age=15, s-maxage=60, stale-while-revalidate=120');
     }
   }
