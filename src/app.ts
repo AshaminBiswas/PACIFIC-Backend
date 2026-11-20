@@ -189,7 +189,9 @@ app.use((req, res, next) => {
       req.path.includes('/sales/') ||
       req.path.includes('/users') ||
       req.path.includes('/roles') ||
-      req.path.includes('/audit');
+      req.path.includes('/audit') ||
+      req.path.includes('/inventory') ||
+      req.path.includes('/warehouse');
 
     if (isDynamicPrivateRoute) {
       // Never edge- or browser-cache authenticated / transactional ERP & HR data

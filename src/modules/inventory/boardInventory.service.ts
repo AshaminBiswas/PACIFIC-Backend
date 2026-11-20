@@ -364,20 +364,13 @@ export class BoardInventoryService {
     let newTotalInward = existing.totalInward;
     let newTotalIssued = existing.totalIssued;
 
+    let stockComponentChanged = false;
+
     if (data.openingStock !== undefined && data.openingStock !== '') {
       const parsedOpening = Number(data.openingStock);
       if (!isNaN(parsedOpening) && parsedOpening >= 0) {
-        const openingDiff = parsedOpening - Number(existing.openingStock);
         newOpening = new Prisma.Decimal(parsedOpening);
-
-        // If currentStock is not explicitly provided, adjust currentStock by the difference in opening stock
-        if (data.currentStock === undefined || data.currentStock === '') {
-          const adjustedCurrent = Math.max(0, Number(existing.currentStock) + openingDiff);
-          newCurrent = new Prisma.Decimal(adjustedCurrent);
-        }
-
-        const adjustedTotalInward = Math.max(0, Number(existing.totalInward) + openingDiff);
-        newTotalInward = new Prisma.Decimal(adjustedTotalInward);
+        stockComponentChanged = true;
       }
     }
 
@@ -385,6 +378,7 @@ export class BoardInventoryService {
       const parsedInward = Number(data.totalInward);
       if (!isNaN(parsedInward) && parsedInward >= 0) {
         newTotalInward = new Prisma.Decimal(parsedInward);
+        stockComponentChanged = true;
       }
     }
 
@@ -392,6 +386,7 @@ export class BoardInventoryService {
       const parsedIssued = Number(data.totalIssued);
       if (!isNaN(parsedIssued) && parsedIssued >= 0) {
         newTotalIssued = new Prisma.Decimal(parsedIssued);
+        stockComponentChanged = true;
       }
     }
 
@@ -400,6 +395,10 @@ export class BoardInventoryService {
       if (!isNaN(parsedCurrent) && parsedCurrent >= 0) {
         newCurrent = new Prisma.Decimal(parsedCurrent);
       }
+    } else if (stockComponentChanged) {
+      // Recompute current stock: Opening + Inward - Issued
+      const calculated = Math.max(0, Number(newOpening) + Number(newTotalInward) - Number(newTotalIssued));
+      newCurrent = new Prisma.Decimal(calculated);
     }
 
     const currStockNum = Number(newCurrent);

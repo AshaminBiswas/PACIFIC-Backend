@@ -388,10 +388,26 @@ export class HardwareInventoryService {
     if (data.warehouse !== undefined) sets.push(`warehouse = '${data.warehouse.replace(/'/g, "''")}'`);
     if (data.vendorId !== undefined) sets.push(`vendor_id = ${sqlStringOrNull(data.vendorId)}`);
     if (data.vendorName !== undefined) sets.push(`vendor_name = ${sqlStringOrNull(data.vendorName)}`);
-    if (data.openingStock !== undefined) sets.push(`opening_stock = ${Number(data.openingStock) || 0}`);
-    if (data.currentStock !== undefined) sets.push(`current_stock = ${Number(data.currentStock) || 0}`);
-    if (data.totalInward !== undefined) sets.push(`total_inward = ${Number(data.totalInward) || 0}`);
-    if (data.totalIssued !== undefined) sets.push(`total_issued = ${Number(data.totalIssued) || 0}`);
+    let updatedOpening = data.openingStock !== undefined ? (Number(data.openingStock) || 0) : undefined;
+    let updatedInward = data.totalInward !== undefined ? (Number(data.totalInward) || 0) : undefined;
+    let updatedIssued = data.totalIssued !== undefined ? (Number(data.totalIssued) || 0) : undefined;
+    let updatedCurrent = data.currentStock !== undefined ? (Number(data.currentStock) || 0) : undefined;
+
+    if (updatedOpening !== undefined) sets.push(`opening_stock = ${updatedOpening}`);
+    if (updatedInward !== undefined) sets.push(`total_inward = ${updatedInward}`);
+    if (updatedIssued !== undefined) sets.push(`total_issued = ${updatedIssued}`);
+
+    if (updatedCurrent === undefined && (updatedOpening !== undefined || updatedInward !== undefined || updatedIssued !== undefined)) {
+      const op = updatedOpening !== undefined ? updatedOpening : (Number(existing[0].opening_stock) || 0);
+      const inw = updatedInward !== undefined ? updatedInward : (Number(existing[0].total_inward) || 0);
+      const iss = updatedIssued !== undefined ? updatedIssued : (Number(existing[0].total_issued) || 0);
+      updatedCurrent = Math.max(0, op + inw - iss);
+    }
+
+    if (updatedCurrent !== undefined) {
+      sets.push(`current_stock = ${updatedCurrent}`);
+    }
+
     if (data.reorderLevel !== undefined) sets.push(`reorder_level = ${Number(data.reorderLevel) || 10}`);
     if (data.unitCost !== undefined) sets.push(`unit_cost = ${Number(data.unitCost) || 0}`);
     if (data.locationRack !== undefined) sets.push(`location_rack = ${sqlStringOrNull(data.locationRack)}`);
@@ -399,12 +415,14 @@ export class HardwareInventoryService {
     if (data.length !== undefined) sets.push(`length = ${sqlStringOrNull(data.length)}`);
     if (data.width !== undefined) sets.push(`width = ${sqlStringOrNull(data.width)}`);
     if (data.imageUrl !== undefined) sets.push(`image_url = ${sqlStringOrNull(data.imageUrl)}`);
+
+    const curr = updatedCurrent !== undefined ? updatedCurrent : Number(existing[0].current_stock || 0);
+    const reorder = data.reorderLevel !== undefined ? Number(data.reorderLevel) : Number(existing[0].reorder_level || 10);
+    const autoStatus = curr <= 0 ? 'OUT_OF_STOCK' : curr <= reorder ? 'LOW_STOCK' : 'ACTIVE';
+
     if (data.status !== undefined) {
       sets.push(`status = '${data.status.replace(/'/g, "''")}'`);
-    } else if (data.currentStock !== undefined) {
-      const curr = Number(data.currentStock) || 0;
-      const reorder = data.reorderLevel !== undefined ? Number(data.reorderLevel) : Number(existing[0].reorder_level || 10);
-      const autoStatus = curr <= 0 ? 'OUT_OF_STOCK' : curr <= reorder ? 'LOW_STOCK' : 'ACTIVE';
+    } else {
       sets.push(`status = '${autoStatus}'`);
     }
     if (data.notes !== undefined) sets.push(`notes = ${sqlStringOrNull(data.notes)}`);
