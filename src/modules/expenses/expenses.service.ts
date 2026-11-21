@@ -16,6 +16,7 @@ import {
   buildYearWiseWorkbook,
   paiseToRupees,
 } from './expenses-export.service';
+import { auditService } from '../audit/audit.service';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -268,6 +269,15 @@ export class ExpensesService {
         ).toLocaleString('en-IN')} by ₹${((currentTotal - category.monthlyBudgetLimit) / 100).toLocaleString('en-IN')}`;
       }
     }
+
+    auditService.log({
+      userId: effectiveUserId,
+      action: 'CREATE',
+      module: 'Finance',
+      entityType: 'DailyExpense',
+      entityId: result.id,
+      newData: { entryNumber: result.entryNumber, amount: paiseToRupees(result.amount), category: category.name, paymentMode: input.paymentMode },
+    }).catch(() => {});
 
     return { expense: result, isDuplicate: false, budgetWarning };
   }
@@ -652,6 +662,15 @@ export class ExpensesService {
       }),
     ]);
 
+    auditService.log({
+      userId: effectiveUserId,
+      action: 'APPROVE',
+      module: 'Finance',
+      entityType: 'DailyExpense',
+      entityId: id,
+      newData: { previousStatus: expense.status, newStatus: 'APPROVED', amount: paiseToRupees(amount) },
+    }).catch(() => {});
+
     return updated;
   }
 
@@ -699,6 +718,15 @@ export class ExpensesService {
         },
       }),
     ]);
+
+    auditService.log({
+      userId: effectiveUserId,
+      action: 'REJECT',
+      module: 'Finance',
+      entityType: 'DailyExpense',
+      entityId: id,
+      newData: { previousStatus: expense.status, newStatus: 'REJECTED', reason },
+    }).catch(() => {});
 
     return rec;
   }
@@ -950,6 +978,16 @@ export class ExpensesService {
 
       return rec;
     });
+
+    auditService.log({
+      userId: effectiveUserId,
+      action: 'UPDATE',
+      module: 'Finance',
+      entityType: 'DailyExpense',
+      entityId: id,
+      oldData: { amount: paiseToRupees(oldAmount), description: expense.description },
+      newData: { amount: paiseToRupees(newAmount), description: input.description },
+    }).catch(() => {});
 
     return updated;
   }
@@ -1424,6 +1462,14 @@ export class ExpensesService {
       where: { id },
       data: updateData,
     });
+    auditService.log({
+      action: 'UPDATE',
+      module: 'Finance',
+      entityType: 'ExpenseCategory',
+      entityId: id,
+      newData: updateData,
+    }).catch(() => {});
+
     return updated;
   }
 

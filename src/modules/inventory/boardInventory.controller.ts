@@ -39,7 +39,8 @@ export class BoardInventoryController {
 
   async createBoard(req: Request, res: Response) {
     try {
-      const data = await boardInventoryService.createBoard(req.body);
+      const userId = (req as any).user?.id;
+      const data = await boardInventoryService.createBoard(req.body, userId);
       res.status(201).json({ success: true, data, message: 'Board SKU created successfully' });
     } catch (err: any) {
       console.error('[BoardInventory] createBoard error:', err);
@@ -50,7 +51,8 @@ export class BoardInventoryController {
   async updateBoard(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const data = await boardInventoryService.updateBoard(id, req.body);
+      const userId = (req as any).user?.id;
+      const data = await boardInventoryService.updateBoard(id, req.body, userId);
       res.json({ success: true, data, message: 'Board SKU updated successfully' });
     } catch (err: any) {
       console.error('[BoardInventory] updateBoard error:', err);
@@ -61,7 +63,8 @@ export class BoardInventoryController {
   async deleteBoard(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      await boardInventoryService.deleteBoard(id);
+      const userId = (req as any).user?.id;
+      await boardInventoryService.deleteBoard(id, userId);
       res.json({ success: true, message: 'Board SKU deleted successfully' });
     } catch (err: any) {
       console.error('[BoardInventory] deleteBoard error:', err);

@@ -3,6 +3,7 @@ import { pdfService } from '../pdf/pdf.service';
 import { sequenceService } from '../sequences/sequence.service';
 import { financeService } from '../finance/finance.service';
 import { dashboardService } from '../dashboard/dashboard.service';
+import { auditService } from '../audit/audit.service';
 
 async function resolveDefaultCompanyProfileId(): Promise<string> {
   const profile = await prisma.companyProfile.findFirst({
@@ -358,7 +359,7 @@ export const invoicesService = {
     };
   },
 
-  async create(data: any) {
+  async create(data: any, userId?: string) {
     const {
       customerId,
       companyProfileId,
@@ -422,6 +423,14 @@ export const invoicesService = {
       },
     });
     dashboardService.invalidateStatsCache();
+    auditService.log({
+      userId,
+      action: 'CREATE',
+      module: 'Finance',
+      entityType: 'TaxInvoice',
+      entityId: createdInvoice.id,
+      newData: { invoiceNumber: createdInvoice.invoiceNumber, totalAmount: createdInvoice.totalAmount },
+    }).catch(() => {});
     return createdInvoice;
   },
 
@@ -537,6 +546,14 @@ export const invoicesService = {
     }).catch(() => {});
 
     dashboardService.invalidateStatsCache();
+    auditService.log({
+      userId,
+      action: 'CONVERT_FROM_PI',
+      module: 'Finance',
+      entityType: 'TaxInvoice',
+      entityId: invoice.id,
+      newData: { invoiceNumber: invoice.invoiceNumber, piNumber: pi.piNumber },
+    }).catch(() => {});
     return invoice;
   },
 
@@ -591,6 +608,14 @@ export const invoicesService = {
     });
 
     dashboardService.invalidateStatsCache();
+    auditService.log({
+      userId,
+      action: 'RECORD_PAYMENT',
+      module: 'Finance',
+      entityType: 'TaxInvoice',
+      entityId: invoiceId,
+      newData: { amount, paymentMethod: data.paymentMethod, referenceNumber: data.referenceNumber, newStatus },
+    }).catch(() => {});
 
     return {
       payment,
@@ -641,6 +666,14 @@ export const invoicesService = {
     });
 
     dashboardService.invalidateStatsCache();
+    auditService.log({
+      userId,
+      action: 'CONVERT_FROM_ORDER',
+      module: 'Finance',
+      entityType: 'TaxInvoice',
+      entityId: invoice.id,
+      newData: { invoiceNumber: invoice.invoiceNumber, orderNumber: order.orderNumber },
+    }).catch(() => {});
     return invoice;
   },
 
@@ -745,7 +778,7 @@ export const invoicesService = {
     });
   },
 
-  async update(id: string, data: any) {
+  async update(id: string, data: any, userId?: string) {
     const existing = await this.getById(id);
     const existingMeta = existing.metadata || {};
 
@@ -795,10 +828,23 @@ export const invoicesService = {
     if (data.paidAt !== undefined) updatePayload.paidAt = data.paidAt ? new Date(data.paidAt) : null;
     updatePayload.notes = JSON.stringify(updatedMeta);
 
-    return prisma.invoice.update({
+    const updated = await prisma.invoice.update({
       where: { id },
       data: updatePayload,
     });
+
+    dashboardService.invalidateStatsCache();
+    auditService.log({
+      userId,
+      action: 'UPDATE',
+      module: 'Finance',
+      entityType: 'TaxInvoice',
+      entityId: id,
+      oldData: { invoiceNumber: existing.invoiceNumber, totalAmount: existing.totalAmount, status: existing.status },
+      newData: { ...updatePayload },
+    }).catch(() => {});
+
+    return updated;
   },
 
   async requestDeletion(id: string, reason: string, user: any) {
@@ -817,10 +863,21 @@ export const invoicesService = {
       },
     };
 
-    return prisma.invoice.update({
+    const updated = await prisma.invoice.update({
       where: { id },
       data: { notes: JSON.stringify(updatedMeta) },
     });
+
+    auditService.log({
+      userId: user?.id,
+      action: 'REQUEST_DELETION',
+      module: 'Finance',
+      entityType: 'TaxInvoice',
+      entityId: id,
+      newData: { reason },
+    }).catch(() => {});
+
+    return updated;
   },
 
   async rejectDeletion(id: string, reason: string | undefined, user: any) {
@@ -839,10 +896,21 @@ export const invoicesService = {
       },
     };
 
-    return prisma.invoice.update({
+    const updated = await prisma.invoice.update({
       where: { id },
       data: { notes: JSON.stringify(updatedMeta) },
     });
+
+    auditService.log({
+      userId: user?.id,
+      action: 'REJECT_DELETION',
+      module: 'Finance',
+      entityType: 'TaxInvoice',
+      entityId: id,
+      newData: { reason },
+    }).catch(() => {});
+
+    return updated;
   },
 
   async cancelDeletion(id: string, user: any) {
@@ -858,10 +926,20 @@ export const invoicesService = {
       },
     };
 
-    return prisma.invoice.update({
+    const updated = await prisma.invoice.update({
       where: { id },
       data: { notes: JSON.stringify(updatedMeta) },
     });
+
+    auditService.log({
+      userId: user?.id,
+      action: 'CANCEL_DELETION',
+      module: 'Finance',
+      entityType: 'TaxInvoice',
+      entityId: id,
+    }).catch(() => {});
+
+    return updated;
   },
 
   async delete(id: string) {
@@ -869,6 +947,15 @@ export const invoicesService = {
       where: { documentType: 'INVOICE', documentId: id },
     }).catch(() => {});
 
-    return prisma.invoice.delete({ where: { id } });
+    const deleted = await prisma.invoice.delete({ where: { id } });
+
+    auditService.log({
+      action: 'DELETE',
+      module: 'Finance',
+      entityType: 'TaxInvoice',
+      entityId: id,
+    }).catch(() => {});
+
+    return deleted;
   },
 };

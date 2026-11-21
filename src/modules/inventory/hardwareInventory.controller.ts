@@ -25,7 +25,8 @@ export class HardwareInventoryController {
 
   async create(req: Request, res: Response) {
     try {
-      const data = await hardwareInventoryService.createItem(req.body);
+      const userId = (req as any).user?.id;
+      const data = await hardwareInventoryService.createItem(req.body, userId);
       res.status(201).json({ success: true, data, message: 'Hardware SKU registered successfully' });
     } catch (err: any) {
       console.error('[HardwareInventory] create error:', err);
@@ -36,7 +37,8 @@ export class HardwareInventoryController {
   async update(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const data = await hardwareInventoryService.updateItem(id, req.body);
+      const userId = (req as any).user?.id;
+      const data = await hardwareInventoryService.updateItem(id, req.body, userId);
       res.json({ success: true, data, message: 'Hardware item updated successfully' });
     } catch (err: any) {
       console.error('[HardwareInventory] update error:', err);
@@ -47,7 +49,8 @@ export class HardwareInventoryController {
   async delete(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const data = await hardwareInventoryService.deleteItem(id);
+      const userId = (req as any).user?.id;
+      const data = await hardwareInventoryService.deleteItem(id, userId);
       res.json({ success: true, data, message: 'Hardware item deleted successfully' });
     } catch (err: any) {
       console.error('[HardwareInventory] delete error:', err);
@@ -57,7 +60,8 @@ export class HardwareInventoryController {
 
   async inward(req: Request, res: Response) {
     try {
-      const data = await hardwareInventoryService.inwardStock(req.body);
+      const userId = (req as any).user?.id;
+      const data = await hardwareInventoryService.inwardStock(req.body, userId);
       res.json({ success: true, data, message: 'Stock inward recorded successfully' });
     } catch (err: any) {
       console.error('[HardwareInventory] inward error:', err);
@@ -67,7 +71,8 @@ export class HardwareInventoryController {
 
   async issue(req: Request, res: Response) {
     try {
-      const data = await hardwareInventoryService.issueStock(req.body);
+      const userId = (req as any).user?.id;
+      const data = await hardwareInventoryService.issueStock(req.body, userId);
       res.json({ success: true, data, message: 'Stock issue recorded successfully' });
     } catch (err: any) {
       console.error('[HardwareInventory] issue error:', err);

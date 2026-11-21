@@ -242,6 +242,14 @@ export const COMPLETE_PERMISSION_CATALOG: PermissionDefinition[] = [
   { code: 'pi.issue', module: 'Proforma Invoices', submodule: 'Workflow', action: 'approve', category: 'Level 4 - Advanced', description: 'Formally issue PI to B2B customer' },
   { code: 'pi.export', module: 'Proforma Invoices', submodule: 'Output', action: 'export', category: 'Level 4 - Advanced', description: 'Generate authoritative PDF invoices with QR codes' },
 
+  // ─── 25b. Tax Invoices & Billing ───────────────────────────────────────────
+  { code: 'invoices.read', module: 'Invoices', submodule: 'Tax Invoices', action: 'read', category: 'Level 3 - CRUD', description: 'View tax invoices and billing records' },
+  { code: 'invoices.create', module: 'Invoices', submodule: 'Tax Invoices', action: 'create', category: 'Level 3 - CRUD', description: 'Generate tax invoices manually or convert from PI/Order' },
+  { code: 'invoices.update', module: 'Invoices', submodule: 'Tax Invoices', action: 'update', category: 'Level 3 - CRUD', description: 'Edit invoice details, billing details, and items' },
+  { code: 'invoices.delete', module: 'Invoices', submodule: 'Tax Invoices', action: 'delete', category: 'Level 3 - CRUD', description: 'Request or execute invoice deletion' },
+  { code: 'invoices.record_payment', module: 'Invoices', submodule: 'Payments', action: 'manage', category: 'Level 4 - Advanced', description: 'Record invoice payments and receipts' },
+  { code: 'invoices.export', module: 'Invoices', submodule: 'Output', action: 'export', category: 'Level 4 - Advanced', description: 'Download invoice PDFs and export billing reports' },
+
   // ─── 26. Procurement & Purchase Orders ─────────────────────────────────────
   { code: 'procurement.read', module: 'Purchase Orders', submodule: 'PO Registry', action: 'read', category: 'Level 3 - CRUD', description: 'View vendor purchase orders' },
   { code: 'procurement.create', module: 'Purchase Orders', submodule: 'PO Registry', action: 'create', category: 'Level 3 - CRUD', description: 'Generate purchase orders for raw materials & hardware' },

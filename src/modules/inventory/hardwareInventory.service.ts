@@ -1,4 +1,5 @@
 import { prisma } from '../../config/database';
+import { auditService } from '../audit/audit.service';
 
 export interface HardwareItemDto {
   id: string;
@@ -284,7 +285,7 @@ export class HardwareInventoryService {
     width?: string;
     imageUrl?: string;
     notes?: string;
-  }) {
+  }, userId?: string) {
     if (!data.sku || !data.sku.trim()) {
       throw new Error('SKU / Part Number is required.');
     }
@@ -361,13 +362,23 @@ export class HardwareInventoryService {
       SELECT * FROM hardware_inventory_items WHERE id = '${id}' LIMIT 1
     `);
 
-    return mapRowToItem(inserted[0]);
+    const item = mapRowToItem(inserted[0]);
+    auditService.log({
+      userId,
+      action: 'CREATE',
+      module: 'Warehouse',
+      entityType: 'HardwareSKU',
+      entityId: id,
+      newData: { sku: cleanSku, name, warehouse: wh, openingStock: opening },
+    }).catch(() => {});
+
+    return item;
   }
 
   /**
    * Update an existing hardware item
    */
-  async updateItem(id: string, data: Partial<HardwareItemDto>) {
+  async updateItem(id: string, data: Partial<HardwareItemDto>, userId?: string) {
     const cleanId = id.replace(/'/g, "''").trim();
     const existing: any[] = await prisma.$queryRawUnsafe(`
       SELECT * FROM hardware_inventory_items WHERE id = '${cleanId}' LIMIT 1
@@ -437,13 +448,24 @@ export class HardwareInventoryService {
       SELECT * FROM hardware_inventory_items WHERE id = '${cleanId}' LIMIT 1
     `);
 
-    return mapRowToItem(updated[0]);
+    const updatedItem = mapRowToItem(updated[0]);
+    auditService.log({
+      userId,
+      action: 'UPDATE',
+      module: 'Warehouse',
+      entityType: 'HardwareSKU',
+      entityId: cleanId,
+      oldData: existing[0],
+      newData: updated[0],
+    }).catch(() => {});
+
+    return updatedItem;
   }
 
   /**
    * Delete hardware item and related movements
    */
-  async deleteItem(id: string) {
+  async deleteItem(id: string, userId?: string) {
     const cleanId = id.replace(/'/g, "''").trim();
     await prisma.$queryRawUnsafe(`
       DELETE FROM hardware_stock_movements WHERE hardware_item_id = '${cleanId}'
@@ -451,6 +473,15 @@ export class HardwareInventoryService {
     await prisma.$queryRawUnsafe(`
       DELETE FROM hardware_inventory_items WHERE id = '${cleanId}'
     `);
+
+    auditService.log({
+      userId,
+      action: 'DELETE',
+      module: 'Warehouse',
+      entityType: 'HardwareSKU',
+      entityId: cleanId,
+    }).catch(() => {});
+
     return { success: true };
   }
 
@@ -467,7 +498,7 @@ export class HardwareInventoryService {
     unitCost?: number;
     locationRack?: string;
     notes?: string;
-  }) {
+  }, userId?: string) {
     const cleanId = data.hardwareItemId.replace(/'/g, "''").trim();
     const rows: any[] = await prisma.$queryRawUnsafe(`
       SELECT * FROM hardware_inventory_items WHERE id = '${cleanId}' LIMIT 1
@@ -535,10 +566,19 @@ export class HardwareInventoryService {
       SELECT * FROM hardware_stock_movements WHERE id = '${movId}' LIMIT 1
     `);
 
-    return {
-      item: mapRowToItem(updatedItemRow[0]),
-      movement: mapRowToMovement(movRow[0]),
-    };
+    const mappedItem = mapRowToItem(updatedItemRow[0]);
+    const movement = mapRowToMovement(movRow[0]);
+
+    auditService.log({
+      userId,
+      action: 'INWARD_STOCK',
+      module: 'Warehouse',
+      entityType: 'HardwareStockMovement',
+      entityId: movId,
+      newData: { sku: cleanSku, quantity: qty, stockAfter, supplierInvoiceNo: data.supplierInvoiceNo },
+    }).catch(() => {});
+
+    return { item: mappedItem, movement };
   }
 
   /**
@@ -551,7 +591,7 @@ export class HardwareInventoryService {
     issueReference?: string;
     issuedToPerson?: string;
     notes?: string;
-  }) {
+  }, userId?: string) {
     const cleanId = data.hardwareItemId.replace(/'/g, "''").trim();
     const rows: any[] = await prisma.$queryRawUnsafe(`
       SELECT * FROM hardware_inventory_items WHERE id = '${cleanId}' LIMIT 1
@@ -619,10 +659,19 @@ export class HardwareInventoryService {
       SELECT * FROM hardware_stock_movements WHERE id = '${movId}' LIMIT 1
     `);
 
-    return {
-      item: mapRowToItem(updatedItemRow[0]),
-      movement: mapRowToMovement(movRow[0]),
-    };
+    const mappedItem = mapRowToItem(updatedItemRow[0]);
+    const movement = mapRowToMovement(movRow[0]);
+
+    auditService.log({
+      userId,
+      action: 'ISSUE_STOCK',
+      module: 'Warehouse',
+      entityType: 'HardwareStockMovement',
+      entityId: movId,
+      newData: { sku: cleanSku, quantity: qty, stockAfter, issueReference: data.issueReference },
+    }).catch(() => {});
+
+    return { item: mappedItem, movement };
   }
 
   /**

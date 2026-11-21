@@ -192,6 +192,78 @@ export const rolesService = {
             )
             .map((p) => p.id),
         },
+        {
+          code: 'COMMERCIAL_OPERATIONS_EXECUTIVE',
+          name: 'Commercial & Operations Executive',
+          department: 'Commercial & Operations',
+          category: 'Operations',
+          description: 'Granular Create, Read, and Update permissions across Sales Quotations, Proforma Invoices, Tax Invoices/Bills, Restroom Board Inventory, Hardware Inventory, Daily Expenses, and B2B Customers',
+          isSystem: true,
+          perms: allPerms
+            .filter((p) => {
+              const allowedExplicit = [
+                // 1. Sales Quotations (Create, Read, Update, Approve, Export)
+                'quotations.read',
+                'quotations.create',
+                'quotations.update',
+                'quotations.approve',
+                'quotations.export',
+                // 2. Proforma Invoices (Create, Read, Update, Issue, Export)
+                'pi.read',
+                'pi.create',
+                'pi.update',
+                'pi.issue',
+                'pi.export',
+                // 3. Tax Invoices & Bills (Create, Read, Update, Record Payment, Export)
+                'invoices.read',
+                'invoices.create',
+                'invoices.update',
+                'invoices.record_payment',
+                'invoices.export',
+                // 4. Restroom Board & Hardware Inventory (Read, Add Stock, Update Stock, View History, Export, Suppliers, Warehouses)
+                'inventory.read',
+                'inventory.add_stock',
+                'inventory.update_stock',
+                'inventory.view_history',
+                'inventory.export',
+                'inventory.manage_suppliers',
+                'inventory.manage_warehouses',
+                // 5. Hardware Store Issues (Read, Create, Update, Sign)
+                'hardware_issues.read',
+                'hardware_issues.create',
+                'hardware_issues.update',
+                'hardware_issues.sign',
+                // 6. Daily Branch Expenses (Read, Create, Update, Categories, Export)
+                'expenses.read',
+                'expenses.create',
+                'expenses.update',
+                'expenses.categories',
+                'expenses.export',
+                // 7. B2B Customers & CRM (Read, Create, Update, Details, Orders, Payments, Export)
+                'customers.read',
+                'customers.create',
+                'customers.update',
+                'customers.view_details',
+                'customers.view_orders',
+                'customers.view_payments',
+                'customers.export',
+                // Essential Read Dependencies for smooth workflow across modules
+                'dashboard.view',
+                'dashboard.sales_overview',
+                'dashboard.orders_summary',
+                'dashboard.inventory_summary',
+                'products.read',
+                'categories.read',
+                'brands.read',
+                'procurement.read',
+                'finance.read',
+                'settings.read',
+              ];
+
+              return allowedExplicit.includes(p.code);
+            })
+            .map((p) => p.id),
+        },
       ];
 
       for (const r of defaultRoles) {

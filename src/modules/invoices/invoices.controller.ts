@@ -28,7 +28,7 @@ export const invoicesController = {
   },
   async create(req: Request, res: Response, next: NextFunction) {
     try {
-      res.status(201).json({ success: true, data: await invoicesService.create(req.body) });
+      res.status(201).json({ success: true, data: await invoicesService.create(req.body, (req as any).user?.id) });
     } catch (err) {
       next(err);
     }
@@ -68,7 +68,7 @@ export const invoicesController = {
   },
   async update(req: Request, res: Response, next: NextFunction) {
     try {
-      res.json({ success: true, data: await invoicesService.update(req.params.id, req.body) });
+      res.json({ success: true, data: await invoicesService.update(req.params.id, req.body, (req as any).user?.id) });
     } catch (err) {
       next(err);
     }

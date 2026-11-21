@@ -1,5 +1,6 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { inventoryAlertService } from './inventoryAlert.service';
+import { auditService } from '../audit/audit.service';
 
 const prisma = new PrismaClient();
 
@@ -205,7 +206,7 @@ export class BoardInventoryService {
     unitCost?: number;
     locationRack?: string;
     notes?: string;
-  }) {
+  }, userId?: string) {
     // Lookup vendor profile by vendorProfile.id or partyId
     let vendorProfile = await prisma.vendorProfile.findFirst({
       where: {
@@ -324,6 +325,15 @@ export class BoardInventoryService {
         });
     }
 
+    auditService.log({
+      userId,
+      action: 'CREATE',
+      module: 'Warehouse',
+      entityType: 'BoardSKU',
+      entityId: createdItem.id,
+      newData: { itemCode: createdItem.itemCode, designNo: createdItem.designNo, currentStock: createdItem.currentStock, warehouse: createdItem.warehouse },
+    }).catch(() => {});
+
     return createdItem;
   }
 
@@ -350,7 +360,8 @@ export class BoardInventoryService {
       unitCost?: number | string;
       locationRack?: string;
       notes?: string;
-    }
+    },
+    userId?: string
   ) {
     const existing = await prisma.boardInventoryItem.findUnique({ where: { id } });
     if (!existing) throw new Error('Board SKU not found');
@@ -470,14 +481,32 @@ export class BoardInventoryService {
         });
     }
 
+    auditService.log({
+      userId,
+      action: 'UPDATE',
+      module: 'Warehouse',
+      entityType: 'BoardSKU',
+      entityId: updated.id,
+      oldData: { itemCode: existing.itemCode, currentStock: existing.currentStock, warehouse: existing.warehouse },
+      newData: { itemCode: updated.itemCode, currentStock: updated.currentStock, warehouse: updated.warehouse },
+    }).catch(() => {});
+
     return updated;
   }
 
   /**
    * Delete board SKU
    */
-  async deleteBoard(id: string) {
-    return prisma.boardInventoryItem.delete({ where: { id } });
+  async deleteBoard(id: string, userId?: string) {
+    const deleted = await prisma.boardInventoryItem.delete({ where: { id } });
+    auditService.log({
+      userId,
+      action: 'DELETE',
+      module: 'Warehouse',
+      entityType: 'BoardSKU',
+      entityId: id,
+    }).catch(() => {});
+    return deleted;
   }
 
   /**
@@ -489,7 +518,7 @@ export class BoardInventoryService {
       throw new Error('Inward quantity must be greater than 0');
     }
 
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const item = await tx.boardInventoryItem.findUnique({
         where: { id: input.inventoryItemId },
       });
@@ -539,6 +568,17 @@ export class BoardInventoryService {
 
       return { item: updated, movement };
     });
+
+    auditService.log({
+      userId: input.createdById,
+      action: 'INWARD_STOCK',
+      module: 'Warehouse',
+      entityType: 'BoardStockMovement',
+      entityId: result.movement.id,
+      newData: { quantity: result.movement.quantity, stockAfter: result.movement.stockAfter, supplierInvoiceNo: result.movement.supplierInvoiceNo },
+    }).catch(() => {});
+
+    return result;
   }
 
   /**
@@ -609,6 +649,15 @@ export class BoardInventoryService {
         });
     }
 
+    auditService.log({
+      userId: input.createdById,
+      action: 'ISSUE_STOCK',
+      module: 'Warehouse',
+      entityType: 'BoardStockMovement',
+      entityId: result.movement.id,
+      newData: { quantity: result.movement.quantity, stockAfter: result.movement.stockAfter, issueReference: result.movement.issueReference },
+    }).catch(() => {});
+
     return result;
   }
 
@@ -632,7 +681,7 @@ export class BoardInventoryService {
       }
     }
 
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const updatedItems = [];
       const createdMovements = [];
       const currentSeq = await tx.boardStockMovement.count();
@@ -696,6 +745,17 @@ export class BoardInventoryService {
         movements: createdMovements,
       };
     });
+
+    auditService.log({
+      userId: inputs[0]?.createdById,
+      action: 'BULK_INWARD_STOCK',
+      module: 'Warehouse',
+      entityType: 'BoardStockMovement',
+      entityId: result.movements[0]?.id || 'bulk',
+      newData: { count: result.count },
+    }).catch(() => {});
+
+    return result;
   }
 
   /**
@@ -804,6 +864,15 @@ export class BoardInventoryService {
         }
       }
     }
+
+    auditService.log({
+      userId: inputs[0]?.createdById,
+      action: 'BULK_ISSUE_STOCK',
+      module: 'Warehouse',
+      entityType: 'BoardStockMovement',
+      entityId: result.movements[0]?.id || 'bulk',
+      newData: { count: result.count },
+    }).catch(() => {});
 
     return result;
   }
@@ -940,7 +1009,7 @@ export class BoardInventoryService {
     const newQty = Number(data.newQuantity);
     if (newQty < 0) throw new Error('Quantity cannot be negative');
 
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const movement = await tx.boardStockMovement.findUnique({
         where: { id: movementId },
         include: { inventoryItem: true },

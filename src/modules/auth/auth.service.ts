@@ -6,6 +6,7 @@ import { env } from '../../config/env';
 import { LoginInput, RegisterInput } from './auth.schema';
 import { totpService } from './totp.service';
 import { sessionService } from './session.service';
+import { expandPermissionAliases } from '../../middleware/rbac.middleware';
 
 const signAccessToken = (payload: { id: string; email: string; role: string; sessionId?: string }): string =>
   jwt.sign(payload, env.jwt.secret, { expiresIn: env.jwt.expiresIn } as jwt.SignOptions);
@@ -94,6 +95,8 @@ async function buildUserAuthPayload(userId: string) {
     }
   }
 
+  const finalPermissions = Array.from(expandPermissionAliases(permissionCodesSet));
+
   return {
     id: user.id,
     adminId: user.adminId || 'ADM-PENDING',
@@ -115,7 +118,7 @@ async function buildUserAuthPayload(userId: string) {
     lastLoginIp: user.lastLoginIp,
     createdAt: user.createdAt,
     roles,
-    permissions: Array.from(permissionCodesSet),
+    permissions: finalPermissions,
     isSuperAdmin,
   };
 }
